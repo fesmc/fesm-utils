@@ -35,7 +35,7 @@ These can then be linked to in any external program. See the internals of `insta
 Now a symlink can be made to these libraries for use within, e.g., CLIMBER-X:
 
 ```bash
-cd climber-x
+cd climber-x/utils/
 ln -s /path/to/fesm-utils ./
 ```
 
