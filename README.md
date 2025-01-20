@@ -4,17 +4,10 @@ Convenience repository holding external libraries needed to run CLIMBER-X.
 
 ## Configure and compile each library
 
-To compile with your default compiler (most likely gcc/gfortran) run:
-
-```bash
-./install.sh
-```
-
-To compile with an `ifx` or `ifort` compiler, run with argument `ifx` or `ifort`:
+To compile, run the install script and specify your compiler (currently `ifx`, `ifort` or `gfortran`):
 
 ```bash
 ./install.sh ifx
-./install.sh ifort
 ```
 
 Specifically to deal with an issue on the PIK HPC2024 (Foote) cluster,
@@ -28,10 +21,10 @@ Running the `install.sh` script will compile and "install" the following
 library versions:
 
 ```bash
-exlib/fftw-omp
-exlib/fftw-serial
-exlib/lis-omp
-exlib/lis-serial
+fftw-omp
+fftw-serial
+lis-omp
+lis-serial
 ```
 
 See the internals of `install.sh` if you would like to customize any
@@ -39,11 +32,11 @@ installation options further.
 
 ## Use the libraries
 
-Now a symlink can be made to these libraries for use within CLIMBER-X:
+Now a symlink can be made to these libraries for use within, e.g., CLIMBER-X:
 
 ```bash
-cd climber-x/utils
-ln -s /path/to/climber-x-exlib/exlib
+cd climber-x
+ln -s /path/to/fesm-utils ./
 ```
 
 ## To get the original libraries
