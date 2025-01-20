@@ -2,7 +2,7 @@
 
 SRCDIR=$PWD
 
-NOW=$SRCDIR/exlib/fftw-omp
+NOW=$SRCDIR/fftw-omp
 if test -d $NOW; then
   CHECK="Path exists"
 else
@@ -10,7 +10,7 @@ else
 fi
 echo "$CHECK: $NOW"
 
-NOW=$SRCDIR/exlib/fftw-serial
+NOW=$SRCDIR/fftw-serial
 if test -d $NOW; then
   CHECK="Path exists"
 else
@@ -18,7 +18,7 @@ else
 fi
 echo "$CHECK: $NOW"
 
-NOW=$SRCDIR/exlib/lis-omp
+NOW=$SRCDIR/lis-omp
 if test -d $NOW; then
   CHECK="Path exists"
 else
@@ -26,7 +26,7 @@ else
 fi
 echo "$CHECK: $NOW"
 
-NOW=$SRCDIR/exlib/lis-serial
+NOW=$SRCDIR/lis-serial
 if test -d $NOW; then
   CHECK="Path exists"
 else
