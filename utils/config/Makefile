@@ -12,9 +12,9 @@ libdir = libs
 objdir_serial = include-serial
 objdir_omp = include-omp
 
-objdir = objdir_serial
+objdir = $(objdir_serial)
 ifeq ($(openmp), 1)
-    objdir = include-omp
+    objdir = $(objdir_omp)
 endif
 
 ## COMPILER CONFIGURATION ##
