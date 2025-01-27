@@ -79,7 +79,7 @@ $(objdir)/variable_io.o: $(srcdir)/variable_io.f90
 $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/nml.o $(objdir)/ncio.o $(objdir)/mapping_scrip.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-fesm_utils_libs = 	$(objdir)/gaussian_filter.o \
+fesmutils_libs = 	$(objdir)/gaussian_filter.o \
 					$(objdir)/grid_to_cdo.o \
 					$(objdir)/index.o \
 					$(objdir)/interp1D.o \
@@ -99,20 +99,20 @@ fesm_utils_libs = 	$(objdir)/gaussian_filter.o \
 ##
 ###############################################
 
-libs : $(fesm_utils_libs)
+libs : $(fesmutils_libs)
 		@echo " "
 		@echo "    fesm-utils is ready."
 		@echo " "
 
 # Static library compilation
-fesm-utils-static: $(fesm_utils_libs)
-	ar rc $(objdir)/libfesmutils.a $(fesm_utils_libs)
+fesmutils-static: $(fesmutils_libs)
+	ar rc $(objdir)/libfesmutils.a $(fesmutils_libs)
 	ranlib $(objdir)/libfesmutils.a
 	@echo " "
 	@echo "    $(objdir)/libfesmutils.a is ready."
 	@echo " "
 
-test : fesm-utils-static
+test : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test.x $(srcdir)/test.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
