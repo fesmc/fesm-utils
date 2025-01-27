@@ -1,3 +1,6 @@
 fftw*
 lis*
 Makefile
+*.mod
+*.a
+*.o
