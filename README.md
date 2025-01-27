@@ -4,7 +4,9 @@ Convenience repository holding external libraries needed to run fast Earth syste
 
 ## Directory structure
 
-Currently, `fesm-utils` manages installation of `fftw`, `lis` and a collection of useful modules `modules`.
+Currently, `fesm-utils` manages installation of `fftw`, `lis` and a collection of useful modules `utils`.
+
+The `utils` subdirectory is self-contained and the modules can be compiled into a static library with a Makefile in the directory. `lis` and `fftw` are installed using the install scripts in the main directory (see below).
 
 ## Configure and compile `lis` and `fftw`
 
