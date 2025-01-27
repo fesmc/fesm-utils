@@ -2,7 +2,11 @@
 
 Convenience repository holding external libraries needed to run fast Earth system models, like [CLIMBER-X](https://github.com/cxesmc/climber-x).
 
-## Configure and compile each library
+## Directory structure
+
+Currently, `fesm-utils` manages installation of `fftw`, `lis` and a collection of useful modules.
+
+## Configure and compile `lis` and `fftw`
 
 To compile, run the install script and specify your compiler (currently `ifx`, `ifort` or `gfortran`):
 

@@ -1,4 +1,4 @@
-module coordinates_mapping_scrip
+module mapping_scrip
     ! Define and perform mapping using the 
     ! SCRIP file format for storing mapping
     ! weights and neighbors.
@@ -419,7 +419,7 @@ contains
               write(*,*) "map_scrip_field:: Error: num_links_now>max_num_links_now: ", &
                                                             num_links_now, max_num_links_now
               write(*,*) " To avoid this error, increase hard-coded variable 'max_num_links_now' &
-                         &in coordinates_mapping_scrip.f90."
+                         &in mapping_scrip.f90."
               write(*,*) 
               stop 
             endif
@@ -647,7 +647,7 @@ contains
 
             ! == Generate the SCRIP map via a cdo call:
 
-            ! To do: see coordinates_mapping_scrip.f90 in coordinates package.
+            ! To do: see mapping_scrip.f90 in coordinates package.
             ! The approach depends on the coordinates object, which has not been
             ! included in this standalone module. For now, it is only possible
             ! to load a scrip map that has already been generated externally. 
@@ -1507,4 +1507,4 @@ contains
 
     end subroutine nc_read_interp_logical_2D
 
-end module coordinates_mapping_scrip
+end module mapping_scrip
