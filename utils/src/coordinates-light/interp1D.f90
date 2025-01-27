@@ -1,10 +1,33 @@
 
 module interp1D
 
-    use yelmo_defs 
-
     implicit none 
 
+    ! === coord_constants ===================================
+
+    ! Internal constants
+    integer,  parameter :: dp  = kind(1.d0)
+    integer,  parameter :: sp  = kind(1.0)
+
+    ! Choose the precision of the coord library (sp,dp)
+    integer,  parameter :: wp = sp 
+
+
+    ! Missing value and aliases
+    real(dp), parameter :: MISSING_VALUE_DEFAULT = -9999.0_dp 
+    real(dp), parameter :: mv = MISSING_VALUE_DEFAULT
+    
+    ! Error distance (very large) and error index 
+    real(dp), parameter :: ERR_DIST = 1E8_dp 
+    integer,  parameter :: ERR_IND  = -1 
+
+    ! Mathematical constants
+    real(dp), parameter  :: pi  = 2._dp*acos(0._dp)
+    real(dp), parameter  :: degrees_to_radians = pi / 180._dp  ! Conversion factor between radians and degrees
+    real(dp), parameter  :: radians_to_degrees = 180._dp / pi  ! Conversion factor between degrees and radians
+     
+    ! ======================================================
+    
     interface interp_linear
         module procedure interp_linear_pt, interp_linear_vec 
     end interface 
@@ -22,11 +45,11 @@ contains
         ! times to within a certain tolerance
         implicit none 
  
-        real(prec), dimension(:), intent(IN) :: x, y
-        real(prec), dimension(:), intent(IN) :: xout
-        real(prec), intent(IN), optional :: missing_value, tol 
-        real(prec), dimension(size(xout)) :: yout
-        real(prec) :: tolerance 
+        real(wp), dimension(:), intent(IN) :: x, y
+        real(wp), dimension(:), intent(IN) :: xout
+        real(wp), intent(IN), optional :: missing_value, tol 
+        real(wp), dimension(size(xout)) :: yout
+        real(wp) :: tolerance 
         integer :: i, n, nout 
 
         ! Length of output vector
@@ -55,9 +78,9 @@ contains
 
         implicit none 
  
-        real(prec), dimension(:), intent(IN) :: x, y
-        real(prec), intent(IN) :: xout
-        real(prec) :: yout 
+        real(wp), dimension(:), intent(IN) :: x, y
+        real(wp), intent(IN) :: xout
+        real(wp) :: yout 
         integer :: i, j, n, nout 
 
         n    = size(x) 
@@ -89,9 +112,9 @@ contains
 
         implicit none 
  
-        real(prec), dimension(:), intent(IN) :: x, y
-        real(prec), dimension(:), intent(IN) :: xout
-        real(prec), dimension(size(xout)) :: yout 
+        real(wp), dimension(:), intent(IN) :: x, y
+        real(wp), dimension(:), intent(IN) :: xout
+        real(wp), dimension(size(xout)) :: yout 
         integer :: i, j, n, nout 
 
         n    = size(x) 
@@ -138,9 +161,9 @@ contains
 
         implicit none
 
-        real(prec), intent(IN)  :: x(2), y(2), xout
-        real(prec) :: yout
-        real(prec) :: alph
+        real(wp), intent(IN)  :: x(2), y(2), xout
+        real(wp) :: yout
+        real(wp) :: alph
 
         if ( xout .lt. x(1) .or. xout .gt. x(2) ) then
             write(*,*) "interp1: xout < x0 or xout > x1 !"
@@ -162,18 +185,18 @@ contains
 
         implicit none 
         
-        real(prec), intent(OUT) :: y(:)
-        real(prec), intent(IN)  :: x(:)
-        real(prec), intent(IN)  :: y0(:)
-        real(prec), intent(IN)  :: x0(:)
+        real(wp), intent(OUT) :: y(:)
+        real(wp), intent(IN)  :: x(:)
+        real(wp), intent(IN)  :: y0(:)
+        real(wp), intent(IN)  :: x0(:)
         
         ! Local variables
         integer :: k, k0, k1
         integer :: nx, nx0
-        real(prec) :: dx, dx0, xl0, xr0, xl, xr
-        real(prec) :: dx_now, wt_now
+        real(wp) :: dx, dx0, xl0, xr0, xl, xr
+        real(wp) :: dx_now, wt_now
         
-        real(prec), allocatable :: wts(:)
+        real(wp), allocatable :: wts(:)
         
         nx  = size(x,1)
         nx0 = size(x0,1)
@@ -187,16 +210,16 @@ contains
         allocate(wts(nx))
         
         ! Initially set target vector and weights to zero
-        y   = 0.0_prec
-        wts = 0.0_prec
+        y   = 0.0_wp
+        wts = 0.0_wp
         
         ! Store boundary values, which
         ! do not require interpolation
         y(1)  = y0(1)
         y(nx) = y0(nx0)
         
-        wts(1)  = 1.0_prec
-        wts(nx) = 1.0_prec
+        wts(1)  = 1.0_wp
+        wts(nx) = 1.0_wp
         
         ! Loop over internal values of 
         ! original vector and
@@ -209,13 +232,13 @@ contains
             if (k0 .eq. 2) then
                 xl0 = x0(1)
             else
-                xl0 = 0.5_prec*(x0(k0-1)+x0(k0))
+                xl0 = 0.5_wp*(x0(k0-1)+x0(k0))
             end if
             
             if (k0 .eq. nx0-1) then
                 xr0 = x0(nx0)
             else 
-                xr0 = 0.5_prec*(x0(k0)+x0(k0+1))
+                xr0 = 0.5_wp*(x0(k0)+x0(k0+1))
             end if
             
             ! Add contribution if any from
@@ -229,13 +252,13 @@ contains
                 if (k .eq. 2) then
                     xl = x(1)
                 else
-                    xl = 0.5_prec*(x(k-1)+x(k))
+                    xl = 0.5_wp*(x(k-1)+x(k))
                 end if
                 
                 if (k .eq. nx-1) then
                     xr = x(nx)
                 else 
-                    xr = 0.5_prec*(x(k)+x(k+1))
+                    xr = 0.5_wp*(x(k)+x(k+1))
                 end if
                 
                 ! Total target cell width
@@ -244,7 +267,7 @@ contains
                 if (xl0 .ge. xr .or. xr0 .le. xl) then 
                     ! No part of original cell appears in target cell, set
                     ! weight to zero 
-                    dx_now = 0.0_prec 
+                    dx_now = 0.0_wp 
                 else    
                     ! Determine width of original cell that appears in target cell
                     dx_now = min(xr,xr0) - max(xl,xl0)
@@ -272,11 +295,11 @@ contains
 
         implicit none 
  
-        real(prec), dimension(:), intent(IN) :: x, y
-        real(prec), dimension(:), intent(IN) :: xout
-        real(prec), dimension(size(xout)) :: yout 
-        real(prec), dimension(:), allocatable :: b, c, d 
-        real(prec) :: uh, dx, yh  
+        real(wp), dimension(:), intent(IN) :: x, y
+        real(wp), dimension(:), intent(IN) :: xout
+        real(wp), dimension(size(xout)) :: yout 
+        real(wp), dimension(:), allocatable :: b, c, d 
+        real(wp) :: uh, dx, yh  
         integer :: i, n, nout 
 
         n    = size(x) 
@@ -329,10 +352,10 @@ subroutine spline (x, y, b, c, d, n)
 !======================================================================
 implicit none
 integer n
-real(prec), dimension(:) :: x, y, b, c, d 
-!real(prec) x(n), y(n), b(n), c(n), d(n)
+real(wp), dimension(:) :: x, y, b, c, d 
+!real(wp) x(n), y(n), b(n), c(n), d(n)
 integer i, j, gap
-real(prec) h
+real(wp) h
 
 gap = n-1
 ! check input
@@ -415,13 +438,13 @@ function ispline(u, x, y, b, c, d, n)
 ! ispline = interpolated value at point u
 !=======================================================================
 implicit none
-real(prec) ispline
+real(wp) ispline
 integer n
-! real(prec)  u, x(n), y(n), b(n), c(n), d(n)
-real(prec) :: u 
-real(prec), dimension(:) :: x, y, b, c, d 
+! real(wp)  u, x(n), y(n), b(n), c(n), d(n)
+real(wp) :: u 
+real(wp), dimension(:) :: x, y, b, c, d 
 integer i, j, k
-real(prec) dx
+real(wp) dx
 
 ! if u is ouside the x() interval take a boundary value (left or right)
 if(u <= x(1)) then
@@ -463,13 +486,13 @@ end module interp1D
 
 !     implicit none 
 
-!     real(prec), parameter :: pi = 2.d0*acos(0.d0)
+!     real(wp), parameter :: pi = 2.d0*acos(0.d0)
 
 !     integer, parameter :: n    = 12
 !     integer, parameter :: nout = 360
     
-!     real(prec), dimension(n)    :: x, y
-!     real(prec), dimension(nout) :: xout, yout
+!     real(wp), dimension(n)    :: x, y
+!     real(wp), dimension(nout) :: xout, yout
 
 !     integer :: k, q 
 
