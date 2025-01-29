@@ -36,6 +36,17 @@ lis-serial
 
 These can then be linked to in any external program. See the internals of `install.sh` if you would like to customize any installation options further.
 
+## Configure and compile `utils`
+
+To make a static library of the `utils` modules, configure the Makefile for your system and compile.
+
+```bash
+cd utils
+python config.py config/dkrz_levante_ifx  # replace with config file for your system
+make clean
+make fesmutils-static
+```
+
 ## Use the libraries
 
 Now a symlink can be made to these libraries for use within, e.g., CLIMBER-X:
