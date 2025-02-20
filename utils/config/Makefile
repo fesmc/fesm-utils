@@ -64,6 +64,9 @@ $(objdir)/ncio.o: $(srcdir)/ncio.f90
 $(objdir)/nml.o: $(srcdir)/nml.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/precision.o: $(srcdir)/precision.f90
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/timer.o: $(srcdir)/timer.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -92,7 +95,10 @@ fesmutils_libs = 	$(objdir)/gaussian_filter.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o
-					
+
+# Not yet part of the library
+# $(objdir)/precision.o
+
 ###############################################
 ##
 ## Compilation of complete programs
