@@ -79,7 +79,8 @@ $(objdir)/timestepping.o: $(srcdir)/timestepping.f90 $(objdir)/nml.o $(objdir)/n
 $(objdir)/variable_io.o: $(srcdir)/variable_io.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/nml.o $(objdir)/ncio.o $(objdir)/mapping_scrip.o
+$(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/mapping_scrip.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 fesmutils_libs = 	$(objdir)/gaussian_filter.o \
@@ -90,14 +91,12 @@ fesmutils_libs = 	$(objdir)/gaussian_filter.o \
 					$(objdir)/mapping_scrip.o \
 					$(objdir)/ncio.o \
 					$(objdir)/nml.o \
+					$(objdir)/precision.o \
 					$(objdir)/timer.o \
 					$(objdir)/timeout.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o
-
-# Not yet part of the library
-# $(objdir)/precision.o
 
 ###############################################
 ##
