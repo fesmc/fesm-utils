@@ -14,6 +14,7 @@ module varslice
     type varslice_param_class
 
         character(len=1024) :: filename
+        character(len=1024), allocatable :: filenames(:)
         character(len=56)   :: name 
         character(len=56)   :: units_in
         character(len=56)   :: units_out
@@ -59,31 +60,78 @@ module varslice
     public :: varslice_init_data
     public :: varslice_end 
 
+    public :: varslice_map_to_grid
+
     public :: print_var_range
     
 contains
 
-    subroutine varslice_map_to_grid(vs_tgt,vs_src,mps)
+    subroutine varslice_map_to_grid(vs_tgt,vs_src,mps,mask_out,method,reset,missing_value, &
+                                    mask_pack,fill_method,filt_method,filt_par,verbose)
+        ! Given a input vs object on a source grid src,
+        ! map the variable to a target grid tgt and store
+        ! in new vs object.
 
         implicit none
 
         type(varslice_class),  intent(INOUT) :: vs_tgt
         type(varslice_class),  intent(IN)    :: vs_src
         type(map_scrip_class), intent(IN)    :: mps
-
+        integer,                intent(OUT), optional :: mask_out(:,:)   ! Mask showing where interpolation was done
+        character(len=*),       intent(IN),  optional :: method
+        logical,                intent(IN),  optional :: reset           ! Reset var_tgt initially to missing_value?
+        real(wp),               intent(IN),  optional :: missing_value   ! Points not included in mapping
+        logical,                intent(IN),  optional :: mask_pack(:,:)  ! Mask for where to interpolate
+        character(len=*),       intent(IN),  optional :: fill_method     ! Method to fill in remaining missing values
+        character(len=*),       intent(IN),  optional :: filt_method     ! Method to use for filtering
+        real(wp),               intent(IN),  optional :: filt_par(:)     ! gaussian=[sigma,dx]; poisson=[tol]
+        logical,                intent(IN),  optional :: verbose         ! Print information
+        
         ! Local variables
-        integer :: nx, ny 
+        integer :: nx, ny, nz, nt
+        integer :: i, j, k, t
+        integer :: ndim 
 
+        ! Consistency check: is this at least a 2D field?
+        ndim = size(vs_src%dim,1)
 
-        ! Determine size of target grid
+        if (ndim .lt. 2 .or. (vs_src%par%with_time .and. ndim .lt. 3)) then
+            write(error_unit,*) "varslice_map_to_grid:: Error: mapping can only be done &
+            &for fields with two spatial dimensions."
+            write(error_unit,*) "name = ", trim(vs_src%par%name)
+            write(error_unit,*) "ndim = ", ndim
+            write(error_unit,*) "dim  = ", vs_src%dim
+            stop
+        end if
+
+        ! Determine size of target var
         nx = mps%dst_grid_dims(1)
         ny = mps%dst_grid_dims(2)
+        nz = size(vs_src%var,3)         ! z should keep the same dimension
+        nt = size(vs_src%var,4)         ! time should keep the same dimension
+        
+        ! Initialize meta information by copying entire vs object
+        vs_tgt = vs_src
 
-        ! Initialize meta information
-        vs_tgt%par = vs_src%par
+        ! Re-allocate target varslice object fields as needed
+        deallocate(vs_tgt%x)
+        deallocate(vs_tgt%y)
+        deallocate(vs_tgt%var)
+        
+        allocate(vs_tgt%x(nx))
+        allocate(vs_tgt%y(ny))
+        allocate(vs_tgt%var(nx,ny,nz,nt))
 
-        ! Re-allocate target varslice object
 
+        ! Loop over dimensions and remap variable
+        do t = 1, nt
+        do k = 1, nz
+            call map_scrip_field(mps,trim(vs_tgt%par%name),vs_src%var(:,:,k,t),vs_tgt%var(:,:,k,t), &
+                            mask_out,method,reset,mv,mask_pack,fill_method,filt_method,filt_par,verbose)
+        end do
+        end do
+
+        ! Done! target field should now be available.
 
         return
 
@@ -221,6 +269,9 @@ contains
 
             ! 2. Read variable and convert units as needed
 
+            ! Make sure var variable is deallocated and ready to be modified
+            if (allocated(var)) deallocate(var) 
+
             if (.not. with_time) then 
                 ! Handle cases that do not have time dimension (simpler)
 
@@ -228,15 +279,24 @@ contains
 
                     case(1)
 
+                        ! Allocate var to the right size 
+                        allocate(vs%var(vs%dim(1),1,1,1))
+
                         ! 1D variable
                         call nc_read(par%filename,par%name,vs%var(:,1,1,1),missing_value=mv)
 
                     case(2)
 
+                        ! Allocate var to the right size 
+                        allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
+
                         ! 2D variable 
                         call nc_read(par%filename,par%name,vs%var(:,:,1,1),missing_value=mv)
 
                     case(3)
+
+                        ! Allocate var to the right size 
+                        allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
 
                         ! 3D variable 
                         call nc_read(par%filename,par%name,vs%var(:,:,:,1),missing_value=mv)
@@ -304,9 +364,6 @@ contains
                         ! write(*,*) "time: ", vs%time_range, k0, k1 
                         ! write(*,*) "      ", vs%time(k0), vs%time(k1)
                     end if
-                        
-
-                    if (allocated(var)) deallocate(var) 
 
                     select case(par%ndim)
 
@@ -315,8 +372,8 @@ contains
                             ! Allocate local var to the right size 
                             allocate(var(nt_tot,1,1,1))
 
-                            ! 0D (point) variable plus time dimension 
-                            call nc_read(par%filename,par%name,var,missing_value=mv, &
+                            ! 0D (point) variable plus time dimension
+                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
                                     start=[k0],count=[nt_tot])
 
                         case(2)
@@ -324,8 +381,8 @@ contains
                             ! Allocate local var to the right size 
                             allocate(var(vs%dim(1),nt_tot,1,1))
 
-                            ! 1D variable plus time dimension 
-                            call nc_read(par%filename,par%name,var,missing_value=mv, &
+                            ! 1D variable plus time dimension
+                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
                                     start=[1,k0],count=[vs%dim(1),nt_tot])
 
                         case(3)
@@ -333,8 +390,8 @@ contains
                             ! Allocate local var to the right size 
                             allocate(var(vs%dim(1),vs%dim(2),nt_tot,1))
 
-                            ! 2D variable plus time dimension 
-                            call nc_read(par%filename,par%name,var,missing_value=mv, &
+                            ! 2D variable plus time dimension
+                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
                                     start=[1,1,k0],count=[vs%dim(1),vs%dim(2),nt_tot])
 
                         case(4)
@@ -342,9 +399,9 @@ contains
                             ! Allocate local var to the right size 
                             allocate(var(vs%dim(1),vs%dim(2),vs%dim(3),nt_tot))
 
-                            ! 3D variable plus time dimension 
-                            call nc_read(par%filename,par%name,var,missing_value=mv, &
-                                    start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot]) 
+                            ! 3D variable plus time dimension
+                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
+                                    start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot])
 
                         case DEFAULT 
 
@@ -380,19 +437,9 @@ contains
                             ! Allocate vs%var to the same size as var 
                             ! and store all values 
 
-                            if (size(vs%var,1) .eq. size(var,1) .and. &
-                                size(vs%var,2) .eq. size(var,2) .and. &
-                                size(vs%var,3) .eq. size(var,3) .and. &
-                                size(vs%var,4) .eq. size(var,4) ) then 
-
-                                ! No allocation needed size is the same 
-
-                            else 
-
-                                deallocate(vs%var)
-                                allocate(vs%var(size(vs%var,1),size(vs%var,2),size(vs%var,3),size(vs%var,4)))
-
-                            end if 
+                            
+                            if (allocated(vs%var)) deallocate(vs%var)
+                            allocate(vs%var(size(var,1),size(var,2),size(var,3),size(var,4)))
 
                             ! Store data in vs%var 
                             vs%var = var 
@@ -491,7 +538,7 @@ contains
                                 stop 
                             end if 
 
-                            deallocate(vs%var)
+                            if (allocated(vs%var)) deallocate(vs%var)
 
                             select case(par%ndim)
 
@@ -570,6 +617,15 @@ contains
 
                 else 
                     ! Dimension range was not found, set variable to missing values 
+
+                    select case(par%ndim)
+                        case(1)
+                            allocate(vs%var(vs%dim(1),1,1,1))
+                        case(2)
+                            allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
+                        case(3)
+                            allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
+                    end select
 
                     vs%var = mv 
 
@@ -936,20 +992,34 @@ contains
         logical :: with_time 
         logical :: with_time_sub
         real(wp) :: dt 
-        integer  :: k 
+        integer  :: i, k 
+        integer  :: nt
+        integer, allocatable :: dim_now(:)
+        character(len=1024)  :: filename_dims
 
         ! Local shortcut
         with_time       = vs%par%with_time 
         with_time_sub   = vs%par%with_time_sub 
 
+        ! Store the first filename locally, to be used for getting variable dimensions (except time)
+        filename_dims = vs%par%filenames(1)
+
         ! First make sure all data objects are deallocated 
         call varslice_end(vs)
 
-        ! Get information from netcdf file 
-        call nc_dims(vs%par%filename,vs%par%name,dim_names,vs%dim)
+        ! Get information from netcdf file - first file in case their are multiple sources 
+        call nc_dims(filename_dims,vs%par%name,dim_names,vs%dim)
         vs%par%ndim = size(vs%dim,1)
 
-
+        ! Determine total time dimension size from multiple files!
+        if (with_time .and. size(vs%par%filenames,1) .gt. 1) then
+            nt = 0
+            do i = 1, size(vs%par%filenames,1)
+                call nc_dims(vs%par%filenames(i),vs%par%name,dim_names,dim_now)
+                nt = nt + dim_now(vs%par%ndim)
+            end do
+            vs%dim(vs%par%ndim) = nt
+        end if
 
 ! ======== TO DO =============
 ! In the case, of using nc_read_interp, data in arrays will have shape nx,ny
@@ -1015,6 +1085,12 @@ contains
                 write(*,*) "size(time):  ", size(vs%time,1)
                 write(*,*) "nt (netcdf): ", vs%dim(vs%par%ndim)
                 write(*,*) "filename:    ", trim(vs%par%filename)
+                if (size(vs%par%filenames,1) .gt. 1) then
+                    write(*,*) "filenames     = "
+                    do i = 1, size(vs%par%filenames,1)
+                        write(*,*) "                  ", trim(vs%par%filenames(i))
+                    end do
+                end if
                 write(*,*) 
                 write(*,*) "time = ", vs%time
                 stop 
@@ -1028,32 +1104,32 @@ contains
 
             case(1)
                 if (with_time) then 
-                    allocate(vs%var(1,1,1,1))
+                    !allocate(vs%var(1,1,1,1))
                 else 
-                    allocate(vs%var(vs%dim(1),1,1,1))
+                    !allocate(vs%var(vs%dim(1),1,1,1))
                 end if 
             case(2)
                 if (with_time) then 
                     allocate(vs%x(vs%dim(1)))
-                    allocate(vs%var(vs%dim(1),1,1,1))
+                    !allocate(vs%var(vs%dim(1),1,1,1))
 
-                    if (nc_exists_var(vs%par%filename,dim_names(1))) then 
-                        call nc_read(vs%par%filename,dim_names(1),vs%x)
+                    if (nc_exists_var(filename_dims,dim_names(1))) then 
+                        call nc_read(filename_dims,dim_names(1),vs%x)
                     else
                         call axis_init(vs%x,nx=vs%dim(1))
                     end if
                 else 
                     allocate(vs%x(vs%dim(1)))
                     allocate(vs%y(vs%dim(2)))
-                    allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
+                    !allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
 
-                    if (nc_exists_var(vs%par%filename,dim_names(1))) then 
-                        call nc_read(vs%par%filename,dim_names(1),vs%x)
+                    if (nc_exists_var(filename_dims,dim_names(1))) then 
+                        call nc_read(filename_dims,dim_names(1),vs%x)
                     else
                         call axis_init(vs%x,nx=vs%dim(1))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(2))) then 
-                        call nc_read(vs%par%filename,dim_names(2),vs%y)
+                    if (nc_exists_var(filename_dims,dim_names(2))) then 
+                        call nc_read(filename_dims,dim_names(2),vs%y)
                     else
                         call axis_init(vs%y,nx=vs%dim(2))
                     end if
@@ -1064,15 +1140,15 @@ contains
                 if (with_time) then
                     allocate(vs%x(vs%dim(1)))
                     allocate(vs%y(vs%dim(2)))
-                    allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
+                    !allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
 
-                    if (nc_exists_var(vs%par%filename,dim_names(1))) then 
-                        call nc_read(vs%par%filename,dim_names(1),vs%x)
+                    if (nc_exists_var(filename_dims,dim_names(1))) then 
+                        call nc_read(filename_dims,dim_names(1),vs%x)
                     else
                         call axis_init(vs%x,nx=vs%dim(1))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(2))) then 
-                        call nc_read(vs%par%filename,dim_names(2),vs%y)
+                    if (nc_exists_var(filename_dims,dim_names(2))) then 
+                        call nc_read(filename_dims,dim_names(2),vs%y)
                     else
                         call axis_init(vs%y,nx=vs%dim(2))
                     end if
@@ -1081,20 +1157,20 @@ contains
                     allocate(vs%x(vs%dim(1)))
                     allocate(vs%y(vs%dim(2)))
                     allocate(vs%z(vs%dim(3)))
-                    allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
+                    !allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
 
-                    if (nc_exists_var(vs%par%filename,dim_names(1))) then 
-                        call nc_read(vs%par%filename,dim_names(1),vs%x)
+                    if (nc_exists_var(filename_dims,dim_names(1))) then 
+                        call nc_read(filename_dims,dim_names(1),vs%x)
                     else
                         call axis_init(vs%x,nx=vs%dim(1))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(2))) then 
-                        call nc_read(vs%par%filename,dim_names(2),vs%y)
+                    if (nc_exists_var(filename_dims,dim_names(2))) then 
+                        call nc_read(filename_dims,dim_names(2),vs%y)
                     else
                         call axis_init(vs%y,nx=vs%dim(2))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(3))) then 
-                        call nc_read(vs%par%filename,dim_names(3),vs%z)
+                    if (nc_exists_var(filename_dims,dim_names(3))) then 
+                        call nc_read(filename_dims,dim_names(3),vs%z)
                     else
                         call axis_init(vs%z,nx=vs%dim(3))
                     end if
@@ -1106,20 +1182,20 @@ contains
                     allocate(vs%x(vs%dim(1)))
                     allocate(vs%y(vs%dim(2)))
                     allocate(vs%z(vs%dim(3)))
-                    allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
+                    !allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
 
-                    if (nc_exists_var(vs%par%filename,dim_names(1))) then 
-                        call nc_read(vs%par%filename,dim_names(1),vs%x)
+                    if (nc_exists_var(filename_dims,dim_names(1))) then 
+                        call nc_read(filename_dims,dim_names(1),vs%x)
                     else
                         call axis_init(vs%x,nx=vs%dim(1))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(2))) then 
-                        call nc_read(vs%par%filename,dim_names(2),vs%y)
+                    if (nc_exists_var(filename_dims,dim_names(2))) then 
+                        call nc_read(filename_dims,dim_names(2),vs%y)
                     else
                         call axis_init(vs%y,nx=vs%dim(2))
                     end if
-                    if (nc_exists_var(vs%par%filename,dim_names(3))) then 
-                        call nc_read(vs%par%filename,dim_names(3),vs%z)
+                    if (nc_exists_var(filename_dims,dim_names(3))) then 
+                        call nc_read(filename_dims,dim_names(3),vs%z)
                     else
                         call axis_init(vs%z,nx=vs%dim(3))
                     end if
@@ -1199,6 +1275,7 @@ contains
         ! Local variables
         logical  :: init_pars
         logical  :: print_summary 
+        integer  :: i 
 
         init_pars = .FALSE.
 
@@ -1219,6 +1296,9 @@ contains
             call parse_path(par%filename,domain,grid_name)
         end if 
 
+        ! See if multiple files are available
+        call get_matching_files(par%filenames, par%filename)
+        
         ! Make sure time parameters are consistent time_par=[x0,x1,dx]
         if (par%time_par(3) .eq. 0.0) par%time_par(2) = par%time_par(1) 
 
@@ -1232,6 +1312,12 @@ contains
         if (print_summary) then  
             write(*,*) "Loading: ", trim(filename), ":: ", trim(group)
             write(*,*) "filename      = ", trim(par%filename)
+            if (size(par%filenames,1) .gt. 1) then
+                write(*,*) "filenames     = "
+                do i = 1, size(par%filenames,1)
+                    write(*,*) "                  ", trim(par%filenames(i))
+                end do
+            end if
             write(*,*) "name          = ", trim(par%name)
             write(*,*) "units_in      = ", trim(par%units_in)
             write(*,*) "units_out     = ", trim(par%units_out)
@@ -1322,34 +1408,203 @@ contains
 
     end subroutine axis_init
 
-    subroutine print_var_range(var,name,mv,time)
+    subroutine print_var_range(var,name,missing_value,time)
 
         implicit none 
 
         real(wp),         intent(IN) :: var(:,:,:,:) 
         character(len=*), intent(IN) :: name
-        real(wp),         intent(IN) :: mv 
+        real(wp),         intent(IN) :: missing_value 
         real(wp), intent(IN), optional :: time 
 
         ! Local variables 
         real(wp) :: vmin, vmax 
 
-        if (count(var.ne.mv) .gt. 0) then 
-            vmin = minval(var,mask=var.ne.mv)
-            vmax = maxval(var,mask=var.ne.mv)
+        if (count(var.ne.missing_value) .gt. 0) then 
+            vmin = minval(var,mask=var.ne.missing_value)
+            vmax = maxval(var,mask=var.ne.missing_value)
         else 
-            vmin = mv 
-            vmax = mv 
+            vmin = missing_value 
+            vmax = missing_value 
         end if 
 
         if (present(time)) then 
-            write(*,"(f10.1,2x,a10,a3,2f14.3)") time, trim(name), ": ", vmin, vmax
+            write(*,"(f10.1,2x,a16,a3,2f14.3)") time, trim(name), ": ", vmin, vmax
         else 
-            write(*,"(10x,2x,a10,a3,2f14.3)") trim(name), ": ", vmin, vmax
+            write(*,"(10x,2x,a16,a3,2f14.3)") trim(name), ": ", vmin, vmax
         end if 
 
         return 
 
     end subroutine print_var_range
+
+    subroutine get_matching_files(filenames, pattern)
+
+        implicit none
+
+        character(len=*), allocatable, intent(OUT) :: filenames(:)
+        character(len=*), intent(in) :: pattern
+        
+        ! Local variables
+        character(len=1024) :: command
+        character(len=256) :: temp_filename
+        integer :: i, ios, unit
+        integer :: num_files
+
+        integer, parameter :: max_num_files_allowed = 10000
+
+        ! Temporary file to store file names
+        temp_filename = "filelist.tmp"
+
+        ! Create command to list files sorted alphabetically
+        command = "ls -1 " // trim(pattern) // " | sort > " // trim(temp_filename)
+        call execute_command_line(trim(command))
+
+        ! Open the temporary file
+        open(newunit=unit, file=trim(temp_filename), status="old", action="read", iostat=ios)
+        
+        ! Make sure at least one file was found
+        if (ios /= 0) then
+            write(error_unit,*) "get_matching_files:: Error: temporary file could not be opened."
+            write(error_unit,*) "temp_filename = ", trim(temp_filename)
+            stop
+        end if
+
+        ! First, count the number of files
+        num_files = 0
+        
+        do i = 1, max_num_files_allowed
+            read(unit, '(a)', iostat=ios)
+            if (ios /= 0) exit
+            num_files = num_files + 1
+        end do
+        rewind(unit)
+
+        ! Make sure at least one file was found
+        if (num_files .eq. 0) then
+            write(error_unit,*) "get_matching_files:: Error: filename(s) not found."
+            write(error_unit,*) "filename = ", trim(pattern)
+            stop
+        end if
+
+        ! Allocate the output array
+        if (allocated(filenames)) deallocate(filenames)
+        allocate(filenames(num_files))
+
+        ! Read the filenames into the array
+        do i = 1, num_files
+            read(unit, '(a)', iostat=ios) filenames(i)
+        end do
+        close(unit)
+
+        ! Remove the temporary file
+        call execute_command_line("rm " // trim(temp_filename))
+
+        return
+
+    end subroutine get_matching_files
+
+
+    ! === Extensions to nc_read to handle multiple filenames ====
+
+    ! Should this eventually be incorporated into ncio itself??
+    ! It might be hard to do, since it would have to propagate through all routines,
+    ! not just nc4_read_internal, but also nc_dims, etc...
+    ! Now routine benefits from generic var[4D], but perhaps harder to collapse to 1D reading.
+
+    subroutine nc_read_multifile(filenames,name,var,start,count,missing_value)
+
+        implicit none
+
+        character (len=*),  intent(IN)      :: filenames(:)
+        character (len=*),  intent(IN)      :: name
+        real(wp),           intent(INOUT)   :: var(:,:,:,:)
+        integer,            intent(IN)      :: start(:)
+        integer,            intent(IN)      :: count(:)
+        real(wp),           intent(IN), optional :: missing_value
+
+        ! Local variables
+        integer :: i, k0, nk, j0, nj, t0, nt, num_files
+        integer :: ndim, nj_max
+        integer, allocatable :: nt_files(:)
+        integer, allocatable :: dims(:)
+        character(len=1024) :: filename
+
+        ! Get number of dimensions we are working with
+        ndim = size(start,1)
+
+        num_files = size(filenames)
+        allocate(nt_files(num_files))
+
+        ! First determine dimension of each file
+        do i = 1, num_files
+            call nc_dims(filenames(i),name,dims=dims)
+            nt_files(i) = dims(size(dims,1))
+        end do
+
+        ! Consistency check
+        if (sum(nt_files) .lt. count(ndim)) then
+            write(error_unit,*) "nc_read_multifile:: Error: number of time axis values read in &
+            &is not sufficient to cover count."
+            write(error_unit,*) "count: ", count
+            write(error_unit,*) "nt_files: ", sum(nt_files)
+            do i = 1, num_files
+                write(error_unit,*) trim(filenames(i)), nt_files(i)
+            end do
+            stop
+        end if
+
+        ! To do: figure out where index k0 begins within nt_files.
+        k0 = start(size(start,1))
+        nk = 0
+        j0 = 0
+        nt = 0
+        do i = 1, num_files
+            nk = nk + nt_files(i)       ! count maximum available including this file
+            !nk = min(nk,count(ndim))       ! Limit maximum to total count in case it is less
+            !write(*,*) "k0: ", k0, nk
+            if (k0 .le. nk) then 
+                j0 = k0 - j0            ! start index for current file
+                nj = nk - k0 + 1        ! count total from current file
+                nj = min(nj,count(ndim))
+                nt = nt + nj            ! store total to be loaded so far
+                t0 = nt - nj + 1        ! start index in output array
+                !write(*,*) "j: ", j0, nj, k0, nk, t0, nt
+
+                select case(ndim)
+
+                    case(1)
+                        call nc_read(filenames(i),name,var(t0:nt,1,1,1),missing_value=missing_value, &
+                                                start=[j0],count=[nj])
+                    case(2)
+                        call nc_read(filenames(i),name,var(:,t0:nt,1,1),missing_value=missing_value, &
+                                                start=[start(1),j0],count=[count(1),nj])
+                    case(3)
+                        call nc_read(filenames(i),name,var(:,:,t0:nt,1),missing_value=missing_value, &
+                                                start=[start(1),start(2),j0],count=[count(1),count(2),nj])
+                    case(4)
+                        call nc_read(filenames(i),name,var(:,:,:,t0:nt),missing_value=missing_value, &
+                                                start=[start(1),start(2),start(3),j0],count=[count(1),count(2),count(3),nj])
+                end select
+
+                k0 = k0 + nj            ! start index for whole dimension over all files
+            end if
+            j0 = nk                 ! reset j0 index to end of current total
+
+            if (nt .ge. count(ndim)) exit
+        end do
+
+        if (nt .ne. count(ndim)) then
+            write(error_unit,*) "nc_read_multifile:: Error: number of time axis values read in &
+            &do not much the expected total."
+            write(error_unit,*) "count: ", count
+            write(error_unit,*) "nk: ", nk
+            write(error_unit,*) "nt: ", nt
+            stop
+        end if
+
+        return
+
+    end subroutine nc_read_multifile
 
 end module varslice
