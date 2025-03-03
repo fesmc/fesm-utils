@@ -34,7 +34,7 @@ module varslice
         type(varslice_param_class) :: par 
 
         ! Parameters defined during update call
-        real(wp)          :: time_range(2)
+        real(dp)          :: time_range(2)
         character(len=56) :: slice_method 
         integer           :: range_rep 
         
@@ -50,6 +50,11 @@ module varslice
         real(wp), allocatable :: var(:,:,:,:)
                 
     end type 
+
+    interface axis_init
+        module procedure axis_init_sp
+        module procedure axis_init_dp
+    end interface
 
     private 
     public :: varslice_param_class
@@ -660,8 +665,8 @@ contains
         implicit none
         
         integer,  allocatable, intent(INOUT) :: idx(:)          ! Output indices
-        real(wp),              intent(IN)    :: x(:)            ! Time array in years
-        real(wp),              intent(IN)    :: xrange(:)       ! [Start, End] x (inclusive) or [x_interp]
+        real(dp),              intent(IN)    :: x(:)            ! Time array in years
+        real(dp),              intent(IN)    :: xrange(:)       ! [Start, End] x (inclusive) or [x_interp]
         character(len=*),      intent(IN)    :: slice_method    ! method = "exact", "interp", "extrap"
         logical,               intent(IN)    :: with_sub        ! Use fractional time unit too
 
@@ -991,7 +996,7 @@ contains
         character(len=12), allocatable :: dim_names(:) 
         logical :: with_time 
         logical :: with_time_sub
-        real(wp) :: dt 
+        real(dp) :: dt 
         integer  :: i, k 
         integer  :: nt
         integer, allocatable :: dim_now(:)
@@ -1348,28 +1353,28 @@ contains
 
     end subroutine parse_path
     
-    subroutine axis_init(x,x0,x1,dx,nx)
+    subroutine axis_init_sp(x,x0,x1,dx,nx)
 
         implicit none 
 
-        real(wp), allocatable, intent(OUT) :: x(:)
-        real(wp), optional :: x0
-        real(wp), optional :: x1
-        real(wp), optional :: dx
+        real(sp), allocatable, intent(OUT) :: x(:)
+        real(sp), optional :: x0
+        real(sp), optional :: x1
+        real(sp), optional :: dx
         integer,  optional :: nx 
 
         ! Local variables 
         integer :: i  
-        real(wp) :: x0_now
-        real(wp) :: x1_now
-        real(wp) :: dx_now
+        real(sp) :: x0_now
+        real(sp) :: x1_now
+        real(sp) :: dx_now
         integer  :: nx_now 
-        real(wp) :: nx_check
+        real(sp) :: nx_check
 
-        dx_now = 1.0_wp 
+        dx_now = 1.0_sp 
         if (present(dx)) dx_now = dx 
 
-        x0_now = 0.0_wp 
+        x0_now = 0.0_sp 
         if (present(x0)) x0_now = x0 
         
         ! Note: if x1 is present, nx is ignored 
@@ -1406,7 +1411,67 @@ contains
 
         return
 
-    end subroutine axis_init
+    end subroutine axis_init_sp
+    
+    subroutine axis_init_dp(x,x0,x1,dx,nx)
+
+        implicit none 
+
+        real(dp), allocatable, intent(OUT) :: x(:)
+        real(dp), optional :: x0
+        real(dp), optional :: x1
+        real(dp), optional :: dx
+        integer,  optional :: nx 
+
+        ! Local variables 
+        integer :: i  
+        real(dp) :: x0_now
+        real(dp) :: x1_now
+        real(dp) :: dx_now
+        integer  :: nx_now 
+        real(dp) :: nx_check
+
+        dx_now = 1.0_dp 
+        if (present(dx)) dx_now = dx 
+
+        x0_now = 0.0_dp 
+        if (present(x0)) x0_now = x0 
+        
+        ! Note: if x1 is present, nx is ignored 
+        if (present(x1)) then 
+            x1_now = x1 
+        else if (present(nx)) then 
+            x1_now = x0_now + (nx-1)*dx_now 
+        else 
+            write(*,*) "axis_init:: Error: either x1 or nx must be present."
+            stop 
+        end if 
+
+        if (allocated(x)) deallocate(x)
+
+        nx_now   = nint((x1_now-x0_now)/dx_now) + 1
+        nx_check = (x1_now-x0_now)/dx_now + 1
+
+        if ( abs(nx_now - nx_check) .gt. TOL ) then
+            ! Make sure nx is a round number.
+            write(error_unit,*) "axis_init:: Error: desired axis bounds [x0,x1] do &
+            & not divide evenly with dx."
+            write(error_unit,*) "  x0: ", x0_now
+            write(error_unit,*) "  x1: ", x1_now
+            write(error_unit,*) "  dx: ", dx_now
+            write(error_unit,*) "  nx: ", ((x1_now-x0_now)/dx_now + 1)
+            stop
+        end if
+        
+        allocate(x(nx_now))
+
+        do i = 1, nx_now 
+            x(i) = x0_now + dx_now*real(i-1,dp)
+        end do 
+
+        return
+
+    end subroutine axis_init_dp
 
     subroutine print_var_range(var,name,missing_value,time)
 
