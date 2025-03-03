@@ -25,7 +25,7 @@ module varslice
 
         ! Internal parameters
         integer  :: ndim 
-        real(wp) :: time_par(4) 
+        real(dp) :: time_par(4) 
 
     end type
 
@@ -43,8 +43,8 @@ module varslice
         real(wp), allocatable :: x(:) 
         real(wp), allocatable :: y(:)
         real(wp), allocatable :: z(:)  
-        real(wp), allocatable :: time(:)
-        real(wp), allocatable :: time_sub(:)
+        real(dp), allocatable :: time(:)
+        real(dp), allocatable :: time_sub(:)
         integer, allocatable  :: idx(:)
         
         real(wp), allocatable :: var(:,:,:,:)
