@@ -17,7 +17,7 @@ contains
 
         implicit none
 
-        real(wp), intent(OUT) :: vint(:,:)  
+        real(wp), intent(INOUT) :: vint(:,:)  
         real(wp), intent(IN)  :: v(:,:)
         integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
         integer,  intent(IN)  :: i, j                   ! Indices of current cell
@@ -34,7 +34,7 @@ contains
             
         ! Next calculate the subgrid array of values for this cell
         call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
-        
+
         return
         
     end subroutine calc_subgrid_array
@@ -52,7 +52,7 @@ contains
 
         implicit none 
 
-        real(wp), intent(OUT) :: vint(:,:)  
+        real(wp), intent(INOUT) :: vint(:,:)  
         real(wp), intent(IN)  :: v1, v2, v3, v4
         integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
 
