@@ -9,13 +9,40 @@ module subgrid
 
     private
     public :: calc_subgrid_array
+    public :: calc_subgrid_array_cell
 
 contains
 
-    subroutine calc_subgrid_array(vint,v1,v2,v3,v4,nx)
+    subroutine calc_subgrid_array(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+
+        implicit none
+
+        real(wp), intent(OUT) :: vint(:,:)  
+        real(wp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        real(wp) :: v1, v2, v3, v4
+
+        ! First calculate corner values of current cell (ab-nodes)
+        v1 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jp1) + v(i,jp1))
+        v2 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jp1) + v(i,jp1))
+        v3 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jm1) + v(i,jm1))
+        v4 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jm1) + v(i,jm1))
+            
+        ! Next calculate the subgrid array of values for this cell
+        call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
+        
+        return
+        
+    end subroutine calc_subgrid_array
+
+    subroutine calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
         ! Given the four corners of a cell in quadrants 1,2,3,4,
         ! calculate the subgrid values via linear interpolation
-        ! Assumes vint is a square array of dimensions nx: vint[nx,nx]
+        ! Assumes vint is a square array of dimensions nxi: vint[nxi,nxi]
         ! Convention:
         !   
         !    v2---v1
@@ -27,28 +54,28 @@ contains
 
         real(wp), intent(OUT) :: vint(:,:)  
         real(wp), intent(IN)  :: v1, v2, v3, v4
-        integer,  intent(IN)  :: nx                     ! Number of interpolation points 
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
 
         ! Local variables 
         integer :: i, j 
-        real(wp) :: x(nx), y(nx) 
+        real(wp) :: x(nxi), y(nxi) 
 
-        if (nx .eq. 1) then
+        if (nxi .eq. 1) then
             ! Make sure interpolation point represents the center of the subgrid array
             x(1) = 0.5
             y(1) = 0.5
         else
             ! Populate x,y axes for interpolation points (between 0 and 1)
-            do i = 1, nx 
-                x(i) = 0.0 + real(i-1)/real(nx-1)
+            do i = 1, nxi 
+                x(i) = 0.0 + real(i-1)/real(nxi-1)
             end do 
             y = x 
         end if
-        
+
         ! Calculate interpolated value      
         vint = 0.0 
-        do i = 1, nx 
-        do j = 1, nx 
+        do i = 1, nxi 
+        do j = 1, nxi 
 
             vint(i,j) = interp_bilin_pt(v1,v2,v3,v4,x(i),y(j))
 
@@ -57,7 +84,7 @@ contains
 
         return 
 
-    end subroutine calc_subgrid_array
+    end subroutine calc_subgrid_array_cell
 
     function interp_bilin_pt(z1,z2,z3,z4,xout,yout) result(zout)
         ! Interpolate a point given four neighbors at corners of square (0:1,0:1)
