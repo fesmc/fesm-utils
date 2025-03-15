@@ -26,15 +26,25 @@ contains
         ! Local variables
         real(wp) :: v1, v2, v3, v4
 
-        ! First calculate corner values of current cell (ab-nodes)
-        v1 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jp1) + v(i,jp1))
-        v2 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jp1) + v(i,jp1))
-        v3 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jm1) + v(i,jm1))
-        v4 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jm1) + v(i,jm1))
-            
-        ! Next calculate the subgrid array of values for this cell
-        call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
+        if (nxi .eq. 1) then
+            ! Case of no interpolation, just set subgrid array equal to current value
 
+            vint = v(i,j)
+        
+        else
+            ! Subgrid interpolation necessary
+
+            ! First calculate corner values of current cell (ab-nodes)
+            v1 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jp1) + v(i,jp1))
+            v2 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jp1) + v(i,jp1))
+            v3 = 0.25_wp*(v(i,j) + v(im1,j) + v(im1,jm1) + v(i,jm1))
+            v4 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jm1) + v(i,jm1))
+                
+            ! Next calculate the subgrid array of values for this cell
+            call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
+
+        end if
+        
         return
         
     end subroutine calc_subgrid_array
