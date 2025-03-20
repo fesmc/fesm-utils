@@ -1,12 +1,10 @@
 module subgrid
 
-    use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit
-    
+    use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit    
     use precision
 
     implicit none
-
-
+    
     private
     public :: calc_subgrid_array
     public :: calc_subgrid_array_cell
@@ -44,7 +42,7 @@ contains
             call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
 
         end if
-        
+
         return
         
     end subroutine calc_subgrid_array
