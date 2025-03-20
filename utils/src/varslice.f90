@@ -67,6 +67,8 @@ module varslice
 
     public :: varslice_map_to_grid
 
+    public :: get_matching_files
+    
     public :: print_var_range
     
 contains
