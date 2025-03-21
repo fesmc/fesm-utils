@@ -228,5 +228,66 @@ end if
         
     end subroutine gq2D_to_nodes
 
+    subroutine gq3D_to_nodes(f, gq, u, i, j, k, grid_type)
+        
+        implicit none
+        
+        real(wp), intent(OUT) :: f(8)           ! Values at 8 Gaussian quadrature points
+        type(gq3D_class), intent(IN) :: gq      ! Gaussian Quadrature 3D object
+        real(wp), intent(in)  :: u(:,:,:)       ! Variable to be interpolated
+        integer,  intent(in)  :: i              ! x-index of current cell
+        integer,  intent(in)  :: j              ! y-index of current cell
+        integer,  intent(in)  :: k              ! z-index of current cell
+        character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy", "acz"
+
+        ! Local variables
+        integer :: nx, ny, nz, q
+        real(8) :: u1, u2, u3, u4, u5, u6, u7, u8    ! Values of u at the eight corners of the cell
+        real(8) :: ux(8), uy(8), uz(8)               ! Derivatives at the eight corners
+        
+        nx = size(u,1)
+        ny = size(u,2)
+        nz = size(u,3)
+
+        ! Compute values of u at the eight cell corners
+        select case(trim(grid_type))
+            case("aa")
+                u1 = u(i-1, j-1, k-1)
+                u2 = u(i, j-1, k-1)
+                u3 = u(i, j, k-1)
+                u4 = u(i-1, j, k-1)
+                u5 = u(i-1, j-1, k)
+                u6 = u(i, j-1, k)
+                u7 = u(i, j, k)
+                u8 = u(i-1, j, k)
+            case DEFAULT
+                write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
+                write(error_unit,*) "grid_type = ", trim(grid_type)
+                stop
+        end select
+
+if (.TRUE.) then
+        ! Compute function values at quadrature points
+        do q = 1, 8
+            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
+                   gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8
+        end do
+else
+        ! Compute function values at quadrature points with Jacobian transformation
+        ! do q = 1, 8
+        !     f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
+        !            gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8 + &
+        !            gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
+        !            gq%dNdx(5,q) * ux5 + gq%dNdx(6,q) * ux6 + gq%dNdx(7,q) * ux7 + gq%dNdx(8,q) * ux8 + &
+        !            gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4 + &
+        !            gq%dNdy(5,q) * uy5 + gq%dNdy(6,q) * uy6 + gq%dNdy(7,q) * uy7 + gq%dNdy(8,q) * uy8 + &
+        !            gq%dNdz(1,q) * uz1 + gq%dNdz(2,q) * uz2 + gq%dNdz(3,q) * uz3 + gq%dNdz(4,q) * uz4 + &
+        !            gq%dNdz(5,q) * uz5 + gq%dNdz(6,q) * uz6 + gq%dNdz(7,q) * uz7 + gq%dNdz(8,q) * uz8
+        ! end do
+end if
+
+        return
+        
+    end subroutine gq3D_to_nodes
 
 end module gaussian_quadrature
