@@ -13,11 +13,24 @@ module gaussian_quadrature
         real(8) :: dNdy(4,4)
     end type
 
+    type gq3D_class
+        real(8) :: xi(8)
+        real(8) :: eta(8)
+        real(8) :: zeta(8)
+        real(8) :: N(8,8)
+        real(8) :: dNdx(8,8)
+        real(8) :: dNdy(8,8)
+        real(8) :: dNdz(8,8)
+    end type
+
+
     private
     public :: gq2D_class
     public :: gq2D_init
-    public :: gq2D_get_points
-    
+    public :: gq2D_to_nodes
+
+    public :: gq3D_class
+    public :: gq3D_init
 contains
 
     subroutine gq2D_init(gq)
@@ -40,10 +53,10 @@ contains
         ! where q represents each quadrature point
         do q = 1, 4
 
-            gq%N(1,q) = 0.25d0 * (1 - gq%xi(q)) * (1 - gq%eta(q))  ! N1
-            gq%N(2,q) = 0.25d0 * (1 + gq%xi(q)) * (1 - gq%eta(q))  ! N2
-            gq%N(3,q) = 0.25d0 * (1 + gq%xi(q)) * (1 + gq%eta(q))  ! N3
-            gq%N(4,q) = 0.25d0 * (1 - gq%xi(q)) * (1 + gq%eta(q))  ! N4
+            gq%N(1,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 4.d0  ! N1
+            gq%N(2,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 4.d0  ! N2
+            gq%N(3,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 4.d0  ! N3
+            gq%N(4,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 4.d0  ! N4
 
             gq%dNdx(1,q) = -(1.d0 - gq%eta(q)) / 4.d0 
             gq%dNdx(2,q) =  (1.d0 - gq%eta(q)) / 4.d0 
@@ -55,7 +68,7 @@ contains
             gq%dNdy(3,q) =  (1.d0 + gq%xi(q)) / 4.d0 
             gq%dNdy(4,q) =  (1.d0 - gq%xi(q)) / 4.d0 
 
-            if (.TRUE.) then
+            if (.FALSE.) then
                 write(*,*) " "
                 write(*,*) "Quad point, q =", q
                 write(*,*) "n, N, dNdx, dNdy:"
@@ -73,7 +86,84 @@ contains
 
     end subroutine gq2D_init
 
-    subroutine gq2D_get_points(f, gq, u, i, j, grid_type)
+        subroutine gq3D_init(gq)
+
+        implicit none
+
+        type(gq3D_class), intent(OUT) :: gq
+
+        ! Local variables
+        integer :: q, n
+
+        ! Quadrature point locations in reference element (-1,1)
+        real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
+
+        ! Define quadrature points
+        gq%xi   = [ -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv ]
+        gq%eta  = [ -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
+        gq%zeta = [ -sqrt3_inv, -sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
+
+        ! Define shape functions N(corner, q) and derivatives
+        ! where q represents each quadrature point
+        do q = 1, 8
+
+            gq%N(1,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N1
+            gq%N(2,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N2
+            gq%N(3,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N3
+            gq%N(4,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N4
+            gq%N(5,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N5
+            gq%N(6,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N6
+            gq%N(7,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N7
+            gq%N(8,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N8
+
+            gq%dNdx(1,q) = -(1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdx(2,q) =  (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdx(3,q) =  (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdx(4,q) = -(1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdx(5,q) = -(1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdx(6,q) =  (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdx(7,q) =  (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdx(8,q) = -(1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+
+            gq%dNdy(1,q) = -(1.d0 - gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdy(2,q) = -(1.d0 + gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdy(3,q) =  (1.d0 + gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdy(4,q) =  (1.d0 - gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
+            gq%dNdy(5,q) = -(1.d0 - gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdy(6,q) = -(1.d0 + gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdy(7,q) =  (1.d0 + gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdy(8,q) =  (1.d0 - gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+
+            gq%dNdz(1,q) = -(1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
+            gq%dNdz(2,q) = -(1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
+            gq%dNdz(3,q) = -(1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
+            gq%dNdz(4,q) = -(1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
+            gq%dNdz(5,q) =  (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
+            gq%dNdz(6,q) =  (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
+            gq%dNdz(7,q) =  (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
+            gq%dNdz(8,q) =  (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
+
+            if (.TRUE.) then
+                write(*,*) " "
+                write(*,*) "Quad point, q =", q
+                write(*,*) "n, phi_3d, dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d:"
+                do n = 1, 8
+                    write(*,*) n, gq%N(n,q), gq%dNdx(n,q), gq%dNdy(n,q), gq%dNdz(n,q)
+                enddo
+                write(*,*) " "
+                write(*,*) "sum(N)", sum(gq%N(:,q))  ! verified that sum = 1
+                write(*,*) "sum(dN/dx)", sum(gq%dNdx(:,q))  ! verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dy)", sum(gq%dNdy(:,q))  ! verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dz)", sum(gq%dNdz(:,q))  ! verified that sum = 0 (within roundoff)
+            end if
+
+        end do
+
+        return
+
+    end subroutine gq3D_init
+
+    subroutine gq2D_to_nodes(f, gq, u, i, j, grid_type)
         
         implicit none
         
@@ -113,7 +203,7 @@ contains
                 u3 = 0.5d0 * (u(i, j) + u(i+1, j))          ! Top-right
                 u4 = 0.5d0 * (u(i-1, j) + u(i, j))          ! Top-left
             case DEFAULT
-                write(error_unit,*) "gq2D_get_points:: Error: grid_type not recognized."
+                write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
                 stop
         end select
@@ -136,7 +226,7 @@ end if
 
         return
         
-    end subroutine gq2D_get_points
+    end subroutine gq2D_to_nodes
 
 
 end module gaussian_quadrature
