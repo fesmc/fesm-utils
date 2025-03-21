@@ -16,7 +16,8 @@ module gaussian_quadrature
     private
     public :: gq2D_class
     public :: gq2D_init
-
+    public :: gq2D_get_points
+    
 contains
 
     subroutine gq2D_init(gq)
