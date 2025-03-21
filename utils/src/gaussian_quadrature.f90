@@ -9,7 +9,13 @@ module gaussian_quadrature
         real(8) :: xi(4)
         real(8) :: eta(4)
         real(8) :: N(4,4)
+        real(8) :: dNdx(4,4)
+        real(8) :: dNdy(4,4)
     end type
+
+    private
+    public :: gq2D_class
+    public :: gq2D_init
 
 contains
 
@@ -20,23 +26,47 @@ contains
         type(gq2D_class), intent(OUT) :: gq
 
         ! Local variables
-        integer :: q
+        integer :: q, n
 
         ! Quadrature point locations in reference element (-1,1)
         real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
-        
+
         ! Define quadrature points
         gq%xi  = [ -sqrt3_inv, sqrt3_inv, sqrt3_inv, -sqrt3_inv ]
         gq%eta = [ -sqrt3_inv, -sqrt3_inv, sqrt3_inv, sqrt3_inv ]
 
-        ! Define shape functions phi(q,corner)
+        ! Define shape functions N(corner, q) and derivatives
+        ! where q represents each quadrature point
         do q = 1, 4
-            gq%N(q,1) = 0.25d0 * (1 - gq%xi(q)) * (1 - gq%eta(q))  ! N1
-            gq%N(q,2) = 0.25d0 * (1 + gq%xi(q)) * (1 - gq%eta(q))  ! N2
-            gq%N(q,3) = 0.25d0 * (1 + gq%xi(q)) * (1 + gq%eta(q))  ! N3
-            gq%N(q,4) = 0.25d0 * (1 - gq%xi(q)) * (1 + gq%eta(q))  ! N4
-        end do
 
+            gq%N(1,q) = 0.25d0 * (1 - gq%xi(q)) * (1 - gq%eta(q))  ! N1
+            gq%N(2,q) = 0.25d0 * (1 + gq%xi(q)) * (1 - gq%eta(q))  ! N2
+            gq%N(3,q) = 0.25d0 * (1 + gq%xi(q)) * (1 + gq%eta(q))  ! N3
+            gq%N(4,q) = 0.25d0 * (1 - gq%xi(q)) * (1 + gq%eta(q))  ! N4
+
+            gq%dNdx(1,q) = -(1.d0 - gq%eta(q)) / 4.d0 
+            gq%dNdx(2,q) =  (1.d0 - gq%eta(q)) / 4.d0 
+            gq%dNdx(3,q) =  (1.d0 + gq%eta(q)) / 4.d0 
+            gq%dNdx(4,q) = -(1.d0 + gq%eta(q)) / 4.d0
+
+            gq%dNdy(1,q) = -(1.d0 - gq%xi(q)) / 4.d0 
+            gq%dNdy(2,q) = -(1.d0 + gq%xi(q)) / 4.d0 
+            gq%dNdy(3,q) =  (1.d0 + gq%xi(q)) / 4.d0 
+            gq%dNdy(4,q) =  (1.d0 - gq%xi(q)) / 4.d0 
+
+            if (.TRUE.) then
+                write(*,*) " "
+                write(*,*) "Quad point, q =", q
+                write(*,*) "n, N, dNdx, dNdy:"
+                do n = 1, 4
+                    write(*,*) n, gq%N(n, q), gq%dNdx(n, q), gq%dNdy(n, q)
+                end do
+                write(*,*) "sum(N)", sum(gq%N(:, q))           ! Verified that sum = 1
+                write(*,*) "sum(dN/dx)", sum(gq%dNdx(:, q))    ! Verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dy)", sum(gq%dNdy(:, q))    ! Verified that sum = 0 (within roundoff)
+            endif
+
+        end do
 
         return
 
@@ -56,7 +86,9 @@ contains
         ! Local variables
         integer :: nx, ny, q
         real(8) :: u1, u2, u3, u4               ! Values of u at the four corners of the cell
-
+        real(8) :: ux1, ux2, ux3, ux4           ! Derivatives du/dx at the four corners of the cell
+        real(8) :: uy1, uy2, uy3, uy4           ! Derivatives du/dy at the four corners of the cell
+        
         nx = size(u,1)
         ny = size(u,2)
 
@@ -85,10 +117,21 @@ contains
                 stop
         end select
 
+if (.TRUE.) then
         ! Compute function values at quadrature points
         do q = 1, 4
-            f(q) = gq%N(q,1) * u1 + gq%N(q,2) * u2 + gq%N(q,3) * u3 + gq%N(q,4) * u4
+            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4
         end do
+
+else
+        ! Compute function values at quadrature points with Jacobian transformation
+        do q = 1, 4
+            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
+                gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
+                gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4
+        end do
+
+end if
 
         return
         
