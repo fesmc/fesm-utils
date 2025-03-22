@@ -5,6 +5,88 @@ module gaussian_quadrature
 
     implicit none
     
+    logical :: verbose_init = .true. 
+    logical, parameter :: check_symmetry = .true.   ! if true, then check symmetry of assembled matrix
+
+    !----------------------------------------------------------------
+    ! Finite element properties
+    ! Assume 3D hexahedral elements.
+    !----------------------------------------------------------------
+
+    real(dp), parameter :: rsqrt3 = 1.d0/sqrt(3.d0)     ! for quadrature points
+    
+    ! 3D
+    integer, parameter :: nNodesPerElement_3d = 8       ! 8 nodes for hexahedral elements
+    integer, parameter :: nQuadPoints_3d = 8            ! number of quadrature points per hexahedral element
+                                                        ! These live at +- 1/sqrt(3) for reference hexahedron
+    integer, parameter :: nNodeNeighbors_3d = 27        ! number of nearest node neighbors in 3D (including the node itself)
+
+    ! 2D
+    integer, parameter :: nNodesPerElement_2d = 4       ! 4 nodes for faces of hexahedral elements
+    integer, parameter :: nQuadPoints_2d = 4            ! number of quadrature points per element face
+                                                        ! These live at +- 1/sqrt(3) for reference square
+    integer, parameter :: nNodeNeighbors_2d = 9         ! number of nearest node neighbors in 2D (including the node itself)
+
+    !----------------------------------------------------------------
+    ! Arrays used for finite-element calculations
+    !
+    ! Most integals are done over 3D hexahedral elements.
+    ! Surface integrals are done over 2D faces of these elements. 
+    !----------------------------------------------------------------
+
+    real(dp), dimension(nNodesPerElement_3d, nQuadPoints_3d) ::   & 
+       phi_3d,         &    ! trilinear basis function, evaluated at quad pts
+       dphi_dxr_3d,    &    ! dphi/dx for reference hexehedral element, evaluated at quad pts
+       dphi_dyr_3d,    &    ! dphi/dy for reference hexahedral element, evaluated at quad pts
+       dphi_dzr_3d          ! dphi/dy for reference hexahedral element, evaluated at quad pts
+
+    real(dp), dimension(nNodesPerElement_3d) ::   & 
+       phi_3d_ctr,         &! trilinear basis function, evaluated at cell ctr
+       dphi_dxr_3d_ctr,    &! dphi/dx for reference hexahedral element, evaluated at cell ctr
+       dphi_dyr_3d_ctr,    &! dphi/dy for reference hexahedral element, evaluated at cell ctr
+       dphi_dzr_3d_ctr      ! dphi/dz for reference hexahedral element, evaluated at cell ctr
+
+    real(dp), dimension(nQuadPoints_3d) ::  &
+       xqp_3d, yqp_3d, zqp_3d,  &! quad pt coordinates in reference element
+       wqp_3d                    ! quad pt weights
+
+    real(dp), dimension(nNodesPerElement_2d, nQuadPoints_2d) ::   & 
+       phi_2d,         &    ! bilinear basis function, evaluated at quad pts
+       dphi_dxr_2d,    &    ! dphi/dx for reference rectangular element, evaluated at quad pts
+       dphi_dyr_2d          ! dphi/dy for reference rectangular element, evaluated at quad pts
+
+    real(dp), dimension(nNodesPerElement_2d) ::   & 
+       phi_2d_ctr,         &! bilinear basis function, evaluated at cell ctr
+       dphi_dxr_2d_ctr,    &! dphi/dx for reference rectangular element, evaluated at cell ctr
+       dphi_dyr_2d_ctr      ! dphi/dy for reference rectangular element, evaluated at cell ctr
+
+    real(dp), dimension(nQuadPoints_2d) ::  &
+       xqp_2d, yqp_2d, &    ! quad pt coordinates in reference square
+       wqp_2d               ! quad pt weights
+
+    integer, dimension(nNodesPerElement_3d, nNodesPerElement_3d) ::  &
+       ishift, jshift, kshift   ! matrices describing relative indices of nodes in an element
+
+    integer, dimension(-1:1,-1:1,-1:1) :: &
+       indxA_3d              ! maps relative (x,y,z) coordinates to an index between 1 and 27
+                             ! index order is (i,j,k)
+
+    integer, dimension(-1:1,-1:1) :: &
+       indxA_2d              ! maps relative (x,y) coordinates to an index between 1 and 9
+                             ! index order is (i,j)
+
+    real(dp), dimension(3,3) ::  &
+       identity3             ! 3 x 3 identity matrix
+
+    real(dp) :: vol0    ! volume scale (m^3), used to scale 3D matrix values
+
+    !WHL - debug for efvs
+    real(dp), dimension(nNodesPerElement_3d, nQuadPoints_2d) ::   & 
+       phi_3d_vav,         &! vertical avg of phi_3d
+       dphi_dxr_3d_vav,    &! vertical avg of dphi_dxr_3d
+       dphi_dyr_3d_vav,    &! vertical avg of dphi_dyr_3d
+       dphi_dzr_3d_vav      ! vertical avg of dphi_dzr_3d
+
     type gq2D_class
         real(8) :: xi(4)
         real(8) :: eta(4)
@@ -31,6 +113,9 @@ module gaussian_quadrature
 
     public :: gq3D_class
     public :: gq3D_init
+
+    public :: gaussian_quadrature_init
+
 contains
 
     subroutine gq2D_init(gq)
@@ -289,5 +374,390 @@ end if
         return
         
     end subroutine gq3D_to_nodes
+
+
+! == Directly from CISM2.1 ==
+
+  subroutine gaussian_quadrature_init
+
+    !----------------------------------------------------------------
+    ! Initial calculations for glissade higher-order solver.
+    !----------------------------------------------------------------
+
+    integer :: i, j, k, m, n, p
+    integer :: pplus
+    real(dp) :: xctr, yctr, zctr
+    real(dp) :: sumx, sumy, sumz
+
+    !----------------------------------------------------------------
+    ! Initialize some time-independent finite element arrays
+    !----------------------------------------------------------------
+
+    !----------------------------------------------------------------
+    ! Trilinear basis set for reference hexahedron, x=(-1,1), y=(-1,1), z=(-1,1)             
+    ! Indexing is counter-clockwise from SW corner, with 1-4 on lower surface
+    !  and 5-8 on upper surface
+    ! The code uses "phi_3d" to denote these basis functions. 
+    !
+    ! N1 = (1-x)*(1-y)*(1-z)/8             N4----N3
+    ! N2 = (1+x)*(1-y)*(1-z)/8             |     |    Lower layer        
+    ! N3 = (1+x)*(1+y)*(1-z)/8             |     |
+    ! N4 = (1-x)*(1+y)*(1-z)/8             N1----N2
+
+    ! N5 = (1-x)*(1-y)*(1+z)/8             N8----N7
+    ! N6 = (1+x)*(1-y)*(1+z)/8             |     |    Upper layer
+    ! N7 = (1+x)*(1+y)*(1+z)/8             |     |
+    ! N8 = (1-x)*(1+y)*(1+z)/8             N5----N6
+    !----------------------------------------------------------------
+   
+    ! Set coordinates and weights of quadrature points for reference hexahedral element.
+    ! Numbering is counter-clockwise from southwest, lower face (1-4) followed by
+    !  upper face (5-8).
+
+    xqp_3d(1) = -rsqrt3; yqp_3d(1) = -rsqrt3; zqp_3d(1) = -rsqrt3
+    wqp_3d(1) =  1.d0
+
+    xqp_3d(2) =  rsqrt3; yqp_3d(2) = -rsqrt3; zqp_3d(2) = -rsqrt3
+    wqp_3d(2) =  1.d0
+
+    xqp_3d(3) =  rsqrt3; yqp_3d(3) =  rsqrt3; zqp_3d(3) = -rsqrt3
+    wqp_3d(3) =  1.d0
+
+    xqp_3d(4) = -rsqrt3; yqp_3d(4) =  rsqrt3; zqp_3d(4) = -rsqrt3
+    wqp_3d(4) =  1.d0
+
+    xqp_3d(5) = -rsqrt3; yqp_3d(5) = -rsqrt3; zqp_3d(5) =  rsqrt3
+    wqp_3d(5) =  1.d0
+
+    xqp_3d(6) =  rsqrt3; yqp_3d(6) = -rsqrt3; zqp_3d(6) =  rsqrt3
+    wqp_3d(6) =  1.d0
+
+    xqp_3d(7) =  rsqrt3; yqp_3d(7) =  rsqrt3; zqp_3d(7) =  rsqrt3
+    wqp_3d(7) =  1.d0
+
+    xqp_3d(8) = -rsqrt3; yqp_3d(8) =  rsqrt3; zqp_3d(8) =  rsqrt3
+    wqp_3d(8) =  1.d0
+
+    if (verbose_init) then
+       print*, ' '
+       print*, 'Hexahedral elements, quad points, x, y, z:'
+       sumx = 0.d0; sumy = 0.d0; sumz = 0.d0
+       do p = 1, nQuadPoints_3d
+          print*, p, xqp_3d(p), yqp_3d(p), zqp_3d(p)
+          sumx = sumx + xqp_3d(p); sumy = sumy + yqp_3d(p); sumz = sumz + zqp_3d(p)
+       enddo
+       print*, ' '
+       print*, 'sums:', sumx, sumy, sumz
+    endif
+
+    ! Evaluate trilinear basis functions and their derivatives at each quad pt
+
+    do p = 1, nQuadPoints_3d
+
+       phi_3d(1,p) = (1.d0 - xqp_3d(p)) * (1.d0 - yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0
+       phi_3d(2,p) = (1.d0 + xqp_3d(p)) * (1.d0 - yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0
+       phi_3d(3,p) = (1.d0 + xqp_3d(p)) * (1.d0 + yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0
+       phi_3d(4,p) = (1.d0 - xqp_3d(p)) * (1.d0 + yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0
+       phi_3d(5,p) = (1.d0 - xqp_3d(p)) * (1.d0 - yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0
+       phi_3d(6,p) = (1.d0 + xqp_3d(p)) * (1.d0 - yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0
+       phi_3d(7,p) = (1.d0 + xqp_3d(p)) * (1.d0 + yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0
+       phi_3d(8,p) = (1.d0 - xqp_3d(p)) * (1.d0 + yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0
+
+       dphi_dxr_3d(1,p) = -(1.d0 - yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(2,p) =  (1.d0 - yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(3,p) =  (1.d0 + yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(4,p) = -(1.d0 + yqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0
+       dphi_dxr_3d(5,p) = -(1.d0 - yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(6,p) =  (1.d0 - yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(7,p) =  (1.d0 + yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dxr_3d(8,p) = -(1.d0 + yqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0
+
+       dphi_dyr_3d(1,p) = -(1.d0 - xqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(2,p) = -(1.d0 + xqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(3,p) =  (1.d0 + xqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(4,p) =  (1.d0 - xqp_3d(p)) * (1.d0 - zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(5,p) = -(1.d0 - xqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(6,p) = -(1.d0 + xqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(7,p) =  (1.d0 + xqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+       dphi_dyr_3d(8,p) =  (1.d0 - xqp_3d(p)) * (1.d0 + zqp_3d(p)) / 8.d0 
+
+       dphi_dzr_3d(1,p) = -(1.d0 - xqp_3d(p)) * (1.d0 - yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(2,p) = -(1.d0 + xqp_3d(p)) * (1.d0 - yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(3,p) = -(1.d0 + xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(4,p) = -(1.d0 - xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(5,p) =  (1.d0 - xqp_3d(p)) * (1.d0 - yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(6,p) =  (1.d0 + xqp_3d(p)) * (1.d0 - yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(7,p) =  (1.d0 + xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
+       dphi_dzr_3d(8,p) =  (1.d0 - xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
+
+       if (verbose_init) then
+          print*, ' '
+          print*, 'Quad point, p =', p
+          print*, 'n, phi_3d, dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d:'
+          do n = 1, 8
+             print*, n, phi_3d(n,p), dphi_dxr_3d(n,p), dphi_dyr_3d(n,p), dphi_dzr_3d(n,p)
+          enddo
+          print*, ' '
+          print*, 'sum(phi_3d)', sum(phi_3d(:,p))  ! verified that sum = 1
+          print*, 'sum(dphi/dx)', sum(dphi_dxr_3d(:,p))  ! verified that sum = 0 (within roundoff)
+          print*, 'sum(dphi/dy)', sum(dphi_dyr_3d(:,p))  ! verified that sum = 0 (within roundoff)
+          print*, 'sum(dphi/dz)', sum(dphi_dzr_3d(:,p))  ! verified that sum = 0 (within roundoff)
+       endif
+
+    enddo   ! nQuadPoints_3d
+
+    ! Evaluate trilinear basis functions and their derivatives at cell center
+    ! Full formulas are not really needed at (x,y,z) = (0,0,0), but are included for completeness
+
+    xctr = 0.d0
+    yctr = 0.d0
+    zctr = 0.d0
+
+    phi_3d_ctr(1) = (1.d0 - xctr) * (1.d0 - yctr) * (1.d0 - zctr) / 8.d0
+    phi_3d_ctr(2) = (1.d0 + xctr) * (1.d0 - yctr) * (1.d0 - zctr) / 8.d0
+    phi_3d_ctr(3) = (1.d0 + xctr) * (1.d0 + yctr) * (1.d0 - zctr) / 8.d0
+    phi_3d_ctr(4) = (1.d0 - xctr) * (1.d0 + yctr) * (1.d0 - zctr) / 8.d0
+    phi_3d_ctr(5) = (1.d0 - xctr) * (1.d0 - yctr) * (1.d0 + zctr) / 8.d0
+    phi_3d_ctr(6) = (1.d0 + xctr) * (1.d0 - yctr) * (1.d0 + zctr) / 8.d0
+    phi_3d_ctr(7) = (1.d0 + xctr) * (1.d0 + yctr) * (1.d0 + zctr) / 8.d0
+    phi_3d_ctr(8) = (1.d0 - xctr) * (1.d0 + yctr) * (1.d0 + zctr) / 8.d0
+    
+    dphi_dxr_3d_ctr(1) = -(1.d0 - yctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dxr_3d_ctr(2) =  (1.d0 - yctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dxr_3d_ctr(3) =  (1.d0 + yctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dxr_3d_ctr(4) = -(1.d0 + yctr) * (1.d0 - zctr) / 8.d0
+    dphi_dxr_3d_ctr(5) = -(1.d0 - yctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dxr_3d_ctr(6) =  (1.d0 - yctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dxr_3d_ctr(7) =  (1.d0 + yctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dxr_3d_ctr(8) = -(1.d0 + yctr) * (1.d0 + zctr) / 8.d0
+    
+    dphi_dyr_3d_ctr(1) = -(1.d0 - xctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dyr_3d_ctr(2) = -(1.d0 + xctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dyr_3d_ctr(3) =  (1.d0 + xctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dyr_3d_ctr(4) =  (1.d0 - xctr) * (1.d0 - zctr) / 8.d0 
+    dphi_dyr_3d_ctr(5) = -(1.d0 - xctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dyr_3d_ctr(6) = -(1.d0 + xctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dyr_3d_ctr(7) =  (1.d0 + xctr) * (1.d0 + zctr) / 8.d0 
+    dphi_dyr_3d_ctr(8) =  (1.d0 - xctr) * (1.d0 + zctr) / 8.d0 
+    
+    dphi_dzr_3d_ctr(1) = -(1.d0 - xctr) * (1.d0 - yctr) / 8.d0 
+    dphi_dzr_3d_ctr(2) = -(1.d0 + xctr) * (1.d0 - yctr) / 8.d0 
+    dphi_dzr_3d_ctr(3) = -(1.d0 + xctr) * (1.d0 + yctr) / 8.d0 
+    dphi_dzr_3d_ctr(4) = -(1.d0 - xctr) * (1.d0 + yctr) / 8.d0 
+    dphi_dzr_3d_ctr(5) =  (1.d0 - xctr) * (1.d0 - yctr) / 8.d0 
+    dphi_dzr_3d_ctr(6) =  (1.d0 + xctr) * (1.d0 - yctr) / 8.d0 
+    dphi_dzr_3d_ctr(7) =  (1.d0 + xctr) * (1.d0 + yctr) / 8.d0 
+    dphi_dzr_3d_ctr(8) =  (1.d0 - xctr) * (1.d0 + yctr) / 8.d0 
+
+    ! Identity matrix
+    identity3(1,:) = (/ 1.d0, 0.d0, 0.d0 /)
+    identity3(2,:) = (/ 0.d0, 1.d0, 0.d0 /)
+    identity3(3,:) = (/ 0.d0, 0.d0, 1.d0 /)
+
+    ! Initialize some matrices that describe how the i, j and k indices of each node
+    ! in each element are related to one another.
+
+    ! The ishift matrix describes how the i indices of the 8 nodes are related to one another.
+    ! E.g, if ishift (1,2) = 1, this means that node 2 has an i index
+    ! one greater than the i index of node 1.
+
+    ishift(1,:) = (/ 0,  1,  1,  0,  0,  1,  1,  0/)   
+    ishift(2,:) = (/-1,  0,  0, -1, -1,  0,  0, -1/)   
+    ishift(3,:) = ishift(2,:)
+    ishift(4,:) = ishift(1,:)
+    ishift(5,:) = ishift(1,:)
+    ishift(6,:) = ishift(2,:)
+    ishift(7,:) = ishift(2,:)
+    ishift(8,:) = ishift(1,:)
+
+    ! The jshift matrix describes how the j indices of the 8 nodes are related to one another.
+    ! E.g, if jshift (1,4) = 1, this means that node 4 has a j index
+    ! one greater than the j index of node 1.
+
+    jshift(1,:) = (/ 0,  0,  1,  1,  0,  0,  1,  1/)   
+    jshift(2,:) = jshift(1,:)
+    jshift(3,:) = (/-1, -1,  0,  0, -1, -1,  0,  0/)   
+    jshift(4,:) = jshift(3,:)
+    jshift(5,:) = jshift(1,:)
+    jshift(6,:) = jshift(1,:)
+    jshift(7,:) = jshift(3,:)
+    jshift(8,:) = jshift(3,:)
+
+    ! The kshift matrix describes how the k indices of the 8 nodes are related to one another.
+    ! E.g, if kshift (1,5) = -1, this means that node 5 has a k index
+    ! one less than the k index of node 1.  (Assume that k increases downward.)
+
+    kshift(1,:) = (/ 0,  0,  0,  0, -1, -1, -1, -1/)   
+    kshift(2,:) = kshift(1,:)
+    kshift(3,:) = kshift(1,:)
+    kshift(4,:) = kshift(1,:)
+    kshift(5,:) = (/ 1,  1,  1,  1,  0,  0,  0,  0/)
+    kshift(6,:) = kshift(5,:)
+    kshift(7,:) = kshift(5,:)
+    kshift(8,:) = kshift(5,:)
+
+    if (verbose_init) then
+       print*, ' '
+       print*, 'ishift:'
+       do n = 1, 8
+          write (6,'(8i4)') ishift(n,:)
+       enddo
+       print*, ' '
+       print*, 'jshift:'
+       do n = 1, 8
+          write (6,'(8i4)') jshift(n,:)
+       enddo
+       print*, ' '
+       print*, 'kshift:'
+       do n = 1, 8
+          write (6,'(8i4)') kshift(n,:)
+       enddo
+    endif
+
+    !----------------------------------------------------------------
+    ! Bilinear basis set for reference square, x=(-1,1), y=(-1,1)             
+    ! Indexing is counter-clockwise from SW corner
+    ! The code uses "phi_2d" to denote these basis functions. 
+    !
+    ! N1 = (1-x)*(1-y)/4             N4----N3
+    ! N2 = (1+x)*(1-y)/4             |     |
+    ! N3 = (1+x)*(1+y)/4             |     |
+    ! N4 = (1-x)*(1+y)/4             N1----N2
+    !----------------------------------------------------------------
+
+    ! Set coordinates and weights of quadrature points for reference square.
+    ! Numbering is counter-clockwise from southwest
+
+    xqp_2d(1) = -rsqrt3; yqp_2d(1) = -rsqrt3
+    wqp_2d(1) =  1.d0
+
+    xqp_2d(2) =  rsqrt3; yqp_2d(2) = -rsqrt3
+    wqp_2d(2) =  1.d0
+
+    xqp_2d(3) =  rsqrt3; yqp_2d(3) =  rsqrt3
+    wqp_2d(3) =  1.d0
+
+    xqp_2d(4) = -rsqrt3; yqp_2d(4) =  rsqrt3
+    wqp_2d(4) =  1.d0
+
+    if (verbose_init) then
+       print*, ' '
+       print*, ' '
+       print*, 'Quadrilateral elements, quad points, x, y:'
+       sumx = 0.d0; sumy = 0.d0; sumz = 0.d0
+       do p = 1, nQuadPoints_2d
+          print*, p, xqp_2d(p), yqp_2d(p)
+          sumx = sumx + xqp_2d(p); sumy = sumy + yqp_2d(p)
+       enddo
+       print*, ' '
+       print*, 'sumx, sumy:', sumx, sumy
+    endif
+
+    ! Evaluate bilinear basis functions and their derivatives at each quad pt
+
+    do p = 1, nQuadPoints_2d
+
+       phi_2d(1,p) = (1.d0 - xqp_2d(p)) * (1.d0 - yqp_2d(p)) / 4.d0 
+       phi_2d(2,p) = (1.d0 + xqp_2d(p)) * (1.d0 - yqp_2d(p)) / 4.d0
+       phi_2d(3,p) = (1.d0 + xqp_2d(p)) * (1.d0 + yqp_2d(p)) / 4.d0 
+       phi_2d(4,p) = (1.d0 - xqp_2d(p)) * (1.d0 + yqp_2d(p)) / 4.d0
+
+       dphi_dxr_2d(1,p) = -(1.d0 - yqp_2d(p)) / 4.d0 
+       dphi_dxr_2d(2,p) =  (1.d0 - yqp_2d(p)) / 4.d0 
+       dphi_dxr_2d(3,p) =  (1.d0 + yqp_2d(p)) / 4.d0 
+       dphi_dxr_2d(4,p) = -(1.d0 + yqp_2d(p)) / 4.d0
+
+       dphi_dyr_2d(1,p) = -(1.d0 - xqp_2d(p)) / 4.d0 
+       dphi_dyr_2d(2,p) = -(1.d0 + xqp_2d(p)) / 4.d0 
+       dphi_dyr_2d(3,p) =  (1.d0 + xqp_2d(p)) / 4.d0 
+       dphi_dyr_2d(4,p) =  (1.d0 - xqp_2d(p)) / 4.d0 
+
+       if (verbose_init) then
+          print*, ' '
+          print*, 'Quad point, p =', p
+          print*, 'n, phi_2d, dphi_dxr_2d, dphi_dyr_2d:'
+          do n = 1, 4
+             print*, n, phi_2d(n,p), dphi_dxr_2d(n,p), dphi_dyr_2d(n,p)
+          enddo
+          print*, 'sum(phi_2d)', sum(phi_2d(:,p))        ! verified that sum = 1
+          print*, 'sum(dphi/dx_2d)', sum(dphi_dxr_2d(:,p))  ! verified that sum = 0 (within roundoff)
+          print*, 'sum(dphi/dy_2d)', sum(dphi_dyr_2d(:,p))  ! verified that sum = 0 (within roundoff)
+       endif
+
+    enddo   ! nQuadPoints_2d
+
+    ! Evaluate bilinear basis functions and their derivatives at cell center
+    ! Full formulas are not really needed at (x,y) = (0,0), but are included for completeness
+
+    xctr = 0.d0
+    yctr = 0.d0
+
+    phi_2d_ctr(1) = (1.d0 - xctr) * (1.d0 - yctr) / 4.d0 
+    phi_2d_ctr(2) = (1.d0 + xctr) * (1.d0 - yctr) / 4.d0
+    phi_2d_ctr(3) = (1.d0 + xctr) * (1.d0 + yctr) / 4.d0 
+    phi_2d_ctr(4) = (1.d0 - xctr) * (1.d0 + yctr) / 4.d0
+    
+    dphi_dxr_2d_ctr(1) = -(1.d0 - yctr) / 4.d0 
+    dphi_dxr_2d_ctr(2) =  (1.d0 - yctr) / 4.d0 
+    dphi_dxr_2d_ctr(3) =  (1.d0 + yctr) / 4.d0 
+    dphi_dxr_2d_ctr(4) = -(1.d0 + yctr) / 4.d0
+
+    dphi_dyr_2d_ctr(1) = -(1.d0 - xctr) / 4.d0 
+    dphi_dyr_2d_ctr(2) = -(1.d0 + xctr) / 4.d0 
+    dphi_dyr_2d_ctr(3) =  (1.d0 + xctr) / 4.d0 
+    dphi_dyr_2d_ctr(4) =  (1.d0 - xctr) / 4.d0 
+
+    !----------------------------------------------------------------
+    ! Compute indxA_3d; maps displacements i,j,k = (-1,0,1) onto an index from 1 to 27
+    ! Numbering starts in SW corner of layers k-1, finishes in NE corner of layer k+1
+    ! Diagonal term has index 14
+    !----------------------------------------------------------------
+
+    ! Layer k-1:           Layer k:            Layer k+1:
+    !
+    !   7    8    9          16   17   18        25   26   27 
+    !   4    5    6          13   14   15        22   23   24
+    !   1    2    3          10   11   12        19   20   21                                                                                               
+
+    m = 0
+    do k = -1,1
+       do j = -1,1
+          do i = -1,1
+             m = m + 1
+             indxA_3d(i,j,k) = m
+          enddo
+       enddo
+    enddo
+
+    !----------------------------------------------------------------
+    ! Compute indxA_2d; maps displacements i,j = (-1,0,1) onto an index from 1 to 9
+    ! Same as indxA_3d, but for a single layer
+    !----------------------------------------------------------------
+
+    m = 0
+    do j = -1,1
+       do i = -1,1
+          m = m + 1
+          indxA_2d(i,j) = m
+       enddo
+    enddo
+
+    !WHL - debug for efvs
+
+    ! Evaluate vertical averages of dphi_dxr_3d, dphi_dyr_3d and dphi_dzr_3d at each 2d quad pts.
+    ! Using these instead of the full 3d basis functions can result in similar accuracy with
+    !  only half as many QP computations.
+
+    do p = 1, nQuadPoints_2d
+       pplus = p + nQuadPoints_3d/2  ! p + 4 for hexahedra
+       do n = 1, nNodesPerElement_3d
+          phi_3d_vav(n,p) = 0.5d0 * (phi_3d(n,p) + phi_3d(n,pplus))
+          dphi_dxr_3d_vav(n,p) = 0.5d0 * (dphi_dxr_3d(n,p) + dphi_dxr_3d(n,pplus))
+          dphi_dyr_3d_vav(n,p) = 0.5d0 * (dphi_dyr_3d(n,p) + dphi_dyr_3d(n,pplus))
+          dphi_dzr_3d_vav(n,p) = 0.5d0 * (dphi_dzr_3d(n,p) + dphi_dzr_3d(n,pplus))
+       enddo
+    enddo
+
+  end subroutine gaussian_quadrature_init
 
 end module gaussian_quadrature
