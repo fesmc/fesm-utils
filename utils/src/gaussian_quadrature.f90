@@ -395,7 +395,7 @@ end if
         integer,  intent(IN)  :: i
         integer,  intent(IN)  :: j
         character(len=*), intent(IN) :: grid_type
-        
+
         ! Local variables
 
         integer :: q, n, p 
@@ -425,44 +425,48 @@ end if
         !     1-----2       ---> x
 
         ! Compute values of u at the four cell corners
+        
+        ! First get x and y values (xx and yy defined on aa-nodes)
+        
+        x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
+        x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
+        x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
+        x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
 
+        y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
+        y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
+        y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
+        y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
+        
         select case(trim(grid_type))
 
             case("aa")
-                x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
-                x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
-                x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
-                x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
 
-                y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
-                y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
-                y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
-                y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
-                
                 v(1) = 0.25d0 * (var(i-1, j-1) + var(i, j-1) + var(i-1, j) + var(i, j))  ! Bottom-left
                 v(2) = 0.25d0 * (var(i, j-1) + var(i+1, j-1) + var(i, j) + var(i+1, j))  ! Bottom-right
                 v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
                 v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
+            
             case("acx")
                 
-                ! xx, yy: to do
-
                 v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
                 v(2) = 0.5d0 * (var(i, j-1) + var(i, j))          ! Bottom-right
                 v(3) = 0.5d0 * (var(i, j) + var(i, j+1))          ! Top-right
                 v(4) = 0.5d0 * (var(i-1, j) + var(i-1, j+1))      ! Top-left
+            
             case("acy")
-
-                ! xx, yy: to do 
 
                 v(1) = 0.5d0 * (var(i-1, j-1) + var(i, j-1))      ! Bottom-left
                 v(2) = 0.5d0 * (var(i, j-1) + var(i+1, j-1))      ! Bottom-right
                 v(3) = 0.5d0 * (var(i, j) + var(i+1, j))          ! Top-right
                 v(4) = 0.5d0 * (var(i-1, j) + var(i, j))          ! Top-left
+
             case DEFAULT
+
                 write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
                 stop
+        
         end select
 
         ! Loop over quadrature points for this element
