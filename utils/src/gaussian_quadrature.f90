@@ -6,7 +6,12 @@ module gaussian_quadrature
     implicit none
     
     logical :: verbose_init = .true. 
-    logical, parameter :: check_symmetry = .true.   ! if true, then check symmetry of assembled matrix
+    logical :: verbose_jac  = .false.
+    logical, parameter :: check_symmetry = .true.       ! if true, then check symmetry of assembled matrix
+
+    integer :: itest, jtest, ktest                      ! coordinates of diagnostic point
+    integer, parameter :: rtest = -9999                 ! task number for processor containing diagnostic point
+    integer, parameter :: this_rank = 0
 
     !----------------------------------------------------------------
     ! Finite element properties
@@ -106,16 +111,18 @@ module gaussian_quadrature
     end type
 
 
-    private
-    public :: gq2D_class
-    public :: gq2D_init
-    public :: gq2D_to_nodes
+    ! private
+    ! public :: gq2D_class
+    ! public :: gq2D_init
+    ! public :: gq2D_to_nodes
 
-    public :: gq3D_class
-    public :: gq3D_init
+    ! public :: gq3D_class
+    ! public :: gq3D_init
 
-    public :: gaussian_quadrature_init
-
+    ! public :: gaussian_quadrature_init
+    ! public :: gaussian_quadrature_2D_to_nodes
+    public
+    
 contains
 
     subroutine gq2D_init(gq)
@@ -375,10 +382,94 @@ end if
         
     end subroutine gq3D_to_nodes
 
+! == Using CISM2.1 methods and variables ==
+
+subroutine gaussian_quadrature_2D_to_nodes(var_qp,var,xx,yy,i,j)
+
+    implicit none
+
+    real(wp), intent(OUT) :: var_qp(:)
+    real(wp), intent(IN)  :: var(:,:)
+    real(wp), intent(IN)  :: xx(:,:)
+    real(wp), intent(IN)  :: yy(:,:)
+    integer,  intent(IN)  :: i
+    integer,  intent(IN)  :: j
+    
+    ! Local variables
+
+    integer :: q, n, p 
+    real(dp), allocatable :: x(:)
+    real(dp), allocatable :: y(:)
+    real(dp), allocatable :: v(:)
+
+    real(dp), dimension(nQuadPoints_2d) :: detJ                 ! determinant of J
+
+    ! derivatives of basis function, evaluated at quad pts
+    ! set dphi_dz = 0 for 2D problem
+    real(dp) :: dphi_dx_2d(nNodesPerElement_2d)
+    real(dp) :: dphi_dy_2d(nNodesPerElement_2d)
+    real(dp) :: dphi_dz_2d(nNodesPerElement_2d)
+                                           
+    ! Step 1: determine x and y values of input array values
+
+    ! Map xc,yc onto x,y vectors. Account for whether input
+    ! variable is on aa, acx or acy grid. Account for boundary
+    ! conditions (periodic, etc)
+
+    ! Set x and y for each node
+
+    !     4-----3       y
+    !     |     |       ^
+    !     |     |       |
+    !     1-----2       ---> x
+
+    x(1) = xx(i-1,j-1)
+    x(2) = xx(i,j-1)
+    x(3) = xx(i,j)
+    x(4) = xx(i-1,j)
+
+    y(1) = yy(i-1,j-1)
+    y(2) = yy(i,j-1)
+    y(3) = yy(i,j)
+    y(4) = yy(i-1,j)
+
+    v(1) = var(i-1,j-1)
+    v(2) = var(i,j-1)
+    v(3) = var(i,j)
+    v(4) = var(i-1,j)
+
+    ! Loop over quadrature points for this element
+   
+    do p = 1, nQuadPoints_2d
+
+        ! Compute basis function derivatives and det(J) for this quadrature point
+        ! For now, pass in i, j, k, p for debugging
+        !TODO - Modify this subroutine so that the output derivatives are optional?
+
+        call get_basis_function_derivatives_2d(x(:),             y(:),               &
+                                                dphi_dxr_2d(:,p), dphi_dyr_2d(:,p),   &
+                                                dphi_dx_2d(:),    dphi_dy_2d(:),      &
+                                                detJ(p),                                 &
+                                                itest, jtest, rtest,                  &
+                                                i, j, p)
+
+        dphi_dz_2d(:) = 0.d0
+
+        ! Evaluate var at this quadrature point, taking a phi-weighted sum over neighboring vertices.
+        var_qp = 0.d0
+        do n = 1, nNodesPerElement_2d
+            var_qp = var_qp + phi_2d(n,p) * v(n)
+        end do
+    
+    end do
+
+    return
+
+end subroutine gaussian_quadrature_2D_to_nodes
 
 ! == Directly from CISM2.1 ==
 
-  subroutine gaussian_quadrature_init
+  subroutine gaussian_quadrature_init()
 
     !----------------------------------------------------------------
     ! Initial calculations for glissade higher-order solver.
@@ -759,5 +850,430 @@ end if
     enddo
 
   end subroutine gaussian_quadrature_init
+
+!****************************************************************************
+
+  subroutine get_basis_function_derivatives_3d(xNode,       yNode,       zNode,       &
+                                               dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d, &
+                                               dphi_dx_3d,  dphi_dy_3d,  dphi_dz_3d,  &
+                                               detJ,                                  &
+                                               itest, jtest, rtest,                   &
+                                               i, j, k, p)
+
+    !------------------------------------------------------------------
+    ! Evaluate the x, y and z derivatives of the element basis functions
+    ! at a particular quadrature point.
+    !
+    ! Also determine the Jacobian of the transformation between the
+    ! reference element and the true element.
+    ! 
+    ! This subroutine should work for any 3D element with any number of nodes.
+    !------------------------------------------------------------------
+ 
+    real(dp), dimension(nNodesPerElement_3d), intent(in) :: &
+       xNode, yNode, zNode,          &! nodal coordinates
+       dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d   ! derivatives of basis functions at quad pt
+                                               !  wrt x, y and z in reference element
+
+    real(dp), dimension(nNodesPerElement_3d), intent(out) :: &
+       dphi_dx_3d, dphi_dy_3d, dphi_dz_3d      ! derivatives of basis functions at quad pt
+                                               !  wrt x, y and z in true Cartesian coordinates  
+
+    real(dp), intent(out) :: &
+         detJ      ! determinant of Jacobian matrix
+
+    real(dp), dimension(3,3) ::  &
+         Jac,      &! Jacobian matrix
+         Jinv,     &! inverse Jacobian matrix
+         cofactor   ! matrix of cofactors
+
+    integer, intent(in) :: &
+       itest, jtest, rtest              ! coordinates of diagnostic point
+
+    integer, intent(in) :: i, j, k, p   ! indices passed in for debugging
+
+    integer :: n, row, col
+
+    logical, parameter :: Jac_bug_check = .false.   ! set to true for debugging
+    real(dp), dimension(3,3) :: prod     ! Jac * Jinv (should be identity matrix)
+
+    !------------------------------------------------------------------
+    ! Compute the Jacobian for the transformation from the reference
+    ! coordinates to the true coordinates:
+    !
+    !                 |                                                                          |
+    !                 | sum_n{dphi_n/dxr * xn}   sum_n{dphi_n/dxr * yn}   sum_n{dphi_n/dxr * zn} |
+    !   J(xr,yr,zr) = |                                                                          |
+    !                 | sum_n{dphi_n/dyr * xn}   sum_n{dphi_n/dyr * yn}   sum_n{dphi_n/dyr * zn} |
+    !                 |                                                                          |
+    !                 | sum_n{dphi_n/dzr * xn}   sum_n{dphi_n/dzr * yn}   sum_n{dphi_n/dzr * zn} |
+    !                 !                                                                          |
+    !
+    ! where (xn,yn,zn) are the true Cartesian nodal coordinates,
+    !       (xr,yr,zr) are the coordinates of the quad point in the reference element,
+    !       and sum_n denotes a sum over nodes.
+    !------------------------------------------------------------------
+
+    if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest .and. k==ktest) then
+       print*, ' '
+       print*, 'In get_basis_function_derivatives_3d: i, j, k, p =', i, j, k, p
+    endif
+
+    Jac(:,:) = 0.d0
+
+    do n = 1, nNodesPerElement_3d
+       Jac(1,1) = Jac(1,1) + dphi_dxr_3d(n) * xNode(n)
+       Jac(1,2) = Jac(1,2) + dphi_dxr_3d(n) * yNode(n)
+       Jac(1,3) = Jac(1,3) + dphi_dxr_3d(n) * zNode(n)
+       Jac(2,1) = Jac(2,1) + dphi_dyr_3d(n) * xNode(n)
+       Jac(2,2) = Jac(2,2) + dphi_dyr_3d(n) * yNode(n)
+       Jac(2,3) = Jac(2,3) + dphi_dyr_3d(n) * zNode(n)
+       Jac(3,1) = Jac(3,1) + dphi_dzr_3d(n) * xNode(n)
+       Jac(3,2) = Jac(3,2) + dphi_dzr_3d(n) * yNode(n)
+       Jac(3,3) = Jac(3,3) + dphi_dzr_3d(n) * zNode(n)
+    enddo
+
+    !------------------------------------------------------------------
+    ! Compute the determinant and inverse of J
+    !------------------------------------------------------------------
+
+    cofactor(1,1) =   Jac(2,2)*Jac(3,3) - Jac(2,3)*Jac(3,2)
+    cofactor(1,2) = -(Jac(2,1)*Jac(3,3) - Jac(2,3)*Jac(3,1))
+    cofactor(1,3) =   Jac(2,1)*Jac(3,2) - Jac(2,2)*Jac(3,1)
+    cofactor(2,1) = -(Jac(1,2)*Jac(3,3) - Jac(1,3)*Jac(3,2))
+    cofactor(2,2) =   Jac(1,1)*Jac(3,3) - Jac(1,3)*Jac(3,1)
+    cofactor(2,3) = -(Jac(1,1)*Jac(3,2) - Jac(1,2)*Jac(3,1))
+    cofactor(3,1) =   Jac(1,2)*Jac(2,3) - Jac(1,3)*Jac(2,2)
+    cofactor(3,2) = -(Jac(1,1)*Jac(2,3) - Jac(1,3)*Jac(2,1))
+    cofactor(3,3) =   Jac(1,1)*Jac(2,2) - Jac(1,2)*Jac(2,1)
+
+    detJ = Jac(1,1)*cofactor(1,1) + Jac(1,2)*cofactor(1,2) + Jac(1,3)*cofactor(1,3)
+
+    if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest .and. k==ktest) then
+       print*, ' '
+       print*, 'detJ1:', Jac(1,1)*cofactor(1,1) + Jac(1,2)*cofactor(1,2) + Jac(1,3)*cofactor(1,3)
+       print*, 'detJ2:', Jac(2,1)*cofactor(2,1) + Jac(2,2)*cofactor(2,2) + Jac(2,3)*cofactor(2,3)
+       print*, 'detJ3:', Jac(3,1)*cofactor(3,1) + Jac(3,2)*cofactor(3,2) + Jac(3,3)*cofactor(3,3)
+    endif
+
+    if (abs(detJ) > 0.d0) then
+       do col = 1, 3
+          do row = 1, 3
+             Jinv(row,col) = cofactor(col,row)
+          enddo
+       enddo
+       Jinv(:,:) = Jinv(:,:) / detJ
+    else
+       print*, 'stopping, det J = 0'
+       print*, 'i, j, k, p:', i, j, k, p
+       print*, 'Jacobian matrix:'
+       print*, Jac(1,:)
+       print*, Jac(2,:)
+       print*, Jac(3,:) 
+       !call write_log('Jacobian matrix is singular', GM_FATAL)
+       write(error_unit,*) 'Jacobian matrix is singular'
+       stop
+    endif
+
+    if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest .and. k==ktest) then
+       print*, ' '
+       print*, 'Jacobian calc, p =', p
+       print*, 'det J =', detJ
+       print*, ' '
+       print*, 'Jacobian matrix:'
+       print*, Jac(1,:)
+       print*, Jac(2,:)
+       print*, Jac(3,:)
+       print*, ' '
+       print*, 'cofactor matrix:'
+       print*, cofactor(1,:)
+       print*, cofactor(2,:)
+       print*, cofactor(3,:)
+       print*, ' '
+       print*, 'Inverse matrix:'
+       print*, Jinv(1,:)
+       print*, Jinv(2,:)
+       print*, Jinv(3,:)
+       print*, ' '
+       prod = matmul(Jac, Jinv)
+       print*, 'Jac*Jinv:'
+       print*, prod(1,:)
+       print*, prod(2,:)
+       print*, prod(3,:)
+    endif
+
+    ! Optional bug check: Verify that J * Jinv = I
+
+    if (Jac_bug_check) then
+       prod = matmul(Jac,Jinv)
+       do col = 1, 3
+          do row = 1, 3
+             if (abs(prod(row,col) - identity3(row,col)) > 1.d-11) then
+                print*, 'stopping, Jac * Jinv /= identity'
+                print*, 'i, j, k, p:', i, j, k, p
+                print*, 'Jac*Jinv:'
+                print*, prod(1,:)
+                print*, prod(2,:)
+                print*, prod(3,:)
+                !call write_log('Jacobian matrix was not correctly inverted', GM_FATAL)
+                write(error_unit,*) 'Jacobian matrix was not correctly inverted'
+                stop
+             endif
+          enddo
+       enddo
+    endif  ! Jac_bug_check
+
+    !------------------------------------------------------------------
+    ! Compute the contribution of this quadrature point to dphi/dx and dphi/dy
+    ! for each basis function.
+    !
+    !   | dphi_n/dx |          | dphi_n/dxr |
+    !   |           |          |            | 
+    !   | dphi_n/dy | = Jinv * | dphi_n/dyr |
+    !   |           |          |            |
+    !   | dphi_n/dz |          | dphi_n/dzr |
+    !
+    !------------------------------------------------------------------
+
+    dphi_dx_3d(:) = 0.d0
+    dphi_dy_3d(:) = 0.d0
+    dphi_dz_3d(:) = 0.d0
+
+    do n = 1, nNodesPerElement_3d
+       dphi_dx_3d(n) = Jinv(1,1)*dphi_dxr_3d(n)  &
+                     + Jinv(1,2)*dphi_dyr_3d(n)  &
+                     + Jinv(1,3)*dphi_dzr_3d(n)
+       dphi_dy_3d(n) = Jinv(2,1)*dphi_dxr_3d(n)  &
+                     + Jinv(2,2)*dphi_dyr_3d(n)  &
+                     + Jinv(2,3)*dphi_dzr_3d(n)
+       dphi_dz_3d(n) = Jinv(3,1)*dphi_dxr_3d(n)  &
+                     + Jinv(3,2)*dphi_dyr_3d(n)  &
+                     + Jinv(3,3)*dphi_dzr_3d(n)
+    enddo
+
+    if (Jac_bug_check) then
+
+       ! Check that the sum of dphi_dx, etc. is close to zero  
+
+       if (abs( sum(dphi_dx_3d)/maxval(dphi_dx_3d) ) > 1.d-11) then
+          print*, 'stopping, sum over basis functions of dphi_dx > 0'
+          print*, 'dphi_dx_3d =', dphi_dx_3d(:)
+          print*, 'sum =', sum(dphi_dx_3d)
+          print*, 'i, j, k, p =', i, j, k, p
+          !call write_log('Sum over basis functions of dphi_dx /= 0', GM_FATAL)
+          write(error_unit,*) 'Sum over basis functions of dphi_dx /= 0'
+          stop
+       endif
+
+       if (abs( sum(dphi_dy_3d)/maxval(dphi_dy_3d) ) > 1.d-11) then
+          print*, 'stopping, sum over basis functions of dphi_dy > 0'
+          print*, 'dphi_dy_3d =', dphi_dy_3d(:)
+          print*, 'sum =', sum(dphi_dy_3d)
+          print*, 'i, j, k, p =', i, j, k, p
+          !call write_log('Sum over basis functions of dphi_dy /= 0', GM_FATAL)
+          write(error_unit,*) 'Sum over basis functions of dphi_dy /= 0'
+          stop
+       endif
+
+       if (abs( sum(dphi_dz_3d)/maxval(dphi_dz_3d) ) > 1.d-11) then
+          print*, 'stopping, sum over basis functions of dphi_dz > 0'
+          print*, 'dphi_dz_3d =', dphi_dz_3d(:)
+          print*, 'sum =', sum(dphi_dz_3d)
+          print*, 'i, j, k, p =', i, j, k, p
+          !call write_log('Sum over basis functions of dphi_dz /= 0', GM_FATAL)
+          write(error_unit,*) 'Sum over basis functions of dphi_dz /= 0'
+          stop
+       endif
+
+    endif  ! Jac_bug_check
+
+  end subroutine get_basis_function_derivatives_3d
+
+!****************************************************************************
+
+  subroutine get_basis_function_derivatives_2d(xNode,       yNode,         &
+                                               dphi_dxr_2d, dphi_dyr_2d,   &
+                                               dphi_dx_2d,  dphi_dy_2d,    &
+                                               detJ,                       &
+                                               itest, jtest, rtest,        &
+                                               i, j, p)
+
+    !------------------------------------------------------------------
+    ! Evaluate the x and y derivatives of 2D element basis functions
+    ! at a particular quadrature point.
+    !
+    ! Also determine the Jacobian of the transformation between the
+    ! reference element and the true element.
+    ! 
+    ! This subroutine should work for any 2D element with any number of nodes.
+    !------------------------------------------------------------------
+
+    real(dp), dimension(nNodesPerElement_2d), intent(in) :: &
+       xNode, yNode,                   &! nodal coordinates
+       dphi_dxr_2d, dphi_dyr_2d         ! derivatives of basis functions at quad pt
+                                        !  wrt x and y in reference element
+
+    real(dp), dimension(nNodesPerElement_2d), intent(out) :: &
+       dphi_dx_2d, dphi_dy_2d           ! derivatives of basis functions at quad pt
+                                        !  wrt x and y in true Cartesian coordinates  
+
+    real(dp), intent(out) :: &
+                detJ      ! determinant of Jacobian matrix
+
+    real(dp), dimension(2,2) ::  &
+                Jac,      &! Jacobian matrix
+                Jinv       ! inverse Jacobian matrix
+
+    integer, intent(in) :: &
+       itest, jtest, rtest              ! coordinates of diagnostic point
+
+    integer, intent(in) :: i, j, p
+
+    integer :: n, row, col
+
+    logical, parameter :: Jac_bug_check = .false.   ! set to true for debugging
+    real(dp), dimension(2,2) :: prod     ! Jac * Jinv (should be identity matrix)
+
+    !------------------------------------------------------------------
+    ! Compute the Jacobian for the transformation from the reference
+    ! coordinates to the true coordinates:
+    !
+    !              |                                                  |
+    !              | sum_n{dphi_n/dxr * xn}   sum_n{dphi_n/dxr * yn}  |
+    !   J(xr,yr) = |                                                  |
+    !              | sum_n{dphi_n/dyr * xn}   sum_n{dphi_n/dyr * yn}  |
+    !              |                                                  |
+    !
+    ! where (xn,yn) are the true Cartesian nodal coordinates,
+    !       (xr,yr) are the coordinates of the quad point in the reference element,
+    !       and sum_n denotes a sum over nodes.
+    !------------------------------------------------------------------
+
+    Jac(:,:) = 0.d0
+
+    if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest) then
+       print*, ' '
+       print*, 'In get_basis_function_derivatives_2d: i, j, p =', i, j, p
+    endif
+
+    do n = 1, nNodesPerElement_2d
+       if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest) then
+          print*, ' '
+          print*, 'n, x, y:', n, xNode(n), yNode(n)
+          print*, 'dphi_dxr_2d, dphi_dyr_2d:', dphi_dxr_2d(n), dphi_dyr_2d(n)
+       endif
+       Jac(1,1) = Jac(1,1) + dphi_dxr_2d(n) * xNode(n)
+       Jac(1,2) = Jac(1,2) + dphi_dxr_2d(n) * yNode(n)
+       Jac(2,1) = Jac(2,1) + dphi_dyr_2d(n) * xNode(n)
+       Jac(2,2) = Jac(2,2) + dphi_dyr_2d(n) * yNode(n)
+    enddo
+
+    !------------------------------------------------------------------
+    ! Compute the determinant and inverse of J
+    !------------------------------------------------------------------
+
+    detJ = Jac(1,1)*Jac(2,2) - Jac(1,2)*Jac(2,1)
+
+    if (abs(detJ) > 0.d0) then
+       Jinv(1,1) =  Jac(2,2)/detJ
+       Jinv(1,2) = -Jac(1,2)/detJ
+       Jinv(2,1) = -Jac(2,1)/detJ
+       Jinv(2,2) =  Jac(1,1)/detJ
+    else
+       print*, 'stopping, det J = 0'
+       print*, 'i, j, p:', i, j, p
+       print*, 'Jacobian matrix:'
+       print*, Jac(1,:)
+       print*, Jac(2,:)
+       !call write_log('Jacobian matrix is singular', GM_FATAL)
+       write(error_unit,*) 'Jacobian matrix is singular'
+       stop
+    endif
+
+    if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest) then
+       print*, ' '
+       print*, 'Jacobian calc, p =', p
+       print*, 'det J =', detJ
+       print*, ' '
+       print*, 'Jacobian matrix:'
+       print*, Jac(1,:)
+       print*, Jac(2,:)
+       print*, ' '
+       print*, 'Inverse matrix:'
+       print*, Jinv(1,:)
+       print*, Jinv(2,:)
+       print*, ' '
+       prod = matmul(Jac, Jinv)
+       print*, 'Jac*Jinv:'
+       print*, prod(1,:)
+       print*, prod(2,:)
+    endif
+
+    ! Optional bug check - Verify that J * Jinv = I
+
+    if (Jac_bug_check) then
+       prod = matmul(Jac,Jinv)
+       do col = 1, 2
+          do row = 1, 2
+             if (abs(prod(row,col) - identity3(row,col)) > 1.d-12) then
+                print*, 'stopping, Jac * Jinv /= identity'
+                print*, 'i, j, p:', i, j, p
+                print*, 'Jac*Jinv:'
+                print*, prod(1,:)
+                print*, prod(2,:)
+                !call write_log('Jacobian matrix was not correctly inverted', GM_FATAL)
+                write(error_unit,*) 'Jacobian matrix was not correctly inverted'
+                stop
+             endif
+          enddo
+       enddo
+    endif
+
+    !------------------------------------------------------------------
+    ! Compute the contribution of this quadrature point to dphi/dx and dphi/dy
+    ! for each basis function.
+    !
+    !   | dphi_n/dx |          | dphi_n/dxr |
+    !   |           | = Jinv * |            |
+    !   | dphi_n/dy |          | dphi_n/dyr |
+    !
+    !------------------------------------------------------------------
+
+    dphi_dx_2d(:) = 0.d0
+    dphi_dy_2d(:) = 0.d0
+
+    do n = 1, nNodesPerElement_2d
+       dphi_dx_2d(n) = dphi_dx_2d(n) + Jinv(1,1)*dphi_dxr_2d(n)  &
+                                     + Jinv(1,2)*dphi_dyr_2d(n)
+       dphi_dy_2d(n) = dphi_dy_2d(n) + Jinv(2,1)*dphi_dxr_2d(n)  &
+                                     + Jinv(2,2)*dphi_dyr_2d(n)
+    enddo
+
+    if (Jac_bug_check) then
+
+       ! Check that the sum of dphi_dx, etc. is close to zero  
+       if (abs( sum(dphi_dx_2d)/maxval(dphi_dx_2d) ) > 1.d-11) then
+          print*, 'stopping, sum over basis functions of dphi_dx > 0'
+          print*, 'dphi_dx_2d =', dphi_dx_2d(:)
+          print*, 'i, j, p =', i, j, p
+          !call write_log('Sum over basis functions of dphi_dx /= 0', GM_FATAL)
+          write(error_unit,*) 'Sum over basis functions of dphi_dx /= 0'
+          stop
+       endif
+
+       if (abs( sum(dphi_dy_2d)/maxval(dphi_dy_2d) ) > 1.d-11) then
+          print*, 'stopping, sum over basis functions of dphi_dy > 0'
+          print*, 'dphi_dy =', dphi_dy_2d(:)
+          print*, 'i, j, p =', i, j, p
+          !call write_log('Sum over basis functions of dphi_dy /= 0', GM_FATAL)
+          write(error_unit,*) 'Sum over basis functions of dphi_dy /= 0'
+          stop
+       endif
+
+    endif
+
+  end subroutine get_basis_function_derivatives_2d
+
+!****************************************************************************
 
 end module gaussian_quadrature
