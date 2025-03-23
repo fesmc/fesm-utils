@@ -430,16 +430,6 @@ end if
         
         ! First get x and y values (xx and yy defined on aa-nodes)
 
-        ! x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
-        ! x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
-        ! x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
-        ! x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
-
-        ! y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
-        ! y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
-        ! y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
-        ! y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
-        
         x(1) = -dx/2.d0
         x(2) =  dx/2.d0
         x(3) =  dx/2.d0
@@ -516,6 +506,147 @@ end if
         return
 
     end subroutine gaussian_quadrature_2D_to_nodes
+
+    subroutine gaussian_quadrature_3D_to_nodes(var_qp,var,dx,dy,dz0,dz1,i,j,k,grid_type)
+
+        implicit none
+
+        real(wp), intent(OUT) :: var_qp(:)
+        real(wp), intent(IN)  :: var(:,:,:)
+        ! real(wp), intent(IN)  :: xx(:,:)
+        ! real(wp), intent(IN)  :: yy(:,:)
+        real(wp), intent(IN)  :: dx
+        real(wp), intent(IN)  :: dy
+        real(wp), intent(IN)  :: dz0
+        real(wp), intent(IN)  :: dz1
+        integer,  intent(IN)  :: i
+        integer,  intent(IN)  :: j
+        integer,  intent(IN)  :: k
+        character(len=*), intent(IN) :: grid_type
+
+        ! Local variables
+
+        integer :: q, n, p 
+        real(dp) :: x(nNodesPerElement_3d)
+        real(dp) :: y(nNodesPerElement_3d)
+        real(dp) :: z(nNodesPerElement_3d)
+        real(dp) :: v(nNodesPerElement_3d)
+
+        real(dp), dimension(nQuadPoints_3d) :: detJ                 ! determinant of J
+
+        ! derivatives of basis function, evaluated at quad pts
+        real(dp) :: dphi_dx_3d(nNodesPerElement_3d)
+        real(dp) :: dphi_dy_3d(nNodesPerElement_3d)
+        real(dp) :: dphi_dz_3d(nNodesPerElement_3d)
+                                            
+        ! Step 1: determine x and y values of input array values
+
+        ! Map xc,yc onto x,y vectors. Account for whether input
+        ! variable is on aa, acx or acy grid. Account for boundary
+        ! conditions (periodic, etc)
+
+        ! Set x and y for each node
+
+        !     4-----3       y
+        !     |     |       ^
+        !     |     |       |
+        !     1-----2       ---> x
+
+        ! Compute values of u at the four cell corners
+        
+        ! First get x and y values (xx and yy defined on aa-nodes)
+
+        x(1) = -dx/2.d0
+        x(2) =  dx/2.d0
+        x(3) =  dx/2.d0
+        x(4) = -dx/2.d0
+        x(5) = -dx/2.d0
+        x(6) =  dx/2.d0
+        x(7) =  dx/2.d0
+        x(8) = -dx/2.d0
+
+        y(1) = -dy/2.d0
+        y(2) = -dy/2.d0
+        y(3) =  dy/2.d0
+        y(4) =  dy/2.d0
+        y(5) = -dy/2.d0
+        y(6) = -dy/2.d0
+        y(7) =  dy/2.d0
+        y(8) =  dy/2.d0
+        
+        z(1) = -dz0/2.d0
+        z(2) = -dz0/2.d0
+        z(3) = -dz0/2.d0
+        z(4) = -dz0/2.d0
+        z(5) =  dz1/2.d0
+        z(6) =  dz1/2.d0
+        z(7) =  dz1/2.d0
+        z(8) =  dz1/2.d0
+        
+        ! select case(trim(grid_type))
+
+        !     case("aa-aa")
+
+        !         v(1) = 0.25d0 * (var(i-1, j-1) + var(i, j-1) + var(i-1, j) + var(i, j))  ! Bottom-left
+        !         v(2) = 0.25d0 * (var(i, j-1) + var(i+1, j-1) + var(i, j) + var(i+1, j))  ! Bottom-right
+        !         v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
+        !         v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
+            
+        !     case("ab")
+
+        !         v(1) = var(i-1,j-1)         ! Bottom-left
+        !         v(2) = var(i,j-1)           ! Bottom-right
+        !         v(3) = var(i,j)             ! Top-right
+        !         v(4) = var(i-1,j)           ! Top-left
+
+        !     case("acx")
+                
+        !         v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
+        !         v(2) = 0.5d0 * (var(i, j-1) + var(i, j))          ! Bottom-right
+        !         v(3) = 0.5d0 * (var(i, j) + var(i, j+1))          ! Top-right
+        !         v(4) = 0.5d0 * (var(i-1, j) + var(i-1, j+1))      ! Top-left
+            
+        !     case("acy")
+
+        !         v(1) = 0.5d0 * (var(i-1, j-1) + var(i, j-1))      ! Bottom-left
+        !         v(2) = 0.5d0 * (var(i, j-1) + var(i+1, j-1))      ! Bottom-right
+        !         v(3) = 0.5d0 * (var(i, j) + var(i+1, j))          ! Top-right
+        !         v(4) = 0.5d0 * (var(i-1, j) + var(i, j))          ! Top-left
+
+        !     case DEFAULT
+
+        !         write(error_unit,*) "gaussian_quadrature_3D_to_nodes:: Error: grid_type not recognized."
+        !         write(error_unit,*) "grid_type = ", trim(grid_type)
+        !         stop
+        
+        ! end select
+
+        ! Loop over quadrature points for this element
+    
+        do p = 1, nQuadPoints_3d
+
+            ! Compute basis function derivatives and det(J) for this quadrature point
+            ! For now, pass in i, j, k, p for debugging
+            !TODO - Modify this subroutine so that the output derivatives are optional?
+
+            call get_basis_function_derivatives_3d(x(:),             y(:),          z(:),               &
+                                                    dphi_dxr_3d(:,p), dphi_dyr_3d(:,p), dphi_dzr_3d(:,p),   &
+                                                    dphi_dx_3d(:),    dphi_dy_3d(:),    dphi_dz_3d(:),  &
+                                                    detJ(p),                                 &
+                                                    itest, jtest, rtest,                  &
+                                                    i, j, k, p)
+
+            ! Evaluate var at this quadrature point, taking a phi-weighted sum over neighboring vertices.
+            var_qp(p) = 0.d0
+            do n = 1, nNodesPerElement_3d
+                var_qp(p) = var_qp(p) + phi_3d(n,p) * v(n)
+            end do
+        
+        end do
+
+        return
+
+    end subroutine gaussian_quadrature_3D_to_nodes
 
 ! == Directly from CISM2.1 ==
 
