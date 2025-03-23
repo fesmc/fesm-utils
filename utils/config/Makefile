@@ -45,7 +45,7 @@ $(objdir)/grid_to_cdo.o: $(srcdir)/coordinates-light/grid_to_cdo.f90
 $(objdir)/gaussian_filter.o: $(srcdir)/coordinates-light/gaussian_filter.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/gaussian_quadrature.o: $(srcdir)/gaussian_quadrature.f90
+$(objdir)/gaussian_quadrature.o: $(srcdir)/gaussian_quadrature.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/index.o: $(srcdir)/coordinates-light/index.f90

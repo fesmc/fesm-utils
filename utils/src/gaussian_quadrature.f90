@@ -384,14 +384,16 @@ end if
 
 ! == Using CISM2.1 methods and variables ==
 
-    subroutine gaussian_quadrature_2D_to_nodes(var_qp,var,xx,yy,i,j,grid_type)
+    subroutine gaussian_quadrature_2D_to_nodes(var_qp,var,dx,dy,i,j,grid_type)
 
         implicit none
 
         real(wp), intent(OUT) :: var_qp(:)
         real(wp), intent(IN)  :: var(:,:)
-        real(wp), intent(IN)  :: xx(:,:)
-        real(wp), intent(IN)  :: yy(:,:)
+        ! real(wp), intent(IN)  :: xx(:,:)
+        ! real(wp), intent(IN)  :: yy(:,:)
+        real(wp), intent(IN)  :: dx
+        real(wp), intent(IN)  :: dy
         integer,  intent(IN)  :: i
         integer,  intent(IN)  :: j
         character(len=*), intent(IN) :: grid_type
@@ -399,9 +401,9 @@ end if
         ! Local variables
 
         integer :: q, n, p 
-        real(dp), allocatable :: x(:)
-        real(dp), allocatable :: y(:)
-        real(dp), allocatable :: v(:)
+        real(dp) :: x(nNodesPerElement_2d)
+        real(dp) :: y(nNodesPerElement_2d)
+        real(dp) :: v(nNodesPerElement_2d)
 
         real(dp), dimension(nQuadPoints_2d) :: detJ                 ! determinant of J
 
@@ -427,16 +429,26 @@ end if
         ! Compute values of u at the four cell corners
         
         ! First get x and y values (xx and yy defined on aa-nodes)
-        
-        x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
-        x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
-        x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
-        x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
 
-        y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
-        y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
-        y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
-        y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
+        ! x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
+        ! x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
+        ! x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
+        ! x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
+
+        ! y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
+        ! y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
+        ! y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
+        ! y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
+        
+        x(1) = -dx/2.d0
+        x(2) =  dx/2.d0
+        x(3) =  dx/2.d0
+        x(4) = -dx/2.d0
+
+        y(1) = -dy/2.d0
+        y(2) = -dy/2.d0
+        y(3) =  dy/2.d0
+        y(4) =  dy/2.d0
         
         select case(trim(grid_type))
 
@@ -447,6 +459,13 @@ end if
                 v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
                 v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
             
+            case("ab")
+
+                v(1) = var(i-1,j-1)         ! Bottom-left
+                v(2) = var(i,j-1)           ! Bottom-right
+                v(3) = var(i,j)             ! Top-right
+                v(4) = var(i-1,j)           ! Top-left
+
             case("acx")
                 
                 v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
@@ -463,7 +482,7 @@ end if
 
             case DEFAULT
 
-                write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
+                write(error_unit,*) "gaussian_quadrature_2D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
                 stop
         
@@ -487,9 +506,9 @@ end if
             dphi_dz_2d(:) = 0.d0
 
             ! Evaluate var at this quadrature point, taking a phi-weighted sum over neighboring vertices.
-            var_qp = 0.d0
+            var_qp(p) = 0.d0
             do n = 1, nNodesPerElement_2d
-                var_qp = var_qp + phi_2d(n,p) * v(n)
+                var_qp(p) = var_qp(p) + phi_2d(n,p) * v(n)
             end do
         
         end do
