@@ -122,7 +122,7 @@ module gaussian_quadrature
     ! public :: gaussian_quadrature_init
     ! public :: gaussian_quadrature_2D_to_nodes
     public
-    
+
 contains
 
     subroutine gq2D_init(gq)
@@ -384,88 +384,115 @@ end if
 
 ! == Using CISM2.1 methods and variables ==
 
-subroutine gaussian_quadrature_2D_to_nodes(var_qp,var,xx,yy,i,j)
+    subroutine gaussian_quadrature_2D_to_nodes(var_qp,var,xx,yy,i,j,grid_type)
 
-    implicit none
+        implicit none
 
-    real(wp), intent(OUT) :: var_qp(:)
-    real(wp), intent(IN)  :: var(:,:)
-    real(wp), intent(IN)  :: xx(:,:)
-    real(wp), intent(IN)  :: yy(:,:)
-    integer,  intent(IN)  :: i
-    integer,  intent(IN)  :: j
+        real(wp), intent(OUT) :: var_qp(:)
+        real(wp), intent(IN)  :: var(:,:)
+        real(wp), intent(IN)  :: xx(:,:)
+        real(wp), intent(IN)  :: yy(:,:)
+        integer,  intent(IN)  :: i
+        integer,  intent(IN)  :: j
+        character(len=*), intent(IN) :: grid_type
+        
+        ! Local variables
+
+        integer :: q, n, p 
+        real(dp), allocatable :: x(:)
+        real(dp), allocatable :: y(:)
+        real(dp), allocatable :: v(:)
+
+        real(dp), dimension(nQuadPoints_2d) :: detJ                 ! determinant of J
+
+        ! derivatives of basis function, evaluated at quad pts
+        ! set dphi_dz = 0 for 2D problem
+        real(dp) :: dphi_dx_2d(nNodesPerElement_2d)
+        real(dp) :: dphi_dy_2d(nNodesPerElement_2d)
+        real(dp) :: dphi_dz_2d(nNodesPerElement_2d)
+                                            
+        ! Step 1: determine x and y values of input array values
+
+        ! Map xc,yc onto x,y vectors. Account for whether input
+        ! variable is on aa, acx or acy grid. Account for boundary
+        ! conditions (periodic, etc)
+
+        ! Set x and y for each node
+
+        !     4-----3       y
+        !     |     |       ^
+        !     |     |       |
+        !     1-----2       ---> x
+
+        ! Compute values of u at the four cell corners
+
+        select case(trim(grid_type))
+
+            case("aa")
+                x(1) = 0.25d0 * (xx(i-1, j-1) + xx(i, j-1) + xx(i-1, j) + xx(i, j))  ! Bottom-left
+                x(2) = 0.25d0 * (xx(i, j-1) + xx(i+1, j-1) + xx(i, j) + xx(i+1, j))  ! Bottom-right
+                x(3) = 0.25d0 * (xx(i, j) + xx(i+1, j) + xx(i, j+1) + xx(i+1, j+1))  ! Top-right
+                x(4) = 0.25d0 * (xx(i-1, j) + xx(i, j) + xx(i-1, j+1) + xx(i, j+1))  ! Top-left
+
+                y(1) = 0.25d0 * (yy(i-1, j-1) + yy(i, j-1) + yy(i-1, j) + yy(i, j))  ! Bottom-left
+                y(2) = 0.25d0 * (yy(i, j-1) + yy(i+1, j-1) + yy(i, j) + yy(i+1, j))  ! Bottom-right
+                y(3) = 0.25d0 * (yy(i, j) + yy(i+1, j) + yy(i, j+1) + yy(i+1, j+1))  ! Top-right
+                y(4) = 0.25d0 * (yy(i-1, j) + yy(i, j) + yy(i-1, j+1) + yy(i, j+1))  ! Top-left
+                
+                v(1) = 0.25d0 * (var(i-1, j-1) + var(i, j-1) + var(i-1, j) + var(i, j))  ! Bottom-left
+                v(2) = 0.25d0 * (var(i, j-1) + var(i+1, j-1) + var(i, j) + var(i+1, j))  ! Bottom-right
+                v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
+                v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
+            case("acx")
+                
+                ! xx, yy: to do
+
+                v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, j-1) + var(i, j))          ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(i, j+1))          ! Top-right
+                v(4) = 0.5d0 * (var(i-1, j) + var(i-1, j+1))      ! Top-left
+            case("acy")
+
+                ! xx, yy: to do 
+
+                v(1) = 0.5d0 * (var(i-1, j-1) + var(i, j-1))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, j-1) + var(i+1, j-1))      ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(i+1, j))          ! Top-right
+                v(4) = 0.5d0 * (var(i-1, j) + var(i, j))          ! Top-left
+            case DEFAULT
+                write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
+                write(error_unit,*) "grid_type = ", trim(grid_type)
+                stop
+        end select
+
+        ! Loop over quadrature points for this element
     
-    ! Local variables
+        do p = 1, nQuadPoints_2d
 
-    integer :: q, n, p 
-    real(dp), allocatable :: x(:)
-    real(dp), allocatable :: y(:)
-    real(dp), allocatable :: v(:)
+            ! Compute basis function derivatives and det(J) for this quadrature point
+            ! For now, pass in i, j, k, p for debugging
+            !TODO - Modify this subroutine so that the output derivatives are optional?
 
-    real(dp), dimension(nQuadPoints_2d) :: detJ                 ! determinant of J
+            call get_basis_function_derivatives_2d(x(:),             y(:),               &
+                                                    dphi_dxr_2d(:,p), dphi_dyr_2d(:,p),   &
+                                                    dphi_dx_2d(:),    dphi_dy_2d(:),      &
+                                                    detJ(p),                                 &
+                                                    itest, jtest, rtest,                  &
+                                                    i, j, p)
 
-    ! derivatives of basis function, evaluated at quad pts
-    ! set dphi_dz = 0 for 2D problem
-    real(dp) :: dphi_dx_2d(nNodesPerElement_2d)
-    real(dp) :: dphi_dy_2d(nNodesPerElement_2d)
-    real(dp) :: dphi_dz_2d(nNodesPerElement_2d)
-                                           
-    ! Step 1: determine x and y values of input array values
+            dphi_dz_2d(:) = 0.d0
 
-    ! Map xc,yc onto x,y vectors. Account for whether input
-    ! variable is on aa, acx or acy grid. Account for boundary
-    ! conditions (periodic, etc)
-
-    ! Set x and y for each node
-
-    !     4-----3       y
-    !     |     |       ^
-    !     |     |       |
-    !     1-----2       ---> x
-
-    x(1) = xx(i-1,j-1)
-    x(2) = xx(i,j-1)
-    x(3) = xx(i,j)
-    x(4) = xx(i-1,j)
-
-    y(1) = yy(i-1,j-1)
-    y(2) = yy(i,j-1)
-    y(3) = yy(i,j)
-    y(4) = yy(i-1,j)
-
-    v(1) = var(i-1,j-1)
-    v(2) = var(i,j-1)
-    v(3) = var(i,j)
-    v(4) = var(i-1,j)
-
-    ! Loop over quadrature points for this element
-   
-    do p = 1, nQuadPoints_2d
-
-        ! Compute basis function derivatives and det(J) for this quadrature point
-        ! For now, pass in i, j, k, p for debugging
-        !TODO - Modify this subroutine so that the output derivatives are optional?
-
-        call get_basis_function_derivatives_2d(x(:),             y(:),               &
-                                                dphi_dxr_2d(:,p), dphi_dyr_2d(:,p),   &
-                                                dphi_dx_2d(:),    dphi_dy_2d(:),      &
-                                                detJ(p),                                 &
-                                                itest, jtest, rtest,                  &
-                                                i, j, p)
-
-        dphi_dz_2d(:) = 0.d0
-
-        ! Evaluate var at this quadrature point, taking a phi-weighted sum over neighboring vertices.
-        var_qp = 0.d0
-        do n = 1, nNodesPerElement_2d
-            var_qp = var_qp + phi_2d(n,p) * v(n)
+            ! Evaluate var at this quadrature point, taking a phi-weighted sum over neighboring vertices.
+            var_qp = 0.d0
+            do n = 1, nNodesPerElement_2d
+                var_qp = var_qp + phi_2d(n,p) * v(n)
+            end do
+        
         end do
-    
-    end do
 
-    return
+        return
 
-end subroutine gaussian_quadrature_2D_to_nodes
+    end subroutine gaussian_quadrature_2D_to_nodes
 
 ! == Directly from CISM2.1 ==
 
