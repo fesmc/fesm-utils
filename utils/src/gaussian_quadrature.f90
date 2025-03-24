@@ -5,7 +5,7 @@ module gaussian_quadrature
 
     implicit none
     
-    logical :: verbose_init = .true. 
+    logical :: verbose_init_global = .false. 
     logical :: verbose_jac  = .false.
     logical, parameter :: check_symmetry = .true.       ! if true, then check symmetry of assembled matrix
 
@@ -101,7 +101,7 @@ module gaussian_quadrature
         real(8) :: N(4,4)
         real(8) :: dNdxr(4,4)
         real(8) :: dNdyr(4,4)
-
+        
         real(8) :: dNdx(4)  ! At nodes
         real(8) :: dNdy(4)  ! At nodes
         real(8) :: detJ(4)  ! At nodes
@@ -119,7 +119,8 @@ module gaussian_quadrature
         real(8) :: dNdxr(8,8)
         real(8) :: dNdyr(8,8)
         real(8) :: dNdzr(8,8)
-
+        real(8) :: vol0
+        
         real(8) :: dNdx(8)  ! At nodes
         real(8) :: dNdy(8)  ! At nodes
         real(8) :: dNdz(8)  ! At nodes
@@ -142,17 +143,25 @@ module gaussian_quadrature
 
 contains
 
-    subroutine gq2D_init(gq)
+    subroutine gq2D_init(gq,verbose)
 
         implicit none
 
         type(gq2D_class), intent(OUT) :: gq
+        logical, intent(IN), optional :: verbose 
 
         ! Local variables
         integer :: p, n
+        logical :: verbose_init
 
         ! Quadrature point locations in reference element (-1,1)
         real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
+
+        if (present(verbose)) then
+            verbose_init = verbose
+        else
+            verbose_init = verbose_init_global
+        end if
 
         ! Define how many quadrature points and nodes (corners) of cell
         gq%n_qp    = 4
@@ -208,17 +217,25 @@ contains
 
     end subroutine gq2D_init
 
-        subroutine gq3D_init(gq)
+        subroutine gq3D_init(gq,verbose)
 
         implicit none
 
         type(gq3D_class), intent(OUT) :: gq
+        logical, intent(IN), optional :: verbose
 
         ! Local variables
         integer :: p, n
+        logical :: verbose_init
 
         ! Quadrature point locations in reference element (-1,1)
         real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
+
+        if (present(verbose)) then
+            verbose_init = verbose
+        else
+            verbose_init = verbose_init_global
+        end if
 
         ! Define how many quadrature points and nodes (corners) of cell
         gq%n_qp    = 4
@@ -232,6 +249,12 @@ contains
         ! Define weights
         gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0]
         
+        ! Set volume scale
+        ! This is not strictly necessary, but dividing by this scale gives matrix coefficients 
+        !  that are ~1.
+        gq%vol0  = 1.0d9    ! volume scale (m^3)
+
+
         ! Define shape functions N(n, p) and derivatives
         ! where p represents each quadrature point
         do p = 1, gq%n_qp
@@ -387,12 +410,12 @@ if (.TRUE.) then
             ! For now, pass in i, j, k, p for debugging
             !TODO - Modify this subroutine so that the output derivatives are optional?
 
-            call get_basis_function_derivatives_2d(x(:),             y(:),          &
-                                                    gq%dNdxr(:,p), gq%dNdyr(:,p),   &
-                                                    gq%dNdx(:),    gq%dNdy(:),      &
-                                                    gq%detJ(p),                     &
-                                                    itest, jtest, rtest,            &
-                                                    i, j, p)
+            ! call get_basis_function_derivatives_2d(x(:),             y(:),          &
+            !                                         gq%dNdxr(:,p), gq%dNdyr(:,p),   &
+            !                                         gq%dNdx(:),    gq%dNdy(:),      &
+            !                                         gq%detJ(p),                     &
+            !                                         itest, jtest, rtest,            &
+            !                                         i, j, p)
 
             ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
             gq%v(p) = 0.d0
@@ -420,12 +443,16 @@ end if
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes(gq, var, i, j, k, grid_type)
+    subroutine gq3D_to_nodes(gq, var, dx, dy, dz0, dz1, i, j, k, grid_type)
         
         implicit none
         
         type(gq3D_class), intent(INOUT) :: gq   ! Gaussian Quadrature 3D object
         real(wp), intent(in)  :: var(:,:,:)     ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx             ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy             ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0            ! dz to cell below
+        real(wp), intent(IN)  :: dz1            ! dz to cell above
         integer,  intent(in)  :: i              ! x-index of current cell
         integer,  intent(in)  :: j              ! y-index of current cell
         integer,  intent(in)  :: k              ! z-index of current cell
@@ -433,18 +460,74 @@ end if
 
         ! Local variables
         integer :: nx, ny, nz, p, n
-        real(8) :: x(4)                 ! Real x-coordinates at the four corners of the cell
-        real(8) :: y(4)                 ! Real y-coordinates at the four corners of the cell
-        real(8) :: z(4)                 ! Real z-coordinates at the four corners of the cell
-        real(8) :: v(8)                             ! Values of var at the eight corners of the cell
-        real(8) :: vx(8), vy(8), vz(8)              ! Derivatives at the eight corners
+        real(8) :: x(8)                         ! Real x-coordinates at the four corners of the cell
+        real(8) :: y(8)                         ! Real y-coordinates at the four corners of the cell
+        real(8) :: z(8)                         ! Real z-coordinates at the four corners of the cell
+        real(8) :: v(8)                         ! Values of var at the eight corners of the cell
+        real(8) :: vx(8), vy(8), vz(8)          ! Derivatives at the eight corners
         
         nx = size(var,1)
         ny = size(var,2)
         nz = size(var,3)
 
+        ! Step 1: determine x and y values of input array values
+
+        ! Map xc,yc onto x,y vectors. Account for whether input
+        ! variable is on aa, acx or acy grid. Account for boundary
+        ! conditions (periodic, etc)
+
+        ! Set x and y for each node
+
+        !     4-----3       y
+        !     |     |       ^
+        !     |     |       |
+        !     1-----2       ---> x
+
+        ! Compute values of u at the four cell corners
+        
+        ! First get x and y values (xx and yy defined on aa-nodes)
+
+        x(1) = -dx/2.d0
+        x(2) =  dx/2.d0
+        x(3) =  dx/2.d0
+        x(4) = -dx/2.d0
+        x(5) = -dx/2.d0
+        x(6) =  dx/2.d0
+        x(7) =  dx/2.d0
+        x(8) = -dx/2.d0
+
+        y(1) = -dy/2.d0
+        y(2) = -dy/2.d0
+        y(3) =  dy/2.d0
+        y(4) =  dy/2.d0
+        y(5) = -dy/2.d0
+        y(6) = -dy/2.d0
+        y(7) =  dy/2.d0
+        y(8) =  dy/2.d0
+        
+        z(1) = -dz0/2.d0
+        z(2) = -dz0/2.d0
+        z(3) = -dz0/2.d0
+        z(4) = -dz0/2.d0
+        z(5) =  dz1/2.d0
+        z(6) =  dz1/2.d0
+        z(7) =  dz1/2.d0
+        z(8) =  dz1/2.d0
+        
         ! Compute values of u at the eight cell corners
         select case(trim(grid_type))
+            case("aa")
+                v(1) = 0.25d0 * ( 0.5d0 * (var(i-1, j-1, k-1) + var(i-1, j-1, k))   &
+                                + 0.5d0 * (var(i-1, j, k-1) + var(i-1, j, k))       &
+                                + 0.5d0 * (var(i, j, k-1) + var(i, j, k))           &
+                                + 0.5d0 * (var(i, j-1, k-1) + var(i, j-1, k)) )
+                ! v(2) = var(i, j-1, k-1)
+                ! v(3) = var(i, j, k-1)
+                ! v(4) = var(i-1, j, k-1)
+                ! v(5) = var(i-1, j-1, k)
+                ! v(6) = var(i, j-1, k)
+                ! v(7) = var(i, j, k)
+                ! v(8) = var(i-1, j, k)
             case("ab")
                 v(1) = var(i-1, j-1, k-1)
                 v(2) = var(i, j-1, k-1)
@@ -464,6 +547,17 @@ if (.TRUE.) then
 
         ! Loop over quadrature points for this element
         do p = 1, gq%n_qp
+
+            ! Compute basis function derivatives and det(J) for this quadrature point
+            ! For now, pass in i, j, k, p for debugging
+            !TODO - Modify this subroutine so that the output derivatives are optional?
+
+            ! call get_basis_function_derivatives_3d(x(:),             y(:),          z(:),           &
+            !                                         gq%dNdxr(:,p), gq%dNdyr(:,p), gq%dNdzr(:,p),    &
+            !                                         gq%dNdx(:),    gq%dNdy(:),    gq%dNdz(:),       &
+            !                                         gq%detJ(p),                                     &
+            !                                         itest, jtest, rtest,                            &
+            !                                         i, j, k, p)
 
             ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
             gq%v(p) = 0.d0
@@ -825,7 +919,7 @@ end if
     xqp_3d(8) = -rsqrt3; yqp_3d(8) =  rsqrt3; zqp_3d(8) =  rsqrt3
     wqp_3d(8) =  1.d0
 
-    if (verbose_init) then
+    if (verbose_init_global) then
        print*, ' '
        print*, 'Hexahedral elements, quad points, x, y, z:'
        sumx = 0.d0; sumy = 0.d0; sumz = 0.d0
@@ -877,7 +971,7 @@ end if
        dphi_dzr_3d(7,p) =  (1.d0 + xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
        dphi_dzr_3d(8,p) =  (1.d0 - xqp_3d(p)) * (1.d0 + yqp_3d(p)) / 8.d0 
 
-       if (verbose_init) then
+       if (verbose_init_global) then
           print*, ' '
           print*, 'Quad point, p =', p
           print*, 'n, phi_3d, dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d:'
@@ -983,7 +1077,7 @@ end if
     kshift(7,:) = kshift(5,:)
     kshift(8,:) = kshift(5,:)
 
-    if (verbose_init) then
+    if (verbose_init_global) then
        print*, ' '
        print*, 'ishift:'
        do n = 1, 8
@@ -1027,7 +1121,7 @@ end if
     xqp_2d(4) = -rsqrt3; yqp_2d(4) =  rsqrt3
     wqp_2d(4) =  1.d0
 
-    if (verbose_init) then
+    if (verbose_init_global) then
        print*, ' '
        print*, ' '
        print*, 'Quadrilateral elements, quad points, x, y:'
@@ -1059,7 +1153,7 @@ end if
        dphi_dyr_2d(3,p) =  (1.d0 + xqp_2d(p)) / 4.d0 
        dphi_dyr_2d(4,p) =  (1.d0 - xqp_2d(p)) / 4.d0 
 
-       if (verbose_init) then
+       if (verbose_init_global) then
           print*, ' '
           print*, 'Quad point, p =', p
           print*, 'n, phi_2d, dphi_dxr_2d, dphi_dyr_2d:'
