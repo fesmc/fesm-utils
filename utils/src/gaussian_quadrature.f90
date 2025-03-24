@@ -326,18 +326,18 @@ contains
 
     end subroutine gq3D_init
 
-    subroutine gq2D_to_nodes(v_qp, gq, var, dx, dy, grid_type, i, j)
+    subroutine gq2D_to_nodes(v_qp, gq, var, dx, dy, grid_type, i, j, im1, ip1, jm1, jp1)
         
         implicit none
         
-        real(wp), intent(INOUT) :: v_qp(4)          ! Variable values at quadrature points
+        real(wp),         intent(INOUT) :: v_qp(4)  ! Variable values at quadrature points
         type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
         real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
         real(wp), intent(IN)  :: dx 
         real(wp), intent(IN)  :: dy
         character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy"
-        integer,  intent(in)  :: i                  ! x-index of current cell
-        integer,  intent(in)  :: j                  ! y-index of current cell
+        integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         
         ! Local variables
         integer :: nx, ny, p, n
@@ -379,25 +379,25 @@ contains
         
         select case(trim(grid_type))
             case("aa")
-                v(1) = 0.25d0 * (var(i-1, j-1) + var(i, j-1) + var(i-1, j) + var(i, j))  ! Bottom-left
-                v(2) = 0.25d0 * (var(i, j-1) + var(i+1, j-1) + var(i, j) + var(i+1, j))  ! Bottom-right
-                v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
-                v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
+                v(1) = 0.25d0 * (var(im1, jm1) + var(i, jm1) + var(im1, j) + var(i, j))  ! Bottom-left
+                v(2) = 0.25d0 * (var(i, jm1) + var(ip1, jm1) + var(i, j) + var(ip1, j))  ! Bottom-right
+                v(3) = 0.25d0 * (var(i, j) + var(ip1, j) + var(i, jp1) + var(ip1, jp1))  ! Top-right
+                v(4) = 0.25d0 * (var(im1, j) + var(i, j) + var(im1, jp1) + var(i, jp1))  ! Top-left
             case("ab")
-                v(1) = var(i-1,j-1)         ! Bottom-left
-                v(2) = var(i,j-1)           ! Bottom-right
+                v(1) = var(im1,jm1)         ! Bottom-left
+                v(2) = var(i,jm1)           ! Bottom-right
                 v(3) = var(i,j)             ! Top-right
-                v(4) = var(i-1,j)           ! Top-left
+                v(4) = var(im1,j)           ! Top-left
             case("acx")
-                v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
-                v(2) = 0.5d0 * (var(i, j-1) + var(i, j))          ! Bottom-right
-                v(3) = 0.5d0 * (var(i, j) + var(i, j+1))          ! Top-right
-                v(4) = 0.5d0 * (var(i-1, j) + var(i-1, j+1))      ! Top-left
+                v(1) = 0.5d0 * (var(im1, jm1) + var(im1, j))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, jm1) + var(i, j))          ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(i, jp1))          ! Top-right
+                v(4) = 0.5d0 * (var(im1, j) + var(im1, jp1))      ! Top-left
             case("acy")
-                v(1) = 0.5d0 * (var(i-1, j-1) + var(i, j-1))      ! Bottom-left
-                v(2) = 0.5d0 * (var(i, j-1) + var(i+1, j-1))      ! Bottom-right
-                v(3) = 0.5d0 * (var(i, j) + var(i+1, j))          ! Top-right
-                v(4) = 0.5d0 * (var(i-1, j) + var(i, j))          ! Top-left
+                v(1) = 0.5d0 * (var(im1, jm1) + var(i, jm1))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, jm1) + var(ip1, jm1))      ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(ip1, j))          ! Top-right
+                v(4) = 0.5d0 * (var(im1, j) + var(i, j))          ! Top-left
             case DEFAULT
                 write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
@@ -451,21 +451,21 @@ end if
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes(v_qp, gq, var, dx, dy, dz0, dz1, i, j, k, grid_type)
+    subroutine gq3D_to_nodes(v_qp, gq, var, dx, dy, dz0, dz1, grid_type, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
         
         implicit none
         
-        real(wp), intent(INOUT) :: v_qp(8)      ! Variable values at quadrature points
-        type(gq3D_class), intent(INOUT) :: gq   ! Gaussian Quadrature 3D object
-        real(wp), intent(in)  :: var(:,:,:)     ! Variable to be interpolated
-        real(wp), intent(IN)  :: dx             ! Horizontal grid spacing (const)
-        real(wp), intent(IN)  :: dy             ! Horizontal grid spacing (const)
-        real(wp), intent(IN)  :: dz0            ! dz to cell below
-        real(wp), intent(IN)  :: dz1            ! dz to cell above
-        integer,  intent(in)  :: i              ! x-index of current cell
-        integer,  intent(in)  :: j              ! y-index of current cell
-        integer,  intent(in)  :: k              ! z-index of current cell
+        real(wp),         intent(INOUT) :: v_qp(8)  ! Variable values at quadrature points
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp), intent(in)  :: var(:,:,:)         ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
         character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy", "acz"
+        integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        integer,  intent(IN)  :: km1, kp1
 
         ! Local variables
         integer :: nx, ny, nz, p, n
@@ -526,26 +526,26 @@ end if
         ! Compute values of u at the eight cell corners
         select case(trim(grid_type))
             case("aa")
-                v(1) = 0.25d0 * ( 0.5d0 * (var(i-1, j-1, k-1) + var(i-1, j-1, k))   &
-                                + 0.5d0 * (var(i-1, j, k-1) + var(i-1, j, k))       &
-                                + 0.5d0 * (var(i, j, k-1) + var(i, j, k))           &
-                                + 0.5d0 * (var(i, j-1, k-1) + var(i, j-1, k)) )
-                ! v(2) = var(i, j-1, k-1)
-                ! v(3) = var(i, j, k-1)
-                ! v(4) = var(i-1, j, k-1)
-                ! v(5) = var(i-1, j-1, k)
-                ! v(6) = var(i, j-1, k)
+                v(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))   &
+                                + 0.5d0 * (var(im1, j, km1) + var(im1, j, k))       &
+                                + 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
+                                + 0.5d0 * (var(i, jm1, km1) + var(i, jm1, k)) )
+                ! v(2) = var(i, jm1, km1)
+                ! v(3) = var(i, j, km1)
+                ! v(4) = var(im1, j, km1)
+                ! v(5) = var(im1, jm1, k)
+                ! v(6) = var(i, jm1, k)
                 ! v(7) = var(i, j, k)
-                ! v(8) = var(i-1, j, k)
+                ! v(8) = var(im1, j, k)
             case("ab")
-                v(1) = var(i-1, j-1, k-1)
-                v(2) = var(i, j-1, k-1)
-                v(3) = var(i, j, k-1)
-                v(4) = var(i-1, j, k-1)
-                v(5) = var(i-1, j-1, k)
-                v(6) = var(i, j-1, k)
+                v(1) = var(im1, jm1, km1)
+                v(2) = var(i, jm1, km1)
+                v(3) = var(i, j, km1)
+                v(4) = var(im1, j, km1)
+                v(5) = var(im1, jm1, k)
+                v(6) = var(i, jm1, k)
                 v(7) = var(i, j, k)
-                v(8) = var(i-1, j, k)
+                v(8) = var(im1, j, k)
             case DEFAULT
                 write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)

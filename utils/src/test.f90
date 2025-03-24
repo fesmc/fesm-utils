@@ -10,6 +10,8 @@ program test
     real(wp) :: var(2,2)
     real(wp) :: dx
     real(wp) :: dy 
+    integer  :: i, j 
+    integer  :: im1, ip1, jm1, jp1
 
 if (.TRUE.) then
     call gq2D_init(gq2D)
@@ -21,8 +23,15 @@ if (.TRUE.) then
 
     dx = 1.0
     dy = 1.0 
+    
+    i = 2
+    j = 2
+    im1 = i-1
+    ip1 = i
+    jm1 = j-1
+    jp1 = j
 
-    call gq2D_to_nodes(var_qp, gq2D, var, dx, dy, grid_type="ab", i=2, j=2)
+    call gq2D_to_nodes(var_qp, gq2D, var, dx, dy, "ab",i,j,im1,ip1,jm1,jp1)
 
     write(*,*) "var_qp: ", var_qp
     
