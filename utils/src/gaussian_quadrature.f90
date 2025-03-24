@@ -354,18 +354,19 @@ contains
 
         ! Map xc,yc onto x,y vectors. Account for whether input
         ! variable is on aa, acx or acy grid. Account for boundary
-        ! conditions (periodic, etc)
+        ! conditions (periodic, etc).
 
-        ! Set x and y for each node
+        !----------------------------------------------------------------
+        ! Bilinear basis set for reference square, x=(-1,1), y=(-1,1)             
+        ! Indexrng is counter-clockwise from SW corner
+        ! The code uses "gq%N" to denote these basis functions. 
+        !
+        ! N1 = (1-x)*(1-y)/4             N4----N3
+        ! N2 = (1+x)*(1-y)/4             |     |
+        ! N3 = (1+x)*(1+y)/4             |     |
+        ! N4 = (1-x)*(1+y)/4             N1----N2
+        !----------------------------------------------------------------
 
-        !     4-----3       y
-        !     |     |       ^
-        !     |     |       |
-        !     1-----2       ---> x
-
-        ! Compute values of u at the four cell corners
-        
-        ! First get x and y values (xx and yy defined on aa-nodes)
         ! First get x and y values (xx and yy defined on aa-nodes)
         ! Note: these could be actual coordinates passed in as arguments,
         ! as done in e.g. CISM. However, we can assume the horizontal grid
@@ -468,20 +469,28 @@ contains
         ny = size(var,2)
         nz = size(var,3)
 
-        ! Step 1: determine x and y values of input array values
+        ! Step 1: determine x, y and z values of input array values
 
-        ! Map xc,yc onto x,y vectors. Account for whether input
+        ! Map xc,yc,zc onto x,y,z vectors. Account for whether input
         ! variable is on aa, acx or acy grid. Account for boundary
-        ! conditions (periodic, etc)
+        ! conditions (periodic, etc).
 
-        ! Set x and y for each node
+        !----------------------------------------------------------------
+        ! Trilinear basis set for reference hexahedron, x=(-1,1), y=(-1,1), z=(-1,1)             
+        ! Indexrng is counter-clockwise from SW corner, with 1-4 on lower surface
+        !  and 5-8 on upper surface
+        ! The code uses "gq%N" to denote these basis functions. 
+        !
+        ! N1 = (1-x)*(1-y)*(1-z)/8             N4----N3
+        ! N2 = (1+x)*(1-y)*(1-z)/8             |     |    Lower layer        
+        ! N3 = (1+x)*(1+y)*(1-z)/8             |     |
+        ! N4 = (1-x)*(1+y)*(1-z)/8             N1----N2
 
-        !     4-----3       y
-        !     |     |       ^
-        !     |     |       |
-        !     1-----2       ---> x
-
-        ! Compute values of u at the four cell corners
+        ! N5 = (1-x)*(1-y)*(1+z)/8             N8----N7
+        ! N6 = (1+x)*(1-y)*(1+z)/8             |     |    Upper layer
+        ! N7 = (1+x)*(1+y)*(1+z)/8             |     |
+        ! N8 = (1-x)*(1+y)*(1+z)/8             N5----N6
+        !----------------------------------------------------------------
         
         ! First get x and y values (xx and yy defined on aa-nodes)
         ! Note: these could be actual coordinates passed in as arguments,
@@ -491,7 +500,7 @@ contains
         ! The vertical axis z may contain different spacing above and below this cell,
         ! which is why a dz0 (distance to cell below) and dz1 (distance to cell above)
         ! is used.
-        
+
         x(1) = -dx/2.d0
         x(2) =  dx/2.d0
         x(3) =  dx/2.d0
@@ -526,13 +535,41 @@ contains
                                 + 0.5d0 * (var(im1, j, km1) + var(im1, j, k))       &
                                 + 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
                                 + 0.5d0 * (var(i, jm1, km1) + var(i, jm1, k)) )
-                ! v(2) = var(i, jm1, km1)
-                ! v(3) = var(i, j, km1)
-                ! v(4) = var(im1, j, km1)
-                ! v(5) = var(im1, jm1, k)
-                ! v(6) = var(i, jm1, k)
-                ! v(7) = var(i, j, k)
-                ! v(8) = var(im1, j, k)
+
+                v(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1) + var(i, jm1, k))       &
+                                + 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
+                                + 0.5d0 * (var(ip1, j, km1) + var(ip1, j, k))       &
+                                + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
+
+                v(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
+                                + 0.5d0 * (var(i, jp1, km1) + var(i, jp1, k))       &
+                                + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))   &
+                                + 0.5d0 * (var(ip1, j, km1) + var(ip1, j, k)) )
+
+                v(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1) + var(im1, j, k))       &
+                                + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))   &
+                                + 0.5d0 * (var(i, jp1, km1) + var(i, jp1, k))       &
+                                + 0.5d0 * (var(i, j, km1) + var(i, j, k)) )
+
+                v(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k) + var(im1, jm1, kp1))   &
+                                + 0.5d0 * (var(im1, j, k) + var(im1, j, kp1))       &
+                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
+                                + 0.5d0 * (var(i, jm1, k) + var(i, jm1, kp1)) )
+
+                v(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k) + var(i, jm1, kp1))       &
+                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
+                                + 0.5d0 * (var(ip1, j, k) + var(ip1, j, kp1))       &
+                                + 0.5d0 * (var(ip1, jm1, k) + var(ip1, jm1, kp1)) )
+
+                v(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
+                                + 0.5d0 * (var(i, jp1, k) + var(i, jp1, kp1))       &
+                                + 0.5d0 * (var(ip1, jp1, k) + var(ip1, jp1, kp1))   &
+                                + 0.5d0 * (var(ip1, j, k) + var(ip1, j, kp1)) )
+
+                v(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k) + var(im1, j, kp1))       &
+                                + 0.5d0 * (var(im1, jp1, k) + var(im1, jp1, kp1))   &
+                                + 0.5d0 * (var(i, jp1, k) + var(i, jp1, kp1))       &
+                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1)) )
             case("ab")
                 v(1) = var(im1, jm1, km1)
                 v(2) = var(i, jm1, km1)
@@ -542,6 +579,42 @@ contains
                 v(6) = var(i, jm1, k)
                 v(7) = var(i, j, k)
                 v(8) = var(im1, j, k)
+            case("acx")
+                v(1) = 0.25d0 * ( var(im1, jm1, km1) + var(im1, jm1, k)     &
+                                + var(im1, j, km1)   + var(im1, j, k) )
+                v(2) = 0.25d0 * ( var(i, jm1, km1) + var(i, jm1, k)         &
+                                + var(i, j, km1)   + var(i, j, k) )
+                v(3) = 0.25d0 * ( var(i, j, km1)   + var(i, j, k)           &
+                                + var(i, jp1, km1) + var(i, jp1, k) )
+                v(4) = 0.25d0 * ( var(im1, j, km1)   + var(im1, j, k)       &
+                                + var(im1, jp1, km1) + var(im1, jp1, k) )
+
+                v(5) = 0.25d0 * ( var(im1, jm1, k) + var(im1, jm1, kp1)     &
+                                + var(im1, j, k)   + var(im1, j, kp1) )
+                v(6) = 0.25d0 * ( var(i, jm1, k) + var(i, jm1, kp1)         &
+                                + var(i, j, k)   + var(i, j, kp1) )
+                v(7) = 0.25d0 * ( var(i, j, k)   + var(i, j, kp1)           &
+                                + var(i, jp1, k) + var(i, jp1, kp1) )
+                v(8) = 0.25d0 * ( var(im1, j, k)   + var(im1, j, kp1)       &
+                                + var(im1, jp1, k) + var(im1, jp1, kp1) )
+            case("acy")
+                v(1) = 0.25d0 * ( var(im1, jm1, km1) + var(i, jm1, km1)     &
+                                + var(im1, jm1, k)   + var(i, jm1, k) )
+                v(2) = 0.25d0 * ( var(i, jm1, km1) + var(ip1, jm1, km1)     &
+                                + var(i, jm1, k) + var(ip1, jm1, k) )
+                v(3) = 0.25d0 * ( var(i, j, km1) + var(ip1, j, km1)         &
+                                + var(i, j, k) + var(ip1, j, k) )
+                v(4) = 0.25d0 * ( var(im1, j, km1) + var(i, j, km1)         &
+                                + var(im1, j, k) + var(i, j, k) )
+
+                v(5) = 0.25d0 * ( var(im1, jm1, k) + var(i, jm1, k)         &
+                                + var(im1, jm1, kp1) + var(i, jm1, kp1) )
+                v(6) = 0.25d0 * ( var(i, jm1, k) + var(ip1, jm1, k)         &
+                                + var(i, jm1, kp1) + var(ip1, jm1, kp1) )
+                v(7) = 0.25d0 * ( var(i, j, k) + var(ip1, j, k)             &
+                                + var(i, j, kp1) + var(ip1, j, kp1) )
+                v(8) = 0.25d0 * ( var(im1, j, k) + var(i, j, k)             &
+                                + var(im1, j, kp1) + var(i, j, kp1) )
             case DEFAULT
                 write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
