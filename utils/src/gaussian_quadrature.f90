@@ -220,7 +220,7 @@ contains
 
     end subroutine gq2D_init
 
-        subroutine gq3D_init(gq,verbose)
+    subroutine gq3D_init(gq,verbose)
 
         implicit none
 
@@ -405,9 +405,7 @@ contains
         end select
 
         ! Step 2: Calculate values at each quadrature point
-
-if (.TRUE.) then
-
+        
         ! Loop over quadrature points for this element
         do p = 1, gq%n_qp
 
@@ -429,20 +427,6 @@ if (.TRUE.) then
             end do
         
         end do
-
-else
-
-        ! ! Loop over quadrature points for this element
-        ! do p = 1, gq%n_qp
-        !     ! Compute function values at quadrature points with Jacobian transformation
-        !     do q = 1, 4
-        !         f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
-        !             gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
-        !             gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4
-        !     end do
-        ! end do
-
-end if
 
         ! Store in output variable too
         v_qp = gq%v
@@ -552,8 +536,6 @@ end if
                 stop
         end select
 
-if (.TRUE.) then
-
         ! Loop over quadrature points for this element
         do p = 1, gq%n_qp
 
@@ -575,27 +557,7 @@ if (.TRUE.) then
             end do
         
         end do
-
-else
-
-        ! Loop over quadrature points for this element
-        ! do p = 1, gq%n_qp
-
-        !     ! Compute function values at quadrature points with Jacobian transformation
-        !     do q = 1, 8
-        !         f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
-        !             gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8 + &
-        !             gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
-        !             gq%dNdx(5,q) * ux5 + gq%dNdx(6,q) * ux6 + gq%dNdx(7,q) * ux7 + gq%dNdx(8,q) * ux8 + &
-        !             gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4 + &
-        !             gq%dNdy(5,q) * uy5 + gq%dNdy(6,q) * uy6 + gq%dNdy(7,q) * uy7 + gq%dNdy(8,q) * uy8 + &
-        !             gq%dNdz(1,q) * uz1 + gq%dNdz(2,q) * uz2 + gq%dNdz(3,q) * uz3 + gq%dNdz(4,q) * uz4 + &
-        !             gq%dNdz(5,q) * uz5 + gq%dNdz(6,q) * uz6 + gq%dNdz(7,q) * uz7 + gq%dNdz(8,q) * uz8
-        !     end do
-        ! end do
-
-end if
-
+        
         ! Store in output variable too
         v_qp = gq%v
         
