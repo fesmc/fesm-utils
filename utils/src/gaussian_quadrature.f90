@@ -98,6 +98,7 @@ module gaussian_quadrature
         real(8) :: xr(4)
         real(8) :: yr(4)
         real(8) :: wt(4)
+        real(8) :: wt_tot
         real(8) :: N(4,4)
         real(8) :: dNdxr(4,4)
         real(8) :: dNdyr(4,4)
@@ -115,6 +116,7 @@ module gaussian_quadrature
         real(8) :: yr(8)
         real(8) :: zr(8)
         real(8) :: wt(8)
+        real(8) :: wt_tot
         real(8) :: N(8,8)
         real(8) :: dNdxr(8,8)
         real(8) :: dNdyr(8,8)
@@ -173,6 +175,7 @@ contains
 
         ! Define weights
         gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0]
+        gq%wt_tot = sum(gq%wt)
 
         ! Define shape functions N(n, p) and derivatives
         ! where p represents each quadrature point
@@ -248,6 +251,7 @@ contains
 
         ! Define weights
         gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0]
+        gq%wt_tot = sum(gq%wt)
         
         ! Set volume scale
         ! This is not strictly necessary, but dividing by this scale gives matrix coefficients 
