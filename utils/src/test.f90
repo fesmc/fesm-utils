@@ -22,9 +22,9 @@ if (.TRUE.) then
     dx = 1.0
     dy = 1.0 
 
-    call gq2D_to_nodes(gq2D, var, dx, dy, grid_type="ab", i=2, j=2)
+    call gq2D_to_nodes(var_qp, gq2D, var, dx, dy, grid_type="ab", i=2, j=2)
 
-    write(*,*) "var_qp: ", gq2D%v
+    write(*,*) "var_qp: ", var_qp
     
     write(*,*)
     write(*,*) "----"

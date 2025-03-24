@@ -326,10 +326,11 @@ contains
 
     end subroutine gq3D_init
 
-    subroutine gq2D_to_nodes(gq, var, dx, dy, grid_type, i, j)
+    subroutine gq2D_to_nodes(v_qp, gq, var, dx, dy, grid_type, i, j)
         
         implicit none
         
+        real(wp), intent(INOUT) :: v_qp(4)          ! Variable values at quadrature points
         type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
         real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
         real(wp), intent(IN)  :: dx 
@@ -443,14 +444,18 @@ else
 
 end if
 
+        ! Store in output variable too
+        v_qp = gq%v
+
         return
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes(gq, var, dx, dy, dz0, dz1, i, j, k, grid_type)
+    subroutine gq3D_to_nodes(v_qp, gq, var, dx, dy, dz0, dz1, i, j, k, grid_type)
         
         implicit none
         
+        real(wp), intent(INOUT) :: v_qp(8)      ! Variable values at quadrature points
         type(gq3D_class), intent(INOUT) :: gq   ! Gaussian Quadrature 3D object
         real(wp), intent(in)  :: var(:,:,:)     ! Variable to be interpolated
         real(wp), intent(IN)  :: dx             ! Horizontal grid spacing (const)
@@ -591,6 +596,9 @@ else
 
 end if
 
+        ! Store in output variable too
+        v_qp = gq%v
+        
         return
         
     end subroutine gq3D_to_nodes
