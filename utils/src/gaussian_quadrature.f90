@@ -93,21 +93,38 @@ module gaussian_quadrature
        dphi_dzr_3d_vav      ! vertical avg of dphi_dzr_3d
 
     type gq2D_class
-        real(8) :: xi(4)
-        real(8) :: eta(4)
+        integer :: n_qp
+        integer :: n_nodes
+        real(8) :: xr(4)
+        real(8) :: yr(4)
+        real(8) :: wt(4)
         real(8) :: N(4,4)
-        real(8) :: dNdx(4,4)
-        real(8) :: dNdy(4,4)
+        real(8) :: dNdxr(4,4)
+        real(8) :: dNdyr(4,4)
+
+        real(8) :: dNdx(4)  ! At nodes
+        real(8) :: dNdy(4)  ! At nodes
+        real(8) :: detJ(4)  ! At nodes
+        real(8) :: v(4)     ! variable value at quadrature points
     end type
 
     type gq3D_class
-        real(8) :: xi(8)
-        real(8) :: eta(8)
-        real(8) :: zeta(8)
+        integer :: n_qp
+        integer :: n_nodes
+        real(8) :: xr(8)
+        real(8) :: yr(8)
+        real(8) :: zr(8)
+        real(8) :: wt(8)
         real(8) :: N(8,8)
-        real(8) :: dNdx(8,8)
-        real(8) :: dNdy(8,8)
-        real(8) :: dNdz(8,8)
+        real(8) :: dNdxr(8,8)
+        real(8) :: dNdyr(8,8)
+        real(8) :: dNdzr(8,8)
+
+        real(8) :: dNdx(8)  ! At nodes
+        real(8) :: dNdy(8)  ! At nodes
+        real(8) :: dNdz(8)  ! At nodes
+        real(8) :: detJ(8)  ! At nodes
+        real(8) :: v(8)     ! variable value at quadrature points
     end type
 
 
@@ -132,45 +149,58 @@ contains
         type(gq2D_class), intent(OUT) :: gq
 
         ! Local variables
-        integer :: q, n
+        integer :: p, n
 
         ! Quadrature point locations in reference element (-1,1)
         real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
 
+        ! Define how many quadrature points and nodes (corners) of cell
+        gq%n_qp    = 4
+        gq%n_nodes = 4
+
         ! Define quadrature points
-        gq%xi  = [ -sqrt3_inv, sqrt3_inv, sqrt3_inv, -sqrt3_inv ]
-        gq%eta = [ -sqrt3_inv, -sqrt3_inv, sqrt3_inv, sqrt3_inv ]
+        gq%xr = [ -sqrt3_inv, sqrt3_inv, sqrt3_inv, -sqrt3_inv ]
+        gq%yr = [ -sqrt3_inv, -sqrt3_inv, sqrt3_inv, sqrt3_inv ]
 
-        ! Define shape functions N(corner, q) and derivatives
-        ! where q represents each quadrature point
-        do q = 1, 4
+        ! Define weights
+        gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0]
 
-            gq%N(1,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 4.d0  ! N1
-            gq%N(2,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 4.d0  ! N2
-            gq%N(3,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 4.d0  ! N3
-            gq%N(4,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 4.d0  ! N4
+        ! Define shape functions N(n, p) and derivatives
+        ! where p represents each quadrature point
+        do p = 1, gq%n_qp
 
-            gq%dNdx(1,q) = -(1.d0 - gq%eta(q)) / 4.d0 
-            gq%dNdx(2,q) =  (1.d0 - gq%eta(q)) / 4.d0 
-            gq%dNdx(3,q) =  (1.d0 + gq%eta(q)) / 4.d0 
-            gq%dNdx(4,q) = -(1.d0 + gq%eta(q)) / 4.d0
+            gq%N(1,p) = (1.d0 - gq%xr(p)) * (1.d0 - gq%yr(p)) / 4.d0  ! N1
+            gq%N(2,p) = (1.d0 + gq%xr(p)) * (1.d0 - gq%yr(p)) / 4.d0  ! N2
+            gq%N(3,p) = (1.d0 + gq%xr(p)) * (1.d0 + gq%yr(p)) / 4.d0  ! N3
+            gq%N(4,p) = (1.d0 - gq%xr(p)) * (1.d0 + gq%yr(p)) / 4.d0  ! N4
 
-            gq%dNdy(1,q) = -(1.d0 - gq%xi(q)) / 4.d0 
-            gq%dNdy(2,q) = -(1.d0 + gq%xi(q)) / 4.d0 
-            gq%dNdy(3,q) =  (1.d0 + gq%xi(q)) / 4.d0 
-            gq%dNdy(4,q) =  (1.d0 - gq%xi(q)) / 4.d0 
+            gq%dNdxr(1,p) = -(1.d0 - gq%yr(p)) / 4.d0 
+            gq%dNdxr(2,p) =  (1.d0 - gq%yr(p)) / 4.d0 
+            gq%dNdxr(3,p) =  (1.d0 + gq%yr(p)) / 4.d0 
+            gq%dNdxr(4,p) = -(1.d0 + gq%yr(p)) / 4.d0
 
-            if (.FALSE.) then
+            gq%dNdyr(1,p) = -(1.d0 - gq%xr(p)) / 4.d0 
+            gq%dNdyr(2,p) = -(1.d0 + gq%xr(p)) / 4.d0 
+            gq%dNdyr(3,p) =  (1.d0 + gq%xr(p)) / 4.d0 
+            gq%dNdyr(4,p) =  (1.d0 - gq%xr(p)) / 4.d0 
+
+            if (verbose_init) then
                 write(*,*) " "
-                write(*,*) "Quad point, q =", q
-                write(*,*) "n, N, dNdx, dNdy:"
-                do n = 1, 4
-                    write(*,*) n, gq%N(n, q), gq%dNdx(n, q), gq%dNdy(n, q)
+                write(*,*) "Quad point, p =", p
+                write(*,*) "n, N, dNdxr, dNdyr:"
+                do n = 1, gq%n_nodes
+                    write(*,*) n, gq%N(n, p), gq%dNdxr(n, p), gq%dNdyr(n, p)
                 end do
-                write(*,*) "sum(N)", sum(gq%N(:, q))           ! Verified that sum = 1
-                write(*,*) "sum(dN/dx)", sum(gq%dNdx(:, q))    ! Verified that sum = 0 (within roundoff)
-                write(*,*) "sum(dN/dy)", sum(gq%dNdy(:, q))    ! Verified that sum = 0 (within roundoff)
+                write(*,*) "sum(N)", sum(gq%N(:, p))            ! Verified that sum = 1
+                write(*,*) "sum(dN/dxr)", sum(gq%dNdxr(:, p))   ! Verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dyr)", sum(gq%dNdyr(:, p))   ! Verified that sum = 0 (within roundoff)
             endif
+
+            ! Set node calculation values to zero to start
+            gq%dNdx = 0.0
+            gq%dNdy = 0.0
+            gq%detJ = 0.0
+            gq%v = 0.0
 
         end do
 
@@ -185,134 +215,204 @@ contains
         type(gq3D_class), intent(OUT) :: gq
 
         ! Local variables
-        integer :: q, n
+        integer :: p, n
 
         ! Quadrature point locations in reference element (-1,1)
         real(8), parameter :: sqrt3_inv = 1.0d0 / sqrt(3.0d0)
 
+        ! Define how many quadrature points and nodes (corners) of cell
+        gq%n_qp    = 4
+        gq%n_nodes = 4
+
         ! Define quadrature points
-        gq%xi   = [ -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv ]
-        gq%eta  = [ -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
-        gq%zeta = [ -sqrt3_inv, -sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
+        gq%xr = [ -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv ]
+        gq%yr = [ -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
+        gq%zr = [ -sqrt3_inv, -sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv,  sqrt3_inv ]
 
-        ! Define shape functions N(corner, q) and derivatives
-        ! where q represents each quadrature point
-        do q = 1, 8
+        ! Define weights
+        gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0]
+        
+        ! Define shape functions N(n, p) and derivatives
+        ! where p represents each quadrature point
+        do p = 1, gq%n_qp
 
-            gq%N(1,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N1
-            gq%N(2,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N2
-            gq%N(3,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N3
-            gq%N(4,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0  ! N4
-            gq%N(5,q) = (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N5
-            gq%N(6,q) = (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N6
-            gq%N(7,q) = (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N7
-            gq%N(8,q) = (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0  ! N8
+            gq%N(1,p) = (1.d0 - gq%xr(p)) * (1.d0 - gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0  ! N1
+            gq%N(2,p) = (1.d0 + gq%xr(p)) * (1.d0 - gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0  ! N2
+            gq%N(3,p) = (1.d0 + gq%xr(p)) * (1.d0 + gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0  ! N3
+            gq%N(4,p) = (1.d0 - gq%xr(p)) * (1.d0 + gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0  ! N4
+            gq%N(5,p) = (1.d0 - gq%xr(p)) * (1.d0 - gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0  ! N5
+            gq%N(6,p) = (1.d0 + gq%xr(p)) * (1.d0 - gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0  ! N6
+            gq%N(7,p) = (1.d0 + gq%xr(p)) * (1.d0 + gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0  ! N7
+            gq%N(8,p) = (1.d0 - gq%xr(p)) * (1.d0 + gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0  ! N8
 
-            gq%dNdx(1,q) = -(1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdx(2,q) =  (1.d0 - gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdx(3,q) =  (1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdx(4,q) = -(1.d0 + gq%eta(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdx(5,q) = -(1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdx(6,q) =  (1.d0 - gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdx(7,q) =  (1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdx(8,q) = -(1.d0 + gq%eta(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdxr(1,p) = -(1.d0 - gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdxr(2,p) =  (1.d0 - gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdxr(3,p) =  (1.d0 + gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdxr(4,p) = -(1.d0 + gq%yr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdxr(5,p) = -(1.d0 - gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdxr(6,p) =  (1.d0 - gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdxr(7,p) =  (1.d0 + gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdxr(8,p) = -(1.d0 + gq%yr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
 
-            gq%dNdy(1,q) = -(1.d0 - gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdy(2,q) = -(1.d0 + gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdy(3,q) =  (1.d0 + gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdy(4,q) =  (1.d0 - gq%xi(q)) * (1.d0 - gq%zeta(q)) / 8.d0 
-            gq%dNdy(5,q) = -(1.d0 - gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdy(6,q) = -(1.d0 + gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdy(7,q) =  (1.d0 + gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
-            gq%dNdy(8,q) =  (1.d0 - gq%xi(q)) * (1.d0 + gq%zeta(q)) / 8.d0 
+            gq%dNdyr(1,p) = -(1.d0 - gq%xr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdyr(2,p) = -(1.d0 + gq%xr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdyr(3,p) =  (1.d0 + gq%xr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdyr(4,p) =  (1.d0 - gq%xr(p)) * (1.d0 - gq%zr(p)) / 8.d0 
+            gq%dNdyr(5,p) = -(1.d0 - gq%xr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdyr(6,p) = -(1.d0 + gq%xr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdyr(7,p) =  (1.d0 + gq%xr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
+            gq%dNdyr(8,p) =  (1.d0 - gq%xr(p)) * (1.d0 + gq%zr(p)) / 8.d0 
 
-            gq%dNdz(1,q) = -(1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
-            gq%dNdz(2,q) = -(1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
-            gq%dNdz(3,q) = -(1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
-            gq%dNdz(4,q) = -(1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
-            gq%dNdz(5,q) =  (1.d0 - gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
-            gq%dNdz(6,q) =  (1.d0 + gq%xi(q)) * (1.d0 - gq%eta(q)) / 8.d0 
-            gq%dNdz(7,q) =  (1.d0 + gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
-            gq%dNdz(8,q) =  (1.d0 - gq%xi(q)) * (1.d0 + gq%eta(q)) / 8.d0 
+            gq%dNdzr(1,p) = -(1.d0 - gq%xr(p)) * (1.d0 - gq%yr(p)) / 8.d0 
+            gq%dNdzr(2,p) = -(1.d0 + gq%xr(p)) * (1.d0 - gq%yr(p)) / 8.d0 
+            gq%dNdzr(3,p) = -(1.d0 + gq%xr(p)) * (1.d0 + gq%yr(p)) / 8.d0 
+            gq%dNdzr(4,p) = -(1.d0 - gq%xr(p)) * (1.d0 + gq%yr(p)) / 8.d0 
+            gq%dNdzr(5,p) =  (1.d0 - gq%xr(p)) * (1.d0 - gq%yr(p)) / 8.d0 
+            gq%dNdzr(6,p) =  (1.d0 + gq%xr(p)) * (1.d0 - gq%yr(p)) / 8.d0 
+            gq%dNdzr(7,p) =  (1.d0 + gq%xr(p)) * (1.d0 + gq%yr(p)) / 8.d0 
+            gq%dNdzr(8,p) =  (1.d0 - gq%xr(p)) * (1.d0 + gq%yr(p)) / 8.d0 
 
-            if (.TRUE.) then
+            if (verbose_init) then
                 write(*,*) " "
-                write(*,*) "Quad point, q =", q
-                write(*,*) "n, phi_3d, dphi_dxr_3d, dphi_dyr_3d, dphi_dzr_3d:"
-                do n = 1, 8
-                    write(*,*) n, gq%N(n,q), gq%dNdx(n,q), gq%dNdy(n,q), gq%dNdz(n,q)
+                write(*,*) "Quad point, p =", p
+                write(*,*) "n, N_3d, dNdxr, dNdyr, dNdzr:"
+                do n = 1, gq%n_nodes
+                    write(*,*) n, gq%N(n,p), gq%dNdxr(n,p), gq%dNdyr(n,p), gq%dNdzr(n,p)
                 enddo
                 write(*,*) " "
-                write(*,*) "sum(N)", sum(gq%N(:,q))  ! verified that sum = 1
-                write(*,*) "sum(dN/dx)", sum(gq%dNdx(:,q))  ! verified that sum = 0 (within roundoff)
-                write(*,*) "sum(dN/dy)", sum(gq%dNdy(:,q))  ! verified that sum = 0 (within roundoff)
-                write(*,*) "sum(dN/dz)", sum(gq%dNdz(:,q))  ! verified that sum = 0 (within roundoff)
+                write(*,*) "sum(N)", sum(gq%N(:,p))             ! verified that sum = 1
+                write(*,*) "sum(dN/dxr)", sum(gq%dNdxr(:,p))    ! verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dyr)", sum(gq%dNdyr(:,p))    ! verified that sum = 0 (within roundoff)
+                write(*,*) "sum(dN/dzr)", sum(gq%dNdzr(:,p))    ! verified that sum = 0 (within roundoff)
             end if
 
+            ! Set node calculation values to zero to start
+            gq%dNdx = 0.0
+            gq%dNdy = 0.0
+            gq%dNdz = 0.0
+            gq%detJ = 0.0
+            gq%v = 0.0
+            
         end do
 
         return
 
     end subroutine gq3D_init
 
-    subroutine gq2D_to_nodes(f, gq, u, i, j, grid_type)
+    subroutine gq2D_to_nodes(gq, var, dx, dy, grid_type, i, j)
         
         implicit none
         
-        real(wp), intent(OUT) :: f(4)           ! Values at 4 Gaussian quadrature points
-        type(gq2D_class), intent(IN) :: gq      ! Gaussian Quadrature 2D object
-        real(wp), intent(in)  :: u(:,:)         ! Variable to be interpolated
-        integer,  intent(in)  :: i              ! x-index of current cell
-        integer,  intent(in)  :: j              ! y-index of current cell
+        type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
+        real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx 
+        real(wp), intent(IN)  :: dy
         character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy"
-
-        ! Local variables
-        integer :: nx, ny, q
-        real(8) :: u1, u2, u3, u4               ! Values of u at the four corners of the cell
-        real(8) :: ux1, ux2, ux3, ux4           ! Derivatives du/dx at the four corners of the cell
-        real(8) :: uy1, uy2, uy3, uy4           ! Derivatives du/dy at the four corners of the cell
+        integer,  intent(in)  :: i                  ! x-index of current cell
+        integer,  intent(in)  :: j                  ! y-index of current cell
         
-        nx = size(u,1)
-        ny = size(u,2)
+        ! Local variables
+        integer :: nx, ny, p, n
+        real(8) :: x(4)                 ! Real x-coordinates at the four corners of the cell
+        real(8) :: y(4)                 ! Real y-coordinates at the four corners of the cell
+        real(8) :: v(4)                 ! Values of u at the four corners of the cell
+        real(8) :: vx(4)                ! Derivatives du/dx at the four corners of the cell
+        real(8) :: vy(4)                ! Derivatives du/dy at the four corners of the cell
+        
+        nx = size(var,1)
+        ny = size(var,2)
+
+        ! Step 1: determine x and y values of input array values
+
+        ! Map xc,yc onto x,y vectors. Account for whether input
+        ! variable is on aa, acx or acy grid. Account for boundary
+        ! conditions (periodic, etc)
+
+        ! Set x and y for each node
+
+        !     4-----3       y
+        !     |     |       ^
+        !     |     |       |
+        !     1-----2       ---> x
 
         ! Compute values of u at the four cell corners
+        
+        ! First get x and y values (xx and yy defined on aa-nodes)
 
+        x(1) = -dx/2.d0
+        x(2) =  dx/2.d0
+        x(3) =  dx/2.d0
+        x(4) = -dx/2.d0
+
+        y(1) = -dy/2.d0
+        y(2) = -dy/2.d0
+        y(3) =  dy/2.d0
+        y(4) =  dy/2.d0
+        
         select case(trim(grid_type))
-
             case("aa")
-                u1 = 0.25d0 * (u(i-1, j-1) + u(i, j-1) + u(i-1, j) + u(i, j))  ! Bottom-left
-                u2 = 0.25d0 * (u(i, j-1) + u(i+1, j-1) + u(i, j) + u(i+1, j))  ! Bottom-right
-                u3 = 0.25d0 * (u(i, j) + u(i+1, j) + u(i, j+1) + u(i+1, j+1))  ! Top-right
-                u4 = 0.25d0 * (u(i-1, j) + u(i, j) + u(i-1, j+1) + u(i, j+1))  ! Top-left
+                v(1) = 0.25d0 * (var(i-1, j-1) + var(i, j-1) + var(i-1, j) + var(i, j))  ! Bottom-left
+                v(2) = 0.25d0 * (var(i, j-1) + var(i+1, j-1) + var(i, j) + var(i+1, j))  ! Bottom-right
+                v(3) = 0.25d0 * (var(i, j) + var(i+1, j) + var(i, j+1) + var(i+1, j+1))  ! Top-right
+                v(4) = 0.25d0 * (var(i-1, j) + var(i, j) + var(i-1, j+1) + var(i, j+1))  ! Top-left
+            case("ab")
+                v(1) = var(i-1,j-1)         ! Bottom-left
+                v(2) = var(i,j-1)           ! Bottom-right
+                v(3) = var(i,j)             ! Top-right
+                v(4) = var(i-1,j)           ! Top-left
             case("acx")
-                u1 = 0.5d0 * (u(i-1, j-1) + u(i-1, j))      ! Bottom-left
-                u2 = 0.5d0 * (u(i, j-1) + u(i, j))          ! Bottom-right
-                u3 = 0.5d0 * (u(i, j) + u(i, j+1))          ! Top-right
-                u4 = 0.5d0 * (u(i-1, j) + u(i-1, j+1))      ! Top-left
+                v(1) = 0.5d0 * (var(i-1, j-1) + var(i-1, j))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, j-1) + var(i, j))          ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(i, j+1))          ! Top-right
+                v(4) = 0.5d0 * (var(i-1, j) + var(i-1, j+1))      ! Top-left
             case("acy")
-                u1 = 0.5d0 * (u(i-1, j-1) + u(i, j-1))      ! Bottom-left
-                u2 = 0.5d0 * (u(i, j-1) + u(i+1, j-1))      ! Bottom-right
-                u3 = 0.5d0 * (u(i, j) + u(i+1, j))          ! Top-right
-                u4 = 0.5d0 * (u(i-1, j) + u(i, j))          ! Top-left
+                v(1) = 0.5d0 * (var(i-1, j-1) + var(i, j-1))      ! Bottom-left
+                v(2) = 0.5d0 * (var(i, j-1) + var(i+1, j-1))      ! Bottom-right
+                v(3) = 0.5d0 * (var(i, j) + var(i+1, j))          ! Top-right
+                v(4) = 0.5d0 * (var(i-1, j) + var(i, j))          ! Top-left
             case DEFAULT
                 write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
                 stop
         end select
 
+        ! Step 2: Calculate values at each quadrature point
+
 if (.TRUE.) then
-        ! Compute function values at quadrature points
-        do q = 1, 4
-            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4
+
+        ! Loop over quadrature points for this element
+        do p = 1, gq%n_qp
+
+            ! Compute basis function derivatives and det(J) for this quadrature point
+            ! For now, pass in i, j, k, p for debugging
+            !TODO - Modify this subroutine so that the output derivatives are optional?
+
+            call get_basis_function_derivatives_2d(x(:),             y(:),          &
+                                                    gq%dNdxr(:,p), gq%dNdyr(:,p),   &
+                                                    gq%dNdx(:),    gq%dNdy(:),      &
+                                                    gq%detJ(p),                     &
+                                                    itest, jtest, rtest,            &
+                                                    i, j, p)
+
+            ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
+            gq%v(p) = 0.d0
+            do n = 1, gq%n_nodes
+                gq%v(p) = gq%v(p) + gq%N(n,p) * v(n)
+            end do
+        
         end do
 
 else
-        ! Compute function values at quadrature points with Jacobian transformation
-        do q = 1, 4
-            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
-                gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
-                gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4
-        end do
+
+        ! ! Loop over quadrature points for this element
+        ! do p = 1, gq%n_qp
+        !     ! Compute function values at quadrature points with Jacobian transformation
+        !     do q = 1, 4
+        !         f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
+        !             gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
+        !             gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4
+        !     end do
+        ! end do
 
 end if
 
@@ -320,38 +420,40 @@ end if
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes(f, gq, u, i, j, k, grid_type)
+    subroutine gq3D_to_nodes(gq, var, i, j, k, grid_type)
         
         implicit none
         
-        real(wp), intent(OUT) :: f(8)           ! Values at 8 Gaussian quadrature points
-        type(gq3D_class), intent(IN) :: gq      ! Gaussian Quadrature 3D object
-        real(wp), intent(in)  :: u(:,:,:)       ! Variable to be interpolated
+        type(gq3D_class), intent(INOUT) :: gq   ! Gaussian Quadrature 3D object
+        real(wp), intent(in)  :: var(:,:,:)     ! Variable to be interpolated
         integer,  intent(in)  :: i              ! x-index of current cell
         integer,  intent(in)  :: j              ! y-index of current cell
         integer,  intent(in)  :: k              ! z-index of current cell
         character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy", "acz"
 
         ! Local variables
-        integer :: nx, ny, nz, q
-        real(8) :: u1, u2, u3, u4, u5, u6, u7, u8    ! Values of u at the eight corners of the cell
-        real(8) :: ux(8), uy(8), uz(8)               ! Derivatives at the eight corners
+        integer :: nx, ny, nz, p, n
+        real(8) :: x(4)                 ! Real x-coordinates at the four corners of the cell
+        real(8) :: y(4)                 ! Real y-coordinates at the four corners of the cell
+        real(8) :: z(4)                 ! Real z-coordinates at the four corners of the cell
+        real(8) :: v(8)                             ! Values of var at the eight corners of the cell
+        real(8) :: vx(8), vy(8), vz(8)              ! Derivatives at the eight corners
         
-        nx = size(u,1)
-        ny = size(u,2)
-        nz = size(u,3)
+        nx = size(var,1)
+        ny = size(var,2)
+        nz = size(var,3)
 
         ! Compute values of u at the eight cell corners
         select case(trim(grid_type))
-            case("aa")
-                u1 = u(i-1, j-1, k-1)
-                u2 = u(i, j-1, k-1)
-                u3 = u(i, j, k-1)
-                u4 = u(i-1, j, k-1)
-                u5 = u(i-1, j-1, k)
-                u6 = u(i, j-1, k)
-                u7 = u(i, j, k)
-                u8 = u(i-1, j, k)
+            case("ab")
+                v(1) = var(i-1, j-1, k-1)
+                v(2) = var(i, j-1, k-1)
+                v(3) = var(i, j, k-1)
+                v(4) = var(i-1, j, k-1)
+                v(5) = var(i-1, j-1, k)
+                v(6) = var(i, j-1, k)
+                v(7) = var(i, j, k)
+                v(8) = var(i-1, j, k)
             case DEFAULT
                 write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
@@ -359,23 +461,36 @@ end if
         end select
 
 if (.TRUE.) then
-        ! Compute function values at quadrature points
-        do q = 1, 8
-            f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
-                   gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8
+
+        ! Loop over quadrature points for this element
+        do p = 1, gq%n_qp
+
+            ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
+            gq%v(p) = 0.d0
+            do n = 1, gq%n_nodes
+                gq%v(p) = gq%v(p) + gq%N(n,p) * v(n)
+            end do
+        
         end do
+
 else
-        ! Compute function values at quadrature points with Jacobian transformation
-        ! do q = 1, 8
-        !     f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
-        !            gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8 + &
-        !            gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
-        !            gq%dNdx(5,q) * ux5 + gq%dNdx(6,q) * ux6 + gq%dNdx(7,q) * ux7 + gq%dNdx(8,q) * ux8 + &
-        !            gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4 + &
-        !            gq%dNdy(5,q) * uy5 + gq%dNdy(6,q) * uy6 + gq%dNdy(7,q) * uy7 + gq%dNdy(8,q) * uy8 + &
-        !            gq%dNdz(1,q) * uz1 + gq%dNdz(2,q) * uz2 + gq%dNdz(3,q) * uz3 + gq%dNdz(4,q) * uz4 + &
-        !            gq%dNdz(5,q) * uz5 + gq%dNdz(6,q) * uz6 + gq%dNdz(7,q) * uz7 + gq%dNdz(8,q) * uz8
+
+        ! Loop over quadrature points for this element
+        ! do p = 1, gq%n_qp
+
+        !     ! Compute function values at quadrature points with Jacobian transformation
+        !     do q = 1, 8
+        !         f(q) = gq%N(1,q) * u1 + gq%N(2,q) * u2 + gq%N(3,q) * u3 + gq%N(4,q) * u4 + &
+        !             gq%N(5,q) * u5 + gq%N(6,q) * u6 + gq%N(7,q) * u7 + gq%N(8,q) * u8 + &
+        !             gq%dNdx(1,q) * ux1 + gq%dNdx(2,q) * ux2 + gq%dNdx(3,q) * ux3 + gq%dNdx(4,q) * ux4 + &
+        !             gq%dNdx(5,q) * ux5 + gq%dNdx(6,q) * ux6 + gq%dNdx(7,q) * ux7 + gq%dNdx(8,q) * ux8 + &
+        !             gq%dNdy(1,q) * uy1 + gq%dNdy(2,q) * uy2 + gq%dNdy(3,q) * uy3 + gq%dNdy(4,q) * uy4 + &
+        !             gq%dNdy(5,q) * uy5 + gq%dNdy(6,q) * uy6 + gq%dNdy(7,q) * uy7 + gq%dNdy(8,q) * uy8 + &
+        !             gq%dNdz(1,q) * uz1 + gq%dNdz(2,q) * uz2 + gq%dNdz(3,q) * uz3 + gq%dNdz(4,q) * uz4 + &
+        !             gq%dNdz(5,q) * uz5 + gq%dNdz(6,q) * uz6 + gq%dNdz(7,q) * uz7 + gq%dNdz(8,q) * uz8
+        !     end do
         ! end do
+
 end if
 
         return
@@ -667,7 +782,7 @@ end if
 
     !----------------------------------------------------------------
     ! Trilinear basis set for reference hexahedron, x=(-1,1), y=(-1,1), z=(-1,1)             
-    ! Indexing is counter-clockwise from SW corner, with 1-4 on lower surface
+    ! Indexrng is counter-clockwise from SW corner, with 1-4 on lower surface
     !  and 5-8 on upper surface
     ! The code uses "phi_3d" to denote these basis functions. 
     !
@@ -888,7 +1003,7 @@ end if
 
     !----------------------------------------------------------------
     ! Bilinear basis set for reference square, x=(-1,1), y=(-1,1)             
-    ! Indexing is counter-clockwise from SW corner
+    ! Indexrng is counter-clockwise from SW corner
     ! The code uses "phi_2d" to denote these basis functions. 
     !
     ! N1 = (1-x)*(1-y)/4             N4----N3
