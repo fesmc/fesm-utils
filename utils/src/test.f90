@@ -31,7 +31,7 @@ if (.TRUE.) then
     jm1 = j-1
     jp1 = j
 
-    call gq2D_to_nodes(var_qp, gq2D, var, dx, dy, "ab",i,j,im1,ip1,jm1,jp1)
+    call gq2D_to_nodes(gq2D, var_qp, var, dx, dy, "ab",i,j,im1,ip1,jm1,jp1)
 
     write(*,*) "var_qp: ", var_qp
     
