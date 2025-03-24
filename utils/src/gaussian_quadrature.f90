@@ -531,45 +531,45 @@ contains
         ! Compute values of u at the eight cell corners
         select case(trim(grid_type))
             case("aa")
-                v(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))   &
-                                + 0.5d0 * (var(im1, j, km1) + var(im1, j, k))       &
-                                + 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
-                                + 0.5d0 * (var(i, jm1, km1) + var(i, jm1, k)) )
+                v(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))       &
+                                + 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                + 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k)) )
 
-                v(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1) + var(i, jm1, k))       &
-                                + 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
-                                + 0.5d0 * (var(ip1, j, km1) + var(ip1, j, k))       &
+                v(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k))         &
+                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k))         &
                                 + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
 
-                v(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1) + var(i, j, k))           &
-                                + 0.5d0 * (var(i, jp1, km1) + var(i, jp1, k))       &
-                                + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))   &
-                                + 0.5d0 * (var(ip1, j, km1) + var(ip1, j, k)) )
+                v(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                                + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))       &
+                                + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k)) )
 
-                v(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1) + var(im1, j, k))       &
-                                + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))   &
-                                + 0.5d0 * (var(i, jp1, km1) + var(i, jp1, k))       &
-                                + 0.5d0 * (var(i, j, km1) + var(i, j, k)) )
+                v(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                                + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))       &
+                                + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k)) )
 
-                v(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k) + var(im1, jm1, kp1))   &
-                                + 0.5d0 * (var(im1, j, k) + var(im1, j, kp1))       &
-                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
-                                + 0.5d0 * (var(i, jm1, k) + var(i, jm1, kp1)) )
+                v(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k)   + var(im1, jm1, kp1))     &
+                                + 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                + 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1)) )
 
-                v(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k) + var(i, jm1, kp1))       &
-                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
-                                + 0.5d0 * (var(ip1, j, k) + var(ip1, j, kp1))       &
-                                + 0.5d0 * (var(ip1, jm1, k) + var(ip1, jm1, kp1)) )
+                v(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1))       &
+                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1))       &
+                                + 0.5d0 * (var(ip1, jm1, k)   + var(ip1, jm1, kp1)) )
 
-                v(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k) + var(i, j, kp1))           &
-                                + 0.5d0 * (var(i, jp1, k) + var(i, jp1, kp1))       &
-                                + 0.5d0 * (var(ip1, jp1, k) + var(ip1, jp1, kp1))   &
-                                + 0.5d0 * (var(ip1, j, k) + var(ip1, j, kp1)) )
+                v(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                                + 0.5d0 * (var(ip1, jp1, k)   + var(ip1, jp1, kp1))     &
+                                + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1)) )
 
-                v(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k) + var(im1, j, kp1))       &
-                                + 0.5d0 * (var(im1, jp1, k) + var(im1, jp1, kp1))   &
-                                + 0.5d0 * (var(i, jp1, k) + var(i, jp1, kp1))       &
-                                + 0.5d0 * (var(i, j, k) + var(i, j, kp1)) )
+                v(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                                + 0.5d0 * (var(im1, jp1, k)   + var(im1, jp1, kp1))     &
+                                + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1)) )
             case("ab")
                 v(1) = var(im1, jm1, km1)
                 v(2) = var(i, jm1, km1)
