@@ -366,6 +366,11 @@ contains
         ! Compute values of u at the four cell corners
         
         ! First get x and y values (xx and yy defined on aa-nodes)
+        ! First get x and y values (xx and yy defined on aa-nodes)
+        ! Note: these could be actual coordinates passed in as arguments,
+        ! as done in e.g. CISM. However, we can assume the horizontal grid
+        ! is regular with constant spacing and define relative x/y coordinates
+        ! here.
 
         x(1) = -dx/2.d0
         x(2) =  dx/2.d0
@@ -405,7 +410,7 @@ contains
         end select
 
         ! Step 2: Calculate values at each quadrature point
-        
+
         ! Loop over quadrature points for this element
         do p = 1, gq%n_qp
 
@@ -479,7 +484,14 @@ contains
         ! Compute values of u at the four cell corners
         
         ! First get x and y values (xx and yy defined on aa-nodes)
-
+        ! Note: these could be actual coordinates passed in as arguments,
+        ! as done in e.g. CISM. However, we can assume the horizontal grid
+        ! is regular with constant spacing and define relative x/y coordinates
+        ! here. 
+        ! The vertical axis z may contain different spacing above and below this cell,
+        ! which is why a dz0 (distance to cell below) and dz1 (distance to cell above)
+        ! is used.
+        
         x(1) = -dx/2.d0
         x(2) =  dx/2.d0
         x(3) =  dx/2.d0
