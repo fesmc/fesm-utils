@@ -131,18 +131,15 @@ module gaussian_quadrature
     end type
 
 
-    ! private
-    ! public :: gq2D_class
-    ! public :: gq2D_init
-    ! public :: gq2D_to_nodes
+    private
+    public :: gq2D_class
+    public :: gq2D_init
+    public :: gq2D_to_nodes
 
-    ! public :: gq3D_class
-    ! public :: gq3D_init
-
-    ! public :: gaussian_quadrature_init
-    ! public :: gaussian_quadrature_2D_to_nodes
-    public
-
+    public :: gq3D_class
+    public :: gq3D_init
+    public :: gq3D_to_nodes
+    
 contains
 
     subroutine gq2D_init(gq,verbose)

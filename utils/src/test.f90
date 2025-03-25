@@ -1,5 +1,7 @@
 program test
 
+    use precision
+    
     !use mapping_scrip
     use gaussian_quadrature
 
