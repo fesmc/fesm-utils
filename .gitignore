@@ -1,6 +1,7 @@
 fftw*
 lis*
 Makefile
+*.dSYM
 *.mod
 *.a
 *.o
