@@ -175,7 +175,7 @@ contains
 
         ! Define weights
         gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0]
-        gq%wt_tot = sum(gq%wt)
+        gq%wt_tot = 4.0d0           ! Surface area of square [-1:1,-1:1]=> 2x2 => 4 
 
         ! Define shape functions N(n, p) and derivatives
         ! where p represents each quadrature point
@@ -241,8 +241,8 @@ contains
         end if
 
         ! Define how many quadrature points and nodes (corners) of cell
-        gq%n_qp    = 4
-        gq%n_nodes = 4
+        gq%n_qp    = 8
+        gq%n_nodes = 8
 
         ! Define quadrature points
         gq%xr = [ -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv, -sqrt3_inv,  sqrt3_inv,  sqrt3_inv, -sqrt3_inv ]
@@ -251,14 +251,13 @@ contains
 
         ! Define weights
         gq%wt = [1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0, 1.0d0]
-        gq%wt_tot = sum(gq%wt)
+        gq%wt_tot = 8.0d0       ! Volume of square [-1:1,-1:1, -1:1]=> 2x2x2 => 8
         
         ! Set volume scale
         ! This is not strictly necessary, but dividing by this scale gives matrix coefficients 
         !  that are ~1.
         gq%vol0  = 1.0d9    ! volume scale (m^3)
-
-
+        
         ! Define shape functions N(n, p) and derivatives
         ! where p represents each quadrature point
         do p = 1, gq%n_qp
