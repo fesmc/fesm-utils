@@ -257,7 +257,7 @@ contains
         ! This is not strictly necessary, but dividing by this scale gives matrix coefficients 
         !  that are ~1.
         gq%vol0  = 1.0d9    ! volume scale (m^3)
-        
+
         ! Define shape functions N(n, p) and derivatives
         ! where p represents each quadrature point
         do p = 1, gq%n_qp
@@ -614,6 +614,25 @@ contains
                                 + var(i, j, kp1) + var(ip1, j, kp1) )
                 v(8) = 0.25d0 * ( var(im1, j, k) + var(i, j, k)             &
                                 + var(im1, j, kp1) + var(i, j, kp1) )
+            case("acz")
+                v(1) = 0.25d0 * ( var(im1, jm1, km1) + var(i, jm1, km1)   &
+                                + var(i, j, km1)   + var(im1, j, km1) )
+                v(2) = 0.25d0 * ( var(i, jm1, km1) + var(ip1, jm1, km1)     &
+                                + var(ip1, j, km1) + var(i, j, km1) )
+                v(3) = 0.25d0 * ( var(i, j, km1) + var(ip1, j, km1)       &
+                                + var(ip1, jp1, km1) + var(i, jp1, km1) )
+                v(4) = 0.25d0 * ( var(im1, j, km1) + var(i, j, km1)     &
+                                + var(i, jp1, km1) + var(im1, jp1, km1) )
+                                            
+                v(5) = 0.25d0 * ( var(im1, jm1, k) + var(i, jm1, k)   &
+                                + var(i, j, k) + var(im1, j, k) )
+                v(6) = 0.25d0 * ( var(i, jm1, k) + var(ip1, jm1, k)     &
+                                + var(ip1, j, k) + var(i, j, k) )
+                v(7) = 0.25d0 * ( var(i, j, k) + var(ip1, j, k)       &
+                                + var(ip1, jp1, k) + var(i, jp1, k) )
+                v(8) = 0.25d0 * ( var(im1, j, k) + var(i, j, k)     &
+                                + var(i, jp1, k) + var(im1, jp1, k) )
+
             case DEFAULT
                 write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
                 write(error_unit,*) "grid_type = ", trim(grid_type)
