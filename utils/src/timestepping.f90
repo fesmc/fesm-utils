@@ -175,12 +175,22 @@ contains
     
     end subroutine tstep_init
 
-    subroutine tstep_update(ts,dt)
+    subroutine tstep_update(ts,dt,verbose)
 
         implicit none
 
         type(tstep_class), intent(INOUT) :: ts
         real(wp),          intent(IN)    :: dt 
+        logical,           intent(IN), optional :: verbose
+
+        ! Local variables
+        logical :: print_table 
+
+        if (present(verbose)) then
+            print_table = verbose
+        else
+            print_table = .FALSE.
+        end if
 
         if (ts%n .gt. 0) then
 
@@ -218,6 +228,13 @@ contains
         ! Finally check if time stepping is finished
         if (ts%time .ge. ts%time_end) then
             ts%is_finished = .TRUE.
+        end if
+
+        if (print_table) then
+            if (ts%n .eq. 0) then
+                call tstep_print_header(ts)
+            end if
+            call tstep_print(ts)
         end if
 
         return
