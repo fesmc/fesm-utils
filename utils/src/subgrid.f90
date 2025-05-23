@@ -6,8 +6,9 @@ module subgrid
     implicit none
     
     private
-    public :: calc_subgrid_array
-    public :: calc_subgrid_array_cell
+    public :: calc_subgrid_array        ! wp
+    public :: calc_subgrid_array_dble   ! dble
+    public :: calc_subgrid_array_cell   ! dble
 
 contains
 
@@ -22,7 +23,30 @@ contains
         integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
 
         ! Local variables
-        real(wp) :: v1, v2, v3, v4
+        real(dp), allocatable :: vint_dble(:,:)
+
+        allocate(vint_dble(nxi,nxi))
+
+        call calc_subgrid_array_dble(vint_dble,real(v,dp),nxi,i,j,im1,ip1,jm1,jp1)
+        
+        vint = real(vint_dble,wp)
+
+        return
+        
+    end subroutine calc_subgrid_array
+
+    subroutine calc_subgrid_array_dble(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+
+        implicit none
+
+        real(dp), intent(INOUT) :: vint(:,:)  
+        real(dp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        real(dp) :: v1, v2, v3, v4
 
         if (nxi .eq. 1) then
             ! Case of no interpolation, just set subgrid array equal to current value
@@ -39,13 +63,13 @@ contains
             v4 = 0.25_wp*(v(i,j) + v(ip1,j) + v(ip1,jm1) + v(i,jm1))
                 
             ! Next calculate the subgrid array of values for this cell
-            call calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
+            call calc_subgrid_array_cell_dble(vint,v1,v2,v3,v4,nxi)
 
         end if
 
         return
         
-    end subroutine calc_subgrid_array
+    end subroutine calc_subgrid_array_dble
 
     subroutine calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
         ! Given the four corners of a cell in quadrants 1,2,3,4,
@@ -64,9 +88,40 @@ contains
         real(wp), intent(IN)  :: v1, v2, v3, v4
         integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
 
+        ! Local variables
+        real(dp), allocatable :: vint_dble(:,:)
+
+        allocate(vint_dble(nxi,nxi))
+
+        call calc_subgrid_array_cell_dble(vint_dble,real(v1,dp),real(v2,dp), &
+                                                real(v3,dp),real(v4,dp),nxi)
+        
+        vint = real(vint_dble,wp)
+
+        return 
+
+    end subroutine calc_subgrid_array_cell
+
+    subroutine calc_subgrid_array_cell_dble(vint,v1,v2,v3,v4,nxi)
+        ! Given the four corners of a cell in quadrants 1,2,3,4,
+        ! calculate the subgrid values via linear interpolation
+        ! Assumes vint is a square array of dimensions nxi: vint[nxi,nxi]
+        ! Convention:
+        !   
+        !    v2---v1
+        !    |     |
+        !    |     |
+        !    v3---v4
+
+        implicit none 
+
+        real(dp), intent(INOUT) :: vint(:,:)  
+        real(dp), intent(IN)  :: v1, v2, v3, v4
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
+
         ! Local variables 
         integer :: i, j 
-        real(wp) :: x(nxi), y(nxi) 
+        real(dp) :: x(nxi), y(nxi) 
 
         if (nxi .eq. 1) then
             ! Make sure interpolation point represents the center of the subgrid array
@@ -92,7 +147,7 @@ contains
 
         return 
 
-    end subroutine calc_subgrid_array_cell
+    end subroutine calc_subgrid_array_cell_dble
 
     function interp_bilin_pt(z1,z2,z3,z4,xout,yout) result(zout)
         ! Interpolate a point given four neighbors at corners of square (0:1,0:1)
@@ -103,13 +158,13 @@ contains
 
         implicit none 
 
-        real(wp), intent(IN) :: z1, z2, z3, z4 
-        real(wp), intent(IN) :: xout, yout 
-        real(wp) :: zout 
+        real(dp), intent(IN) :: z1, z2, z3, z4 
+        real(dp), intent(IN) :: xout, yout 
+        real(dp) :: zout 
 
         ! Local variables 
-        real(wp) :: x0, x1, y0, y1 
-        real(wp) :: alpha1, alpha2, p0, p1 
+        real(dp) :: x0, x1, y0, y1 
+        real(dp) :: alpha1, alpha2, p0, p1 
 
         x0 = 0.0 
         x1 = 1.0 
