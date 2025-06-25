@@ -136,7 +136,7 @@ contains
                     ts%use_const_cal = .FALSE.
                 end if
 
-            case("rel","sp","bp") ! Synonyms
+            case("rel","sp","bp") ! Synonyms: relative, since-present, before-present
 
                 ts%time_elapsed = 0.0
                 ts%time_rel     = ts%time_init
@@ -155,10 +155,10 @@ contains
             
             case("const")
 
-                ts%time_elapsed = ts%time_init      ! only case where time_elapsed can start at non-zero
+                ts%time_elapsed = 0.0
                 ts%time_cal     = ts%time_const_cal
                 ts%time_rel     = ts%time_const_rel
-                ts%time         = ts%time_elapsed
+                ts%time         = ts%time_init
 
             case DEFAULT
                 write(error_unit,*) "tstep_init:: Error: method not recognized."
@@ -217,7 +217,7 @@ contains
                 case("rel","sp","bp")
                     ts%time = ts%time_rel
                 case("const")
-                    ts%time = ts%time_elapsed
+                    ts%time = ts%time_init
             end select
 
         end if 
