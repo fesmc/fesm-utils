@@ -50,7 +50,7 @@ module timestepping
 contains
 
     subroutine tstep_init(ts,time_init,time_end,method,units,time_ref,const_cal,const_rel)
-        ! method = "const","constant"  : time=time_elapsed evolves, fixed time_cal and time_rel
+        ! method = "const","constant"  : time=time_init + time_elapsed evolves, fixed time_cal and time_rel
         ! method = "cal","calendar"    : time=time_cal evolves, time_rel is set relative to it
         ! method = "rel","relative"    : time=time_rel evolves, time_cal is set relative to it
 
