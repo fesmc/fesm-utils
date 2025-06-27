@@ -217,7 +217,7 @@ contains
                 case("rel","sp","bp")
                     ts%time = ts%time_rel
                 case("const")
-                    ts%time = ts%time_init
+                    ts%time = ts%time_elapsed
             end select
 
         end if 
