@@ -50,9 +50,9 @@ module timestepping
 contains
 
     subroutine tstep_init(ts,time_init,time_end,method,units,time_ref,const_cal,const_rel)
-        ! method = "const": time_elapsed evolves, fixed time_cal and time_rel
-        ! method = "cal"  : time_cal evolves, time_rel is set relative to it
-        ! method = "rel","sp","bp"  : time_rel evolves, time_cal is set relative to it
+        ! method = "const","constant"  : time=time_elapsed evolves, fixed time_cal and time_rel
+        ! method = "cal","calendar"    : time=time_cal evolves, time_rel is set relative to it
+        ! method = "rel","relative"    : time=time_rel evolves, time_cal is set relative to it
 
         implicit none
 
@@ -94,7 +94,7 @@ contains
             ts%use_const_rel  = .FALSE.
         end if
         
-        if (trim(ts%method) .eq. "const") then
+        if (trim(ts%method) .eq. "const" .or. trim(ts%method) .eq. "constant") then
             ! In this case, set both constant values to true independent of arguments provided
             ts%use_const_cal  = .TRUE.
             ts%use_const_rel  = .TRUE.
@@ -119,7 +119,14 @@ contains
 
         ! Set time keepers based on method
         select case(trim(ts%method))
-            case("cal")
+            case("const","constant")
+
+                ts%time_elapsed = 0.0
+                ts%time_cal     = ts%time_const_cal
+                ts%time_rel     = ts%time_const_rel
+                ts%time         = ts%time_init
+
+            case("cal","calendar")
                 
                 ts%time_elapsed = 0.0
                 ts%time_cal     = ts%time_init
@@ -136,7 +143,7 @@ contains
                     ts%use_const_cal = .FALSE.
                 end if
 
-            case("rel","sp","bp") ! Synonyms: relative, since-present, before-present
+            case("rel","relative")
 
                 ts%time_elapsed = 0.0
                 ts%time_rel     = ts%time_init
@@ -147,19 +154,13 @@ contains
                 
                 ! Consistency check
                 if (ts%use_const_rel) then
-                    write(*,*) "tstep_init:: warning: a constant before present time (const_rel) &
-                    &has been specified with one of method=['rel','sp','bp']. The constant value will be ignored."
+                    write(*,*) "tstep_init:: Warning: a constant relative time (const_rel) &
+                    &has been specified with the 'relative' timestepping method. &
+                    &The constant value will be ignored."
                     write(*,*) "const_rel = ", const_rel
                     ts%use_const_rel = .FALSE.
                 end if
             
-            case("const")
-
-                ts%time_elapsed = 0.0
-                ts%time_cal     = ts%time_const_cal
-                ts%time_rel     = ts%time_const_rel
-                ts%time         = ts%time_init
-
             case DEFAULT
                 write(error_unit,*) "tstep_init:: Error: method not recognized."
                 write(error_unit,*) "ts%method = ", trim(ts%method)
@@ -212,12 +213,12 @@ contains
             
             ! Set output time based on method
             select case(trim(ts%method))
-                case("cal")
+                case("const","constant")
+                    ts%time = ts%time_init + ts%time_elapsed
+                case("cal","calendar")
                     ts%time = ts%time_cal
-                case("rel","sp","bp")
+                case("rel","relative")
                     ts%time = ts%time_rel
-                case("const")
-                    ts%time = ts%time_elapsed
             end select
 
         end if 
