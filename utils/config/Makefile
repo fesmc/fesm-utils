@@ -39,6 +39,9 @@ endif
 ##
 ###############################################
 
+$(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/grid_to_cdo.o: $(srcdir)/coordinates-light/grid_to_cdo.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -89,7 +92,8 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping_scrip.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-fesmutils_libs = 	$(objdir)/gaussian_filter.o \
+fesmutils_libs = 	$(objdir)/derivatives.o \
+					$(objdir)/gaussian_filter.o \
 					$(objdir)/gaussian_quadrature.o \
 					$(objdir)/grid_to_cdo.o \
 					$(objdir)/index.o \
