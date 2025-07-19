@@ -13,7 +13,7 @@ module derivatives
 
 contains
 
-    subroutine calc_dvdx_2D(dvdx,v,dx,mask,bc)
+    subroutine calc_dvdx_2D(dvdx,v,dx,mask,bc,lim)
         
         implicit none
 
@@ -22,6 +22,7 @@ contains
         real(wp), intent(IN)  :: dx
         logical,  intent(IN)  :: mask(:,:)
         character(len=*), intent(IN) :: bc
+        real(wp), intent(IN), optional :: lim
 
         ! Local variables
         integer :: nx, ny, i, j, im1, ip1, jm1, jp1
@@ -70,11 +71,16 @@ contains
         end do
         end do
 
+        if (present(lim)) then
+            ! Finally, ensure that gradient is beneath desired limit
+            call minmax(dvdx,lim)
+        end if                
+
         return
         
     end subroutine calc_dvdx_2D
 
-    subroutine calc_dvdy_2D(dvdy,v,dy,mask,bc)
+    subroutine calc_dvdy_2D(dvdy,v,dy,mask,bc,lim)
         
         implicit none
 
@@ -83,6 +89,7 @@ contains
         real(wp), intent(IN)  :: dy
         logical,  intent(IN)  :: mask(:,:)
         character(len=*), intent(IN) :: bc
+        real(wp), intent(IN), optional :: lim
 
         ! Local variables
         integer :: nx, ny, i, j, im1, ip1, jm1, jp1
@@ -131,11 +138,16 @@ contains
         end do
         end do
 
+        if (present(lim)) then
+            ! Finally, ensure that gradient is beneath desired limit
+            call minmax(dvdy,lim)
+        end if                
+
         return
         
     end subroutine calc_dvdy_2D
 
-    subroutine calc_dvdx_1D(dvdx,v,dx,mask,bc)
+    subroutine calc_dvdx_1D(dvdx,v,dx,mask,bc,lim)
         
         implicit none
 
@@ -144,6 +156,7 @@ contains
         real(wp), intent(IN)  :: dx
         logical,  intent(IN)  :: mask(:)
         character(len=*), intent(IN) :: bc
+        real(wp), intent(IN), optional :: lim
 
         ! Local variables
         integer :: nx, i, im1, ip1
@@ -189,6 +202,11 @@ contains
             end if
         end do
 
+        if (present(lim)) then
+            ! Finally, ensure that gradient is beneath desired limit
+            call minmax(dvdx,lim)
+        end if                
+
         return
         
     end subroutine calc_dvdx_1D
@@ -209,5 +227,22 @@ contains
         return
         
     end subroutine calc_dvdy_1D
+
+    elemental subroutine minmax(var,var_lim)
+
+        implicit none 
+
+        real(wp), intent(INOUT) :: var 
+        real(wp), intent(IN)    :: var_lim 
+
+        if (var .lt. -var_lim) then 
+            var = -var_lim 
+        else if (var .gt. var_lim) then 
+            var =  var_lim 
+        end if 
+
+        return 
+
+    end subroutine minmax
 
 end module derivatives
