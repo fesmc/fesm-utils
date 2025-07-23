@@ -15,5 +15,6 @@ module precision
 
   ! Machine tolerance
   real(wp), parameter :: TOL = 1e-8_wp
+  real(wp), parameter :: TOL_UNDERFLOW = real(1e-15,wp)
   
 end module precision

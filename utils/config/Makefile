@@ -73,6 +73,9 @@ $(objdir)/nml.o: $(srcdir)/nml.f90
 $(objdir)/precision.o: $(srcdir)/precision.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/staggering.o: $(srcdir)/staggering.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/subgrid.o: $(srcdir)/subgrid.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -104,6 +107,7 @@ fesmutils_libs = 	$(objdir)/derivatives.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
 					$(objdir)/subgrid.o \
+					$(objdir)/staggering.o \
 					$(objdir)/timer.o \
 					$(objdir)/timeout.o \
 					$(objdir)/timestepping.o \

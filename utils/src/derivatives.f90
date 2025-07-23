@@ -65,6 +65,11 @@ contains
                     ! Inner point
                     f = [v(i-1,j),v(i,j),v(i+1,j)]
                     dvdx(i,j) = sum(wc*f)
+
+                    ! Upstream margin - only use information from inside mask
+
+                    ! TO DO
+                    
                 end if
 
             end if
