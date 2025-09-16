@@ -103,10 +103,12 @@ module gaussian_quadrature
         real(8) :: dNdxr(4,4)
         real(8) :: dNdyr(4,4)
         
+        real(8) :: v_ab(4)  ! Variable value at cell corners
+
         real(8) :: dNdx(4)  ! At nodes
         real(8) :: dNdy(4)  ! At nodes
         real(8) :: detJ(4)  ! At nodes
-        real(8) :: v(4)     ! variable value at quadrature points
+        real(8) :: v(4)     ! Variable value at quadrature points
     end type
 
     type gq3D_class
@@ -123,22 +125,32 @@ module gaussian_quadrature
         real(8) :: dNdzr(8,8)
         real(8) :: vol0
         
+        real(8) :: v_ab(8)  ! Variable value at cell corners
+        
         real(8) :: dNdx(8)  ! At nodes
         real(8) :: dNdy(8)  ! At nodes
         real(8) :: dNdz(8)  ! At nodes
         real(8) :: detJ(8)  ! At nodes
-        real(8) :: v(8)     ! variable value at quadrature points
+        real(8) :: v(8)     ! Variable value at quadrature points
     end type
 
 
     private
     public :: gq2D_class
     public :: gq2D_init
-    public :: gq2D_to_nodes
+    public :: gq2D_to_nodes_aa
+    public :: gq2D_to_nodes_ab
+    public :: gq2D_to_nodes_acx
+    public :: gq2D_to_nodes_acy
 
     public :: gq3D_class
     public :: gq3D_init
-    public :: gq3D_to_nodes
+    public :: gq3D_to_nodes_aa
+    public :: gq3D_to_nodes_ab
+    public :: gq3D_to_nodes_acx
+    public :: gq3D_to_nodes_acy
+    public :: gq3D_to_nodes_acz
+    
     
 contains
 
@@ -322,29 +334,130 @@ contains
 
     end subroutine gq3D_init
 
-    subroutine gq2D_to_nodes(gq, v_qp, var, dx, dy, grid_type, i, j, im1, ip1, jm1, jp1)
-        
+    subroutine gq2D_to_nodes_aa(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+
         implicit none
-        
+
         type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
         real(wp),         intent(INOUT) :: v_qp(4)  ! Variable values at quadrature points
         real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
         real(wp), intent(IN)  :: dx 
         real(wp), intent(IN)  :: dy
-        character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy"
         integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         
-        ! Local variables
-        integer :: nx, ny, p, n
-        real(8) :: x(4)                 ! Real x-coordinates at the four corners of the cell
-        real(8) :: y(4)                 ! Real y-coordinates at the four corners of the cell
-        real(8) :: v(4)                 ! Values of u at the four corners of the cell
-        real(8) :: vx(4)                ! Derivatives du/dx at the four corners of the cell
-        real(8) :: vy(4)                ! Derivatives du/dy at the four corners of the cell
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.25d0 * (var(im1, jm1) + var(i, jm1) + var(im1, j) + var(i, j))  ! Bottom-left
+        gq%v_ab(2) = 0.25d0 * (var(i, jm1) + var(ip1, jm1) + var(i, j) + var(ip1, j))  ! Bottom-right
+        gq%v_ab(3) = 0.25d0 * (var(i, j) + var(ip1, j) + var(i, jp1) + var(ip1, jp1))  ! Top-right
+        gq%v_ab(4) = 0.25d0 * (var(im1, j) + var(i, j) + var(im1, jp1) + var(i, jp1))  ! Top-left
+
+        ! Map corner values to quadrature nodes
+        call gq2D_to_nodes(gq, dx, dy)
         
-        nx = size(var,1)
-        ny = size(var,2)
+        ! Store in output variable too
+        v_qp = gq%v
+
+        return
+
+    end subroutine gq2D_to_nodes_aa
+
+    subroutine gq2D_to_nodes_ab(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+
+        implicit none
+
+        type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
+        real(wp),         intent(INOUT) :: v_qp(4)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx 
+        real(wp), intent(IN)  :: dy
+        integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = var(im1,jm1)         ! Bottom-left
+        gq%v_ab(2) = var(i,jm1)           ! Bottom-right
+        gq%v_ab(3) = var(i,j)             ! Top-right
+        gq%v_ab(4) = var(im1,j)           ! Top-left
+
+        ! Map corner values to quadrature nodes
+        call gq2D_to_nodes(gq, dx, dy)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+
+        return
+
+    end subroutine gq2D_to_nodes_ab
+    
+    subroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+
+        implicit none
+
+        type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
+        real(wp),         intent(INOUT) :: v_qp(4)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx 
+        real(wp), intent(IN)  :: dy
+        integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(im1, j))      ! Bottom-left
+        gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(i, j))          ! Bottom-right
+        gq%v_ab(3) = 0.5d0 * (var(i, j) + var(i, jp1))          ! Top-right
+        gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(im1, jp1))      ! Top-left
+
+        ! Map corner values to quadrature nodes
+        call gq2D_to_nodes(gq, dx, dy)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+
+        return
+
+    end subroutine gq2D_to_nodes_acx
+    
+    subroutine gq2D_to_nodes_acy(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+
+        implicit none
+
+        type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
+        real(wp),         intent(INOUT) :: v_qp(4)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:)           ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx 
+        real(wp), intent(IN)  :: dy
+        integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(i, jm1))      ! Bottom-left
+        gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(ip1, jm1))      ! Bottom-right
+        gq%v_ab(3) = 0.5d0 * (var(i, j) + var(ip1, j))          ! Top-right
+        gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(i, j))          ! Top-left
+
+        ! Map corner values to quadrature nodes
+        call gq2D_to_nodes(gq, dx, dy)
+
+        ! Store in output variable too
+        v_qp = gq%v
+
+        return
+
+    end subroutine gq2D_to_nodes_acy
+    
+    subroutine gq2D_to_nodes(gq, dx, dy)
+        ! Given variable values at cell corners (gq%v_ab), 
+        ! map variable to quadrature nodes
+
+        implicit none
+        
+        type(gq2D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 2D object
+        real(wp), intent(IN)  :: dx 
+        real(wp), intent(IN)  :: dy
+        
+        ! Local variables
+        integer :: p, n
 
         ! Step 1: determine x and y values of input array values
 
@@ -354,7 +467,7 @@ contains
 
         !----------------------------------------------------------------
         ! Bilinear basis set for reference square, x=(-1,1), y=(-1,1)             
-        ! Indexrng is counter-clockwise from SW corner
+        ! Indexing is counter-clockwise from SW corner
         ! The code uses "gq%N" to denote these basis functions. 
         !
         ! N1 = (1-x)*(1-y)/4             N4----N3
@@ -369,43 +482,16 @@ contains
         ! is regular with constant spacing and define relative x/y coordinates
         ! here.
 
-        x(1) = -dx/2.d0
-        x(2) =  dx/2.d0
-        x(3) =  dx/2.d0
-        x(4) = -dx/2.d0
+        ! x(1) = -dx/2.d0
+        ! x(2) =  dx/2.d0
+        ! x(3) =  dx/2.d0
+        ! x(4) = -dx/2.d0
 
-        y(1) = -dy/2.d0
-        y(2) = -dy/2.d0
-        y(3) =  dy/2.d0
-        y(4) =  dy/2.d0
+        ! y(1) = -dy/2.d0
+        ! y(2) = -dy/2.d0
+        ! y(3) =  dy/2.d0
+        ! y(4) =  dy/2.d0
         
-        select case(trim(grid_type))
-            case("aa")
-                v(1) = 0.25d0 * (var(im1, jm1) + var(i, jm1) + var(im1, j) + var(i, j))  ! Bottom-left
-                v(2) = 0.25d0 * (var(i, jm1) + var(ip1, jm1) + var(i, j) + var(ip1, j))  ! Bottom-right
-                v(3) = 0.25d0 * (var(i, j) + var(ip1, j) + var(i, jp1) + var(ip1, jp1))  ! Top-right
-                v(4) = 0.25d0 * (var(im1, j) + var(i, j) + var(im1, jp1) + var(i, jp1))  ! Top-left
-            case("ab")
-                v(1) = var(im1,jm1)         ! Bottom-left
-                v(2) = var(i,jm1)           ! Bottom-right
-                v(3) = var(i,j)             ! Top-right
-                v(4) = var(im1,j)           ! Top-left
-            case("acx")
-                v(1) = 0.5d0 * (var(im1, jm1) + var(im1, j))      ! Bottom-left
-                v(2) = 0.5d0 * (var(i, jm1) + var(i, j))          ! Bottom-right
-                v(3) = 0.5d0 * (var(i, j) + var(i, jp1))          ! Top-right
-                v(4) = 0.5d0 * (var(im1, j) + var(im1, jp1))      ! Top-left
-            case("acy")
-                v(1) = 0.5d0 * (var(im1, jm1) + var(i, jm1))      ! Bottom-left
-                v(2) = 0.5d0 * (var(i, jm1) + var(ip1, jm1))      ! Bottom-right
-                v(3) = 0.5d0 * (var(i, j) + var(ip1, j))          ! Top-right
-                v(4) = 0.5d0 * (var(im1, j) + var(i, j))          ! Top-left
-            case DEFAULT
-                write(error_unit,*) "gq2D_to_nodes:: Error: grid_type not recognized."
-                write(error_unit,*) "grid_type = ", trim(grid_type)
-                stop
-        end select
-
         ! Step 2: Calculate values at each quadrature point
 
         ! Loop over quadrature points for this element
@@ -425,19 +511,16 @@ contains
             ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
             gq%v(p) = 0.d0
             do n = 1, gq%n_nodes
-                gq%v(p) = gq%v(p) + gq%N(n,p) * v(n)
+                gq%v(p) = gq%v(p) + gq%N(n,p) * gq%v_ab(n)
             end do
         
         end do
-
-        ! Store in output variable too
-        v_qp = gq%v
 
         return
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes(gq, v_qp, var, dx, dy, dz0, dz1, grid_type, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+    subroutine gq3D_to_nodes_aa(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
         
         implicit none
         
@@ -448,22 +531,240 @@ contains
         real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
         real(wp), intent(IN)  :: dz0                ! dz to cell below
         real(wp), intent(IN)  :: dz1                ! dz to cell above
-        character(len=*), intent(IN) :: grid_type   ! "aa", "ab", "acx", "acy", "acz"
         integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         integer,  intent(IN)  :: km1, kp1
 
-        ! Local variables
-        integer :: nx, ny, nz, p, n
-        real(8) :: x(8)                         ! Real x-coordinates at the four corners of the cell
-        real(8) :: y(8)                         ! Real y-coordinates at the four corners of the cell
-        real(8) :: z(8)                         ! Real z-coordinates at the four corners of the cell
-        real(8) :: v(8)                         ! Values of var at the eight corners of the cell
-        real(8) :: vx(8), vy(8), vz(8)          ! Derivatives at the eight corners
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))       &
+                              + 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                              + 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k)) )
+
+        gq%v_ab(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k))         &
+                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                              + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k))         &
+                              + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
+
+        gq%v_ab(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                              + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                              + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))       &
+                              + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k)) )
+
+        gq%v_ab(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                              + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))       &
+                              + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k)) )
+
+        gq%v_ab(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k)   + var(im1, jm1, kp1))     &
+                              + 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                              + 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1)) )
+
+        gq%v_ab(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1))       &
+                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                              + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1))       &
+                              + 0.5d0 * (var(ip1, jm1, k)   + var(ip1, jm1, kp1)) )
+
+        gq%v_ab(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                              + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                              + 0.5d0 * (var(ip1, jp1, k)   + var(ip1, jp1, kp1))     &
+                              + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1)) )
+
+        gq%v_ab(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                              + 0.5d0 * (var(im1, jp1, k)   + var(im1, jp1, kp1))     &
+                              + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1)) )
         
-        nx = size(var,1)
-        ny = size(var,2)
-        nz = size(var,3)
+        ! Map corner values to quadrature nodes
+        call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+
+        return
+
+    end subroutine gq3D_to_nodes_aa
+
+    subroutine gq3D_to_nodes_ab(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+        
+        implicit none
+        
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp),         intent(INOUT) :: v_qp(8)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:,:)         ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
+        integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        integer,  intent(IN)  :: km1, kp1
+
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = var(im1, jm1, km1)
+        gq%v_ab(2) = var(i, jm1, km1)
+        gq%v_ab(3) = var(i, j, km1)
+        gq%v_ab(4) = var(im1, j, km1)
+        gq%v_ab(5) = var(im1, jm1, k)
+        gq%v_ab(6) = var(i, jm1, k)
+        gq%v_ab(7) = var(i, j, k)
+        gq%v_ab(8) = var(im1, j, k)
+
+        ! Map corner values to quadrature nodes
+        call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+        
+        return
+
+    end subroutine gq3D_to_nodes_ab
+
+    subroutine gq3D_to_nodes_acx(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+        
+        implicit none
+        
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp),         intent(INOUT) :: v_qp(8)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:,:)         ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
+        integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        integer,  intent(IN)  :: km1, kp1
+
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(im1, jm1, k)    &
+                              + var(im1, j, km1)  + var(im1, j, k) )
+        gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(i, jm1, k)      &
+                              + var(i, j, km1)    + var(i, j, k) )
+        gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(i, j, k)        &
+                              + var(i, jp1, km1)  + var(i, jp1, k) )
+        gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(im1, j, k)      &
+                              + var(im1, jp1, km1)+ var(im1, jp1, k) )
+
+        gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(im1, jm1, kp1)  &
+                              + var(im1, j, k)    + var(im1, j, kp1) )
+        gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(i, jm1, kp1)    &
+                              + var(i, j, k)      + var(i, j, kp1) )
+        gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(i, j, kp1)      &
+                              + var(i, jp1, k)    + var(i, jp1, kp1) )
+        gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(im1, j, kp1)    &
+                              + var(im1, jp1, k)  + var(im1, jp1, kp1) )
+
+        ! Map corner values to quadrature nodes
+        call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+        
+        return
+
+    end subroutine gq3D_to_nodes_acx
+
+    subroutine gq3D_to_nodes_acy(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+        
+        implicit none
+        
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp),         intent(INOUT) :: v_qp(8)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:,:)         ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
+        integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        integer,  intent(IN)  :: km1, kp1
+
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)    &
+                              + var(im1, jm1, k)  + var(i, jm1, k) )
+        gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)  &
+                              + var(i, jm1, k)    + var(ip1, jm1, k) )
+        gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)    &
+                              + var(i, j, k)      + var(ip1, j, k) )
+        gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)      &
+                              + var(im1, j, k)    + var(i, j, k) )
+
+        gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)      &
+                              + var(im1, jm1, kp1)+ var(i, jm1, kp1) )
+        gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)    &
+                              + var(i, jm1, kp1)  + var(ip1, jm1, kp1) )
+        gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)      &
+                              + var(i, j, kp1)    + var(ip1, j, kp1) )
+        gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)        &
+                              + var(im1, j, kp1)  + var(i, j, kp1) )
+        
+        ! Map corner values to quadrature nodes
+        call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+        
+        return
+
+    end subroutine gq3D_to_nodes_acy
+
+    subroutine gq3D_to_nodes_acz(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+        
+        implicit none
+        
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp),         intent(INOUT) :: v_qp(8)  ! Variable values at quadrature points
+        real(wp), intent(in)  :: var(:,:,:)         ! Variable to be interpolated
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
+        integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        integer,  intent(IN)  :: km1, kp1
+
+        ! Stagger variable to cell corners
+        gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)    &
+                              + var(i, j, km1)    + var(im1, j, km1) )
+        gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)  &
+                              + var(ip1, j, km1)  + var(i, j, km1) )
+        gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)    &
+                              + var(ip1, jp1, km1)+ var(i, jp1, km1) )
+        gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)      &
+                              + var(i, jp1, km1)  + var(im1, jp1, km1) )
+                                          
+        gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)      &
+                              + var(i, j, k)      + var(im1, j, k) )
+        gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)    &
+                              + var(ip1, j, k)    + var(i, j, k) )
+        gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)      &
+                              + var(ip1, jp1, k)  + var(i, jp1, k) )
+        gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)        &
+                              + var(i, jp1, k)    + var(im1, jp1, k) )
+
+        ! Map corner values to quadrature nodes
+        call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        ! Store in output variable too
+        v_qp = gq%v
+        
+        return
+
+    end subroutine gq3D_to_nodes_acz
+
+    subroutine gq3D_to_nodes(gq, dx, dy, dz0, dz1)
+        
+        implicit none
+        
+        type(gq3D_class), intent(INOUT) :: gq       ! Gaussian Quadrature 3D object
+        real(wp), intent(IN)  :: dx                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dy                 ! Horizontal grid spacing (const)
+        real(wp), intent(IN)  :: dz0                ! dz to cell below
+        real(wp), intent(IN)  :: dz1                ! dz to cell above
+
+        ! Local variables
+        integer :: p, n
 
         ! Step 1: determine x, y and z values of input array values
 
@@ -497,145 +798,33 @@ contains
         ! which is why a dz0 (distance to cell below) and dz1 (distance to cell above)
         ! is used.
 
-        x(1) = -dx/2.d0
-        x(2) =  dx/2.d0
-        x(3) =  dx/2.d0
-        x(4) = -dx/2.d0
-        x(5) = -dx/2.d0
-        x(6) =  dx/2.d0
-        x(7) =  dx/2.d0
-        x(8) = -dx/2.d0
+        ! x(1) = -dx/2.d0
+        ! x(2) =  dx/2.d0
+        ! x(3) =  dx/2.d0
+        ! x(4) = -dx/2.d0
+        ! x(5) = -dx/2.d0
+        ! x(6) =  dx/2.d0
+        ! x(7) =  dx/2.d0
+        ! x(8) = -dx/2.d0
 
-        y(1) = -dy/2.d0
-        y(2) = -dy/2.d0
-        y(3) =  dy/2.d0
-        y(4) =  dy/2.d0
-        y(5) = -dy/2.d0
-        y(6) = -dy/2.d0
-        y(7) =  dy/2.d0
-        y(8) =  dy/2.d0
+        ! y(1) = -dy/2.d0
+        ! y(2) = -dy/2.d0
+        ! y(3) =  dy/2.d0
+        ! y(4) =  dy/2.d0
+        ! y(5) = -dy/2.d0
+        ! y(6) = -dy/2.d0
+        ! y(7) =  dy/2.d0
+        ! y(8) =  dy/2.d0
         
-        z(1) = -dz0/2.d0
-        z(2) = -dz0/2.d0
-        z(3) = -dz0/2.d0
-        z(4) = -dz0/2.d0
-        z(5) =  dz1/2.d0
-        z(6) =  dz1/2.d0
-        z(7) =  dz1/2.d0
-        z(8) =  dz1/2.d0
+        ! z(1) = -dz0/2.d0
+        ! z(2) = -dz0/2.d0
+        ! z(3) = -dz0/2.d0
+        ! z(4) = -dz0/2.d0
+        ! z(5) =  dz1/2.d0
+        ! z(6) =  dz1/2.d0
+        ! z(7) =  dz1/2.d0
+        ! z(8) =  dz1/2.d0
         
-        ! Compute values of u at the eight cell corners
-        select case(trim(grid_type))
-            case("aa")
-                v(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))       &
-                                + 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
-                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                                + 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k)) )
-
-                v(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k))         &
-                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                                + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k))         &
-                                + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
-
-                v(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                                + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
-                                + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))       &
-                                + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k)) )
-
-                v(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
-                                + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))       &
-                                + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
-                                + 0.5d0 * (var(i, j, km1)     + var(i, j, k)) )
-
-                v(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k)   + var(im1, jm1, kp1))     &
-                                + 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
-                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                                + 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1)) )
-
-                v(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1))       &
-                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                                + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1))       &
-                                + 0.5d0 * (var(ip1, jm1, k)   + var(ip1, jm1, kp1)) )
-
-                v(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                                + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
-                                + 0.5d0 * (var(ip1, jp1, k)   + var(ip1, jp1, kp1))     &
-                                + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1)) )
-
-                v(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
-                                + 0.5d0 * (var(im1, jp1, k)   + var(im1, jp1, kp1))     &
-                                + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
-                                + 0.5d0 * (var(i, j, k)       + var(i, j, kp1)) )
-            case("ab")
-                v(1) = var(im1, jm1, km1)
-                v(2) = var(i, jm1, km1)
-                v(3) = var(i, j, km1)
-                v(4) = var(im1, j, km1)
-                v(5) = var(im1, jm1, k)
-                v(6) = var(i, jm1, k)
-                v(7) = var(i, j, k)
-                v(8) = var(im1, j, k)
-            case("acx")
-                v(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(im1, jm1, k)     &
-                                + var(im1, j, km1)  + var(im1, j, k) )
-                v(2) = 0.25d0 * ( var(i, jm1, km1)  + var(i, jm1, k)         &
-                                + var(i, j, km1)    + var(i, j, k) )
-                v(3) = 0.25d0 * ( var(i, j, km1)    + var(i, j, k)           &
-                                + var(i, jp1, km1)  + var(i, jp1, k) )
-                v(4) = 0.25d0 * ( var(im1, j, km1)  + var(im1, j, k)       &
-                                + var(im1, jp1, km1)+ var(im1, jp1, k) )
-
-                v(5) = 0.25d0 * ( var(im1, jm1, k)  + var(im1, jm1, kp1)     &
-                                + var(im1, j, k)    + var(im1, j, kp1) )
-                v(6) = 0.25d0 * ( var(i, jm1, k)    + var(i, jm1, kp1)         &
-                                + var(i, j, k)      + var(i, j, kp1) )
-                v(7) = 0.25d0 * ( var(i, j, k)      + var(i, j, kp1)           &
-                                + var(i, jp1, k)    + var(i, jp1, kp1) )
-                v(8) = 0.25d0 * ( var(im1, j, k)    + var(im1, j, kp1)       &
-                                + var(im1, jp1, k)  + var(im1, jp1, kp1) )
-            case("acy")
-                v(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)     &
-                                + var(im1, jm1, k)  + var(i, jm1, k) )
-                v(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)     &
-                                + var(i, jm1, k)    + var(ip1, jm1, k) )
-                v(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)         &
-                                + var(i, j, k)      + var(ip1, j, k) )
-                v(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)         &
-                                + var(im1, j, k)    + var(i, j, k) )
-
-                v(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)         &
-                                + var(im1, jm1, kp1)+ var(i, jm1, kp1) )
-                v(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)         &
-                                + var(i, jm1, kp1)  + var(ip1, jm1, kp1) )
-                v(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)             &
-                                + var(i, j, kp1)    + var(ip1, j, kp1) )
-                v(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)             &
-                                + var(im1, j, kp1)  + var(i, j, kp1) )
-            case("acz")
-                v(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)   &
-                                + var(i, j, km1)    + var(im1, j, km1) )
-                v(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)     &
-                                + var(ip1, j, km1)  + var(i, j, km1) )
-                v(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)       &
-                                + var(ip1, jp1, km1)+ var(i, jp1, km1) )
-                v(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)     &
-                                + var(i, jp1, km1)  + var(im1, jp1, km1) )
-                                            
-                v(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)   &
-                                + var(i, j, k)      + var(im1, j, k) )
-                v(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)     &
-                                + var(ip1, j, k)    + var(i, j, k) )
-                v(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)       &
-                                + var(ip1, jp1, k)  + var(i, jp1, k) )
-                v(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)     &
-                                + var(i, jp1, k)    + var(im1, jp1, k) )
-
-            case DEFAULT
-                write(error_unit,*) "gq3D_to_nodes:: Error: grid_type not recognized."
-                write(error_unit,*) "grid_type = ", trim(grid_type)
-                stop
-        end select
-
         ! Loop over quadrature points for this element
         do p = 1, gq%n_qp
 
@@ -653,14 +842,11 @@ contains
             ! Evaluate var at this quadrature point, taking a N-weighted sum over neighboring vertices.
             gq%v(p) = 0.d0
             do n = 1, gq%n_nodes
-                gq%v(p) = gq%v(p) + gq%N(n,p) * v(n)
+                gq%v(p) = gq%v(p) + gq%N(n,p) * gq%v_ab(n)
             end do
         
         end do
-        
-        ! Store in output variable too
-        v_qp = gq%v
-        
+                
         return
         
     end subroutine gq3D_to_nodes

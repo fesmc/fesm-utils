@@ -6,9 +6,11 @@ module subgrid
     implicit none
     
     private
-    public :: calc_subgrid_array        ! wp
-    public :: calc_subgrid_array_dble   ! dble
-    public :: calc_subgrid_array_cell   ! dble
+    public :: calc_subgrid_array            ! wp
+    public :: calc_subgrid_array_mask       ! mask, wp
+    public :: calc_subgrid_array_dble       ! dble
+    public :: calc_subgrid_array_mask_dble  ! mask, dble
+    public :: calc_subgrid_array_cell       ! dble
 
 contains
 
@@ -34,6 +36,30 @@ contains
         return
         
     end subroutine calc_subgrid_array
+
+    subroutine calc_subgrid_array_mask(vint,v,mask,nxi,i,j,im1,ip1,jm1,jp1)
+
+        implicit none
+
+        real(wp), intent(INOUT) :: vint(:,:)  
+        real(wp), intent(IN)  :: v(:,:)
+        logical,  intent(IN)  :: mask(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points 
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+        
+        ! Local variables
+        real(dp), allocatable :: vint_dble(:,:)
+
+        allocate(vint_dble(nxi,nxi))
+
+        call calc_subgrid_array_mask_dble(vint_dble,real(v,dp),mask,nxi,i,j,im1,ip1,jm1,jp1)
+        
+        vint = real(vint_dble,wp)
+
+        return
+        
+    end subroutine calc_subgrid_array_mask
 
     subroutine calc_subgrid_array_dble(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
 
@@ -70,6 +96,124 @@ contains
         return
         
     end subroutine calc_subgrid_array_dble
+
+    subroutine calc_subgrid_array_mask_dble(vint,v,mask,nxi,i,j,im1,ip1,jm1,jp1)
+
+        implicit none
+
+        real(dp), intent(INOUT) :: vint(:,:)  
+        real(dp), intent(IN)    :: v(:,:)
+        logical,  intent(IN)    :: mask(:,:)              ! mask array
+        integer,  intent(IN)    :: nxi                    ! Number of interpolation points 
+        integer,  intent(IN)    :: i, j                   ! Indices of current cell
+        integer,  intent(IN)    :: im1, ip1, jm1, jp1     ! Indices of neighbors
+        
+        ! Local variables
+        real(dp) :: v1, v2, v3, v4
+        real(dp) :: sumval
+        integer  :: count
+        logical  :: use_mask
+
+        use_mask = .TRUE.       !present(mask)
+
+        if (nxi .eq. 1) then
+            ! Case of no interpolation, just set subgrid array equal to current value
+            vint = v(i,j)
+        
+        else
+            ! Subgrid interpolation necessary
+            ! Each subgrid corner is based on 4 surrounding v-values,
+            ! but we only include those allowed by mask.
+
+            ! v1: (i,j), (ip1,j), (ip1,jp1), (i,jp1)
+            sumval = 0.0_dp
+            count  = 0
+            if (mask(i,j)) then
+                sumval = sumval + v(i,j); count = count + 1
+            end if
+            if (mask(ip1,j)) then
+                sumval = sumval + v(ip1,j); count = count + 1
+            end if
+            if (mask(ip1,jp1)) then
+                sumval = sumval + v(ip1,jp1); count = count + 1
+            end if
+            if (mask(i,jp1)) then
+                sumval = sumval + v(i,jp1); count = count + 1
+            end if
+            if (count > 0) then
+                v1 = sumval / real(count,dp)
+            else
+                v1 = v(i,j)  ! fallback
+            end if
+
+            ! v2: (i,j), (im1,j), (im1,jp1), (i,jp1)
+            sumval = 0.0_dp; count = 0
+            if (mask(i,j)) then
+                sumval = sumval + v(i,j); count = count + 1
+            end if
+            if (mask(im1,j)) then
+                sumval = sumval + v(im1,j); count = count + 1
+            end if
+            if (mask(im1,jp1)) then
+                sumval = sumval + v(im1,jp1); count = count + 1
+            end if
+            if (mask(i,jp1)) then
+                sumval = sumval + v(i,jp1); count = count + 1
+            end if
+            if (count > 0) then
+                v2 = sumval / real(count,dp)
+            else
+                v2 = v(i,j)
+            end if
+
+            ! v3: (i,j), (im1,j), (im1,jm1), (i,jm1)
+            sumval = 0.0_dp; count = 0
+            if (mask(i,j)) then
+                sumval = sumval + v(i,j); count = count + 1
+            end if
+            if (mask(im1,j)) then
+                sumval = sumval + v(im1,j); count = count + 1
+            end if
+            if (mask(im1,jm1)) then
+                sumval = sumval + v(im1,jm1); count = count + 1
+            end if
+            if (mask(i,jm1)) then
+                sumval = sumval + v(i,jm1); count = count + 1
+            end if
+            if (count > 0) then
+                v3 = sumval / real(count,dp)
+            else
+                v3 = v(i,j)
+            end if
+
+            ! v4: (i,j), (ip1,j), (ip1,jm1), (i,jm1)
+            sumval = 0.0_dp; count = 0
+            if (mask(i,j)) then
+                sumval = sumval + v(i,j); count = count + 1
+            end if
+            if (mask(ip1,j)) then
+                sumval = sumval + v(ip1,j); count = count + 1
+            end if
+            if (mask(ip1,jm1)) then
+                sumval = sumval + v(ip1,jm1); count = count + 1
+            end if
+            if (mask(i,jm1)) then
+                sumval = sumval + v(i,jm1); count = count + 1
+            end if
+            if (count > 0) then
+                v4 = sumval / real(count,dp)
+            else
+                v4 = v(i,j)
+            end if
+
+            ! Next calculate the subgrid array of values for this cell
+            call calc_subgrid_array_cell_dble(vint,v1,v2,v3,v4,nxi)
+
+        end if
+
+        return
+
+    end subroutine calc_subgrid_array_mask_dble
 
     subroutine calc_subgrid_array_cell(vint,v1,v2,v3,v4,nxi)
         ! Given the four corners of a cell in quadrants 1,2,3,4,

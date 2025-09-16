@@ -1,7 +1,7 @@
 program test
 
-    call test_derivatives()
-    !call test_gaussian_quadrature()
+    !call test_derivatives()
+    call test_gaussian_quadrature()
 
 contains
 
@@ -86,7 +86,7 @@ contains
             jm1 = j-1
             jp1 = j
 
-            call gq2D_to_nodes(gq2D, var_qp, var, dx, dy, "ab",i,j,im1,ip1,jm1,jp1)
+            call gq2D_to_nodes_ab(gq2D, var_qp, var, dx, dy,i,j,im1,ip1,jm1,jp1)
 
             write(*,*) "var_qp: ", var_qp
         
