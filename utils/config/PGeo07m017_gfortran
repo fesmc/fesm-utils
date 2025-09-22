@@ -14,6 +14,6 @@ endif
 
 LFLAGS  = $(LIB_NC)
 
-DFLAGS_NODEBUG = -O2
+DFLAGS_NODEBUG = -O2 -march=native
 DFLAGS_DEBUG   = -w -g -ggdb -ffpe-trap=invalid,zero,overflow,underflow -fbacktrace -fcheck=all
 DFLAGS_PROFILE = -O2 -pg
