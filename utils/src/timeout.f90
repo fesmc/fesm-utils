@@ -19,6 +19,7 @@ module timeout
         character(len=56)     :: label 
         real(wp), allocatable :: times(:)
         character(len=56), allocatable :: vnms(:)
+        logical :: active
     end type
 
     private
@@ -92,12 +93,14 @@ contains
         select case(trim(tm%method))
 
             case("none")
-
+                tm%active = .FALSE.
+                
                 dt_const = 0.0
                 n = 1
                 times(1) = MV
 
             case("const")
+                tm%active = .TRUE.
                 
                 call nml_read(filename,group,"dt",dt_const)
 
@@ -141,7 +144,8 @@ contains
                 end if
 
             case("file","times")
-
+                tm%active = .TRUE.
+                
                 if (trim(tm%method) .eq. "file") then 
                     ! Load time information from an input file 
 
@@ -194,10 +198,8 @@ contains
                 write(error_unit,*) "timeout.method = ", trim(tm%method)
                 stop 
             
-        end select 
+        end select
 
-                
-                            
         ! Store final times(k0:k1) vector of length n
         ! in timeout object for later use. 
         if (allocated(tm%times)) deallocate(tm%times)
@@ -212,16 +214,18 @@ contains
             ! Print summary
             write(*,*) "timeout: ", trim(tm%label)
             write(*,*) "  method    = ", trim(tm%method)
-            write(*,*) "  time_init = ", time_init 
-            write(*,*) "  time_end  = ", time_end 
-            write(*,*) "  n         = ", n 
+            write(*,*) "  active    = ", tm%active
+            if (tm%active) then
+                write(*,*) "  time_init = ", time_init 
+                write(*,*) "  time_end  = ", time_end 
+                write(*,*) "  n         = ", n 
 
-            do k = 1, n, 5
-                k0 = k 
-                k1 = min(k+5-1,n)
-                write(*,"(5g12.3)") tm%times(k0:k1)
-            end do 
-
+                do k = 1, n, 5
+                    k0 = k 
+                    k1 = min(k+5-1,n)
+                    write(*,"(5g12.3)") tm%times(k0:k1)
+                end do 
+            end if
         end if 
 
         return
