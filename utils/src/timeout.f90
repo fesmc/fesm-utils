@@ -91,6 +91,12 @@ contains
 
         select case(trim(tm%method))
 
+            case("none")
+
+                dt_const = 0.0
+                n = 1
+                times(1) = MV
+
             case("const")
                 
                 call nml_read(filename,group,"dt",dt_const)
@@ -101,7 +107,10 @@ contains
                     
                     if (n .gt. nmax) then 
                         write(error_unit,*) "timeout_init:: Error: too many output timesteps desired. &
-                        &Maximum value limited to nmax = ", nmax 
+                        &Maximum value limited to nmax = ", nmax
+                        write(error_unit,*) "group: "//trim(group)
+                        write(error_unit,*) "label: "//trim(label)
+                        write(error_unit,*) "method: "//trim(tm%method)
                         write(error_unit,*) "time_init = ", time_init 
                         write(error_unit,*) "time_end  = ", time_end 
                         write(error_unit,*) "dt        = ", dt_const 
@@ -116,6 +125,19 @@ contains
                     k0 = 1 
                     k1 = k0+n-1
 
+                    ! Make sure last timestep is also written
+                    if (times(k1) .lt. time_end) then 
+                        n  = n+1 
+                        k1 = k0+n-1
+                        times(k1) = time_end 
+                    end if
+                
+                else
+                    write(error_unit,*) "timeout_init:: Error: dt_const must be greater than zero."
+                    write(error_unit,*) "group: "//trim(group)
+                    write(error_unit,*) "label: "//trim(label)
+                    write(error_unit,*) "method: "//trim(tm%method)
+                    stop 
                 end if
 
             case("file","times")
@@ -159,6 +181,13 @@ contains
 
                 n = k1-k0+1
 
+                ! Make sure last timestep is also written
+                if (times(k1) .lt. time_end) then 
+                    n  = n+1 
+                    k1 = k0+n-1
+                    times(k1) = time_end 
+                end if
+
             case DEFAULT
 
                 write(error_unit,*) "timeout_init:: Error: timeout method not recognized."
@@ -167,13 +196,8 @@ contains
             
         end select 
 
-        ! Make sure last timestep is also written
-        if (times(k1) .lt. time_end) then 
-            n  = n+1 
-            k1 = k0+n-1
-            times(k1) = time_end 
-        end if
-                    
+                
+                            
         ! Store final times(k0:k1) vector of length n
         ! in timeout object for later use. 
         if (allocated(tm%times)) deallocate(tm%times)
