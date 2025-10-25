@@ -41,21 +41,24 @@ contains
         ! Local variables 
         integer :: k, n 
         
-        ! Get total times to check 
-        n = size(tm%times)
-
         ! Assume this timestep is not in timeout
         out_now = .FALSE. 
 
-        do k = 1, n 
-            if (abs(time - tm%times(k)) .lt. time_tol) then 
-                out_now = .TRUE. 
-                exit 
-            end if
-        end do 
+        if (tm%active) then
 
-        if (verbose .and. out_now) then 
-            write(*,"(a16,a,2x,g12.3)") "timeout_check ", trim(tm%label), time 
+            ! Get total times to check 
+            n = size(tm%times)
+
+            do k = 1, n 
+                if (abs(time - tm%times(k)) .lt. time_tol) then 
+                    out_now = .TRUE. 
+                    exit 
+                end if
+            end do 
+
+            if (verbose .and. out_now) then 
+                write(*,"(a16,a,2x,g12.3)") "timeout_check ", trim(tm%label), time 
+            end if
         end if
 
         return
