@@ -735,8 +735,9 @@ contains
             n = len_trim(tmpstr)-1
             READ(tmpstr(1:n),*,IOSTAT=stat) x
             if (stat .ne. 0) then 
-                write(*,*) "nml:: ","Error converting string to number!"
+                write(*,*) "nml:: Error converting string to number!"
                 write(*,*) "|",trim(tmpstr),"|",n,stat,x
+                stop
             else
                 value = x 
             end if 
