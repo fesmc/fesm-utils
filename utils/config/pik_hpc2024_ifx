@@ -12,6 +12,7 @@ endif
 
 LFLAGS  = $(LIB_NC) -Wl,-zmuldefs
 
-DFLAGS_NODEBUG = -O2 -fp-model precise
-DFLAGS_DEBUG   = -C -traceback -ftrapuv -fpe0 -check all -fp-model precise
+DFLAGS_NODEBUG = -Ofast -march=core-avx2 -mtune=core-avx2 -traceback -g #-O2 -fp-model precise
+DFLAGS_DEBUG   = -g -O0 -traceback -ftrapuv -fpe0 -check all -fp-model precise -debug full -heap-arrays -warn all
 DFLAGS_PROFILE = -O2 -fp-model precise -pg
+

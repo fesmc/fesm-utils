@@ -13,7 +13,7 @@ if [[ $1 = "ifx" ]]; then
 elif [[ $1 = "ifort" ]]; then
     COMPILER_OPTS="CC=icc F77=ifort 'FFLAGS=-Ofast -march=core-avx2 -mtune=core-avx2 -traceback' 'CFLAGS=-Ofast -march=core-avx2 -mtune=core-avx2 -traceback'"
 elif [[ $1 = "gfortran" ]]; then
-    COMPILER_OPTS=""
+    COMPILER_OPTS="CC=gcc F77=gfortran"
 else
     echo "Compiler not recognized: $1"
     exit 1
@@ -53,7 +53,7 @@ if [[ $1 = "ifx" ]]; then
 elif [[ $1 = "ifort" ]]; then
     COMPILER_OPTS="CC=icc F77=ifort 'FFLAGS=-Ofast -march=core-avx2 -mtune=core-avx2 -traceback' 'CFLAGS=-Ofast -march=core-avx2 -mtune=core-avx2 -traceback'"
 else
-    COMPILER_OPTS=""
+    COMPILER_OPTS="CC=gcc F77=gfortran"
 fi
 
 echo "COMPILER_OPTS = $COMPILER_OPTS"

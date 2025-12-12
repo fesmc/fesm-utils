@@ -5,7 +5,7 @@ module nml
 
     implicit none 
 
-    logical :: VERBOSE = .FALSE.            !!  should freshly read namelist be printed to screen?
+    logical :: VERBOSE = .TRUE.            !!  should freshly read namelist be printed to screen?
     logical :: ERROR_NO_PARAM = .TRUE.      !! Should error be thrown if parameter isn't found? 
 
     integer, parameter :: io_unit_err = error_unit 
