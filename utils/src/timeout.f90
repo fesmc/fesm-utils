@@ -18,8 +18,11 @@ module timeout
         character(len=56)     :: method
         character(len=56)     :: label 
         real(wp), allocatable :: times(:)
-        character(len=56), allocatable :: vnms(:)
         logical :: active
+        ! Helper variables (optional use)
+        character(len=1024)   :: filename
+        character(len=1024), allocatable :: filenames(:)
+        character(len=56),   allocatable :: vnms(:)
     end type
 
     private
