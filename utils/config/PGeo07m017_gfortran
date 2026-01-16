@@ -9,7 +9,7 @@ LIB_NC  = -L${NC_FROOT}/lib -lnetcdff -L${NC_CROOT}/lib -lnetcdf
 FFLAGS  = -ffree-line-length-none -I$(objdir) -J$(objdir)
 
 ifeq ($(openmp), 1)
-    FFLAGS  = -I$(objdir) -J$(objdir) -ffree-line-length-none -fomit-frame-pointer -fopenmp 
+    FFLAGS  = -I$(objdir) -J$(objdir) -ffree-line-length-none -fopenmp 
 endif 
 
 LFLAGS  = $(LIB_NC)
