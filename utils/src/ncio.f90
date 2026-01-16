@@ -235,7 +235,7 @@ contains
         
         ! and get attributes if variable already exists
         call nc_get_att(nc_id,v)
-        call nc_check( nf90_inquire(nc_id, unlimitedDimID=RecordDimID) ) ! Get Unlimited dimension ID if any
+        call nc_check_new( nf90_inquire(nc_id, unlimitedDimID=RecordDimID), filename ) ! Get Unlimited dimension ID if any
 
         ! Determine number of dims in file from arguments
 
@@ -371,12 +371,12 @@ contains
         if (.not. var_has_no_dims) then
             do i = 1, ndims
 
-                call nc_check( nf90_inq_dimid(nc_id, v%dims(i), dimid) )
+                call nc_check_new( nf90_inq_dimid(nc_id, v%dims(i), dimid), filename )
 
                 ! If unlimited dimension, the size does not matter
                 if (dimid .eq. RecordDimID) cycle
 
-                call nc_check( nf90_inquire_dimension(nc_id, dimid, len=size_var(i)) )
+                call nc_check_new( nf90_inquire_dimension(nc_id, dimid, len=size_var(i)), filename )
 
                 if (v%count(i) .gt. size_var(i)) then
                     write(0,*)  "ncio:: error: "// &
@@ -405,17 +405,17 @@ contains
         end if
 
         ! Define / update the netCDF variable for the data.
-        call nc_check( nf90_redef(nc_id) )
+        call nc_check_new( nf90_redef(nc_id), filename )
         call nc_put_att(nc_id, v)
-        call nc_check( nf90_enddef(nc_id) )
+        call nc_check_new( nf90_enddef(nc_id), filename )
 
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
-        call nc_check( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count) )
+        call nc_check_new( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), filename )
 
         ! Close the file. This causes netCDF to flush all buffers and make
         ! sure your data are really written to disk.
-        if (.not. present(ncid)) call nc_check( nf90_close(nc_id) )
+        if (.not. present(ncid)) call nc_check_new( nf90_close(nc_id), filename )
 
 !         write(*,"(a,a,a14)") "ncio:: nc_write:: ",trim(filename)//" : ",trim(v%name)
 
@@ -506,11 +506,11 @@ contains
         
         ! Read the variable data from the file
         ! (NF90 converts dat to proper type (int, real, dble)
-        call nc_check( nf90_get_var(nc_id, v%varid, dat, v%start, v%count) )
+        call nc_check_new( nf90_get_var(nc_id, v%varid, dat, v%start, v%count), filename )
 
         ! Close the file. This frees up any internal netCDF resources
         ! associated with the file.
-        if (.not. present(ncid)) call nc_check( nf90_close(nc_id) )
+        if (.not. present(ncid)) call nc_check_new( nf90_close(nc_id), filename )
 
 
         ! === SPECIAL CASE: missing_value == NaN ==== 
@@ -700,7 +700,7 @@ contains
         call nc_check_open(filename, ncid, nf90_write, nc_id)
 
         ! Make netCDF file ready for writing attributes
-        call nc_check( nf90_redef(nc_id) )
+        call nc_check_new( nf90_redef(nc_id), filename )
 
         ! Loop over dimensions and update attributes
         do i = 1, 99
@@ -721,31 +721,31 @@ contains
 
                 case("x","xc")
                     !call nc_check( nf90_put_att(nc_id, varid, "long", v%scale_factor) )
-                    call put_att_check(nc_id, varid, "long_name"     , "x-coordinate in Cartesian system")
-                    call put_att_check(nc_id, varid, "standard_name" , "projection_x_coordinate")
-                    call put_att_check(nc_id, varid, "units" , "kilometers")
-                    call put_att_check(nc_id, varid, "axis"  , "X")
+                    call put_att_check_new(nc_id, filename, varid, "long_name"     , "x-coordinate in Cartesian system")
+                    call put_att_check_new(nc_id, filename, varid, "standard_name" , "projection_x_coordinate")
+                    call put_att_check_new(nc_id, filename, varid, "units" , "kilometers")
+                    call put_att_check_new(nc_id, filename, varid, "axis"  , "X")
                 case("y","yc")
-                    call put_att_check(nc_id, varid, "long_name"     , "y-coordinate in Cartesian system")
-                    call put_att_check(nc_id, varid, "standard_name" , "projection_y_coordinate")
-                    call put_att_check(nc_id, varid, "units" , "kilometers")
-                    call put_att_check(nc_id, varid, "axis"  , "Y")
+                    call put_att_check_new(nc_id, filename, varid, "long_name"     , "y-coordinate in Cartesian system")
+                    call put_att_check_new(nc_id, filename, varid, "standard_name" , "projection_y_coordinate")
+                    call put_att_check_new(nc_id, filename, varid, "units" , "kilometers")
+                    call put_att_check_new(nc_id, filename, varid, "axis"  , "Y")
                 case("z","lev")
-                    call put_att_check(nc_id, varid, "units" , "meters")
-                    call put_att_check(nc_id, varid, "axis"  , "Z")
+                    call put_att_check_new(nc_id, filename, varid, "units" , "meters")
+                    call put_att_check_new(nc_id, filename, varid, "axis"  , "Z")
                 case("kc","kt","kr")
-                    call put_att_check(nc_id, varid, "axis"  , "Z")
+                    call put_att_check_new(nc_id, filename, varid, "axis"  , "Z")
                 case("time")
-                    call put_att_check(nc_id, varid, "units" , "years since 0-0-0")
-                    call put_att_check(nc_id, varid, "axis"  , "T")
+                    call put_att_check_new(nc_id, filename, varid, "units" , "years since 0-0-0")
+                    call put_att_check_new(nc_id, filename, varid, "axis"  , "T")
                 case("lon","longitude")
-                    call put_att_check(nc_id, varid, "long_name" , "longitude")
-                    call put_att_check(nc_id, varid, "standard_name" , "longitude")
-                    call put_att_check(nc_id, varid, "units"     , "degrees_east")
+                    call put_att_check_new(nc_id, filename, varid, "long_name" , "longitude")
+                    call put_att_check_new(nc_id, filename, varid, "standard_name" , "longitude")
+                    call put_att_check_new(nc_id, filename, varid, "units"     , "degrees_east")
                 case("lat","latitude")
-                    call put_att_check(nc_id, varid, "long_name" , "latitude")
-                    call put_att_check(nc_id, varid, "standard_name" , "latitude")
-                    call put_att_check(nc_id, varid, "units"     , "degrees_north")
+                    call put_att_check_new(nc_id, filename, varid, "long_name" , "latitude")
+                    call put_att_check_new(nc_id, filename, varid, "standard_name" , "latitude")
+                    call put_att_check_new(nc_id, filename, varid, "units"     , "degrees_north")
                 case default
                     ! Do nothing
 
@@ -754,10 +754,32 @@ contains
         end do
 
         ! End definition mode and close file
-        call nc_check( nf90_enddef(nc_id) )
-        if (.not.present(ncid))  call nc_check( nf90_close(nc_id) )
+        call nc_check_new( nf90_enddef(nc_id), filename )
+        if (.not.present(ncid))  call nc_check_new( nf90_close(nc_id), filename )
 
     end subroutine
+
+    ! write a variable attribute if not already defined
+    subroutine put_att_check_new(ncid, filename, varid, name, value)
+
+        integer, intent(in) :: ncid
+        character(len=*), intent(in) :: filename
+        integer, intent(in) :: varid
+        character (len=*), intent(in) :: name, value
+
+        ! internal variables
+        integer :: stat
+        character (len=NC_STRLEN) :: tmpstr
+
+        ! Try to retrieve attribute
+        stat = nf90_get_att(ncid, varid, name, tmpstr)
+
+        ! Write new attribute only if not already defined
+        if ( stat .ne. NF90_NOERR) then
+            call nc_check_new( nf90_put_att(ncid, varid, name, value), filename )
+        endif
+
+    end subroutine put_att_check_new
 
     ! write a variable attribute if not already defined
     subroutine put_att_check(ncid, varid, name, value)
@@ -777,8 +799,65 @@ contains
             call nc_check( nf90_put_att(ncid, varid, name, value) )
         endif
 
-    end subroutine
+    end subroutine put_att_check
 
+    !! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    !! Subroutine :  c h e c k
+    !! Author     :  Alex Robinson
+    !! Purpose    :  Wrap a netcdf function to perform error checking
+    !! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_check_new(status,info,stat)
+
+        implicit none
+
+        integer, intent ( in) :: status
+        character(len=*), intent(in) :: info
+        integer, intent (out), optional :: stat
+
+        if(status /= nf90_noerr .and. (.not. present(stat)) ) then
+            write(0,*) "ncio:: error: "//trim(nf90_strerror(status))
+            write(0,*) "info = ", trim(info)
+            stop "stopped by ncio."
+        end if
+
+        if (present(stat)) then
+            stat = 0
+            if(status /= nf90_noerr) stat = -1
+        end if
+
+        return
+
+    end subroutine nc_check_new
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Subroutine :  c h e c k _ a t t
+    ! Author     :  Alex Robinson
+    ! Purpose    :  Wrap an attribute function to perform error checking
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    function nc_check_att_new(status,info)
+
+        implicit none
+
+        integer, intent (in) :: status
+        character(len=*), intent(in) :: info
+        integer :: nc_check_att_new
+        integer, parameter :: noerr = NF90_NOERR
+
+        nc_check_att_new = noerr
+
+        if(status /= nf90_noerr) then
+            if (trim(nf90_strerror(status)) .eq. "NetCDF: Attribute not found") then
+                nc_check_att_new = -1
+            else
+                write(0,*) trim(nf90_strerror(status))
+                write(0,*) "info = ", trim(info)
+                stop "stopped by ncio."
+            end if
+        end if
+
+        return
+
+    end function nc_check_att_new
 
     !! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     !! Subroutine :  c h e c k
@@ -924,6 +1003,9 @@ contains
         integer, allocatable :: dimids(:)
         type(ncvar) :: v
 
+        integer :: pathlen
+        character(len=1024) :: filename
+
         integer, parameter :: noerr = NF90_NOERR
 
         ! Check if variable already exists - if so, gets the varid
@@ -937,13 +1019,13 @@ contains
 
                 select case(trim(v%xtype))
                     case("NF90_INT")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_INT,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_INT,varid=v%varid), trim(v%name) )
                     case("NF90_FLOAT")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_FLOAT,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_FLOAT,varid=v%varid), trim(v%name) )
                     case("NF90_DOUBLE")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_DOUBLE,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_DOUBLE,varid=v%varid), trim(v%name) )
                     case("NF90_CHAR")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_CHAR,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_CHAR,varid=v%varid), trim(v%name) )
                     case DEFAULT
                         write(*,*) "nc_put_att:: Error, wrong xtype defined:"//trim(v%xtype)
                         write(0,*) "stopped by ncio."
@@ -965,19 +1047,19 @@ contains
                     ndims = size(v%dims)
                     allocate(dimids(ndims))
                     do i = 1, ndims
-                        call nc_check ( nf90_inq_dimid(ncid, v%dims(i), dimids(i)) )
+                        call nc_check_new ( nf90_inq_dimid(ncid, v%dims(i), dimids(i)), trim(v%name) )
                     end do
                 end if
 
                 select case(trim(v%xtype))
                     case("NF90_INT")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_INT,dimids=dimids,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_INT,dimids=dimids,varid=v%varid), trim(v%name) )
                     case("NF90_FLOAT")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_FLOAT,dimids=dimids,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_FLOAT,dimids=dimids,varid=v%varid), trim(v%name) )
                     case("NF90_DOUBLE")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_DOUBLE,dimids=dimids,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_DOUBLE,dimids=dimids,varid=v%varid), trim(v%name) )
                     case("NF90_CHAR")
-                        call nc_check( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_CHAR,dimids=dimids,varid=v%varid) )
+                        call nc_check_new( nf90_def_var(ncid,name=trim(v%name),xtype=NF90_CHAR,dimids=dimids,varid=v%varid), trim(v%name) )
                     case DEFAULT
                         write(*,*) "nc_put_att:: Error, wrong xtype defined:"//trim(v%xtype)
                         write(0,*) "stopped by ncio."
@@ -988,29 +1070,29 @@ contains
             if (trim(v%xtype) .ne. "NF90_CHAR") then
 
                     if (v%scale_factor .ne. 1.d0 .and. v%add_offset .ne. 0.d0) then
-                        call nc_check( nf90_put_att(ncid, v%varid, "scale_factor", v%scale_factor) )
-                        call nc_check( nf90_put_att(ncid, v%varid, "add_offset",   v%add_offset) )
+                        call nc_check_new( nf90_put_att(ncid, v%varid, "scale_factor", v%scale_factor), trim(v%name) )
+                        call nc_check_new( nf90_put_att(ncid, v%varid, "add_offset",   v%add_offset), trim(v%name) )
                     end if
 
                     if (v%missing_set) then
                         select case(trim(v%xtype))
                             case("NF90_INT")
-                                call nc_check( nf90_put_att(ncid, v%varid, "missing_value", int(v%missing_value)) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "missing_value", int(v%missing_value)), trim(v%name) )
                             case("NF90_FLOAT")
-                                call nc_check( nf90_put_att(ncid, v%varid, "missing_value", real(v%missing_value)) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "missing_value", real(v%missing_value)), trim(v%name) )
                             case("NF90_DOUBLE")
-                                call nc_check( nf90_put_att(ncid, v%varid, "missing_value", v%missing_value) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "missing_value", v%missing_value), trim(v%name) )
                         end select
                     end if
 
                     if (v%FillValue_set) then
                         select case(trim(v%xtype))
                             case("NF90_INT")
-                                call nc_check( nf90_put_att(ncid, v%varid, "_FillValue", int(v%FillValue)) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "_FillValue", int(v%FillValue)), trim(v%name) )
                             case("NF90_FLOAT")
-                                call nc_check( nf90_put_att(ncid, v%varid, "_FillValue", real(v%FillValue)) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "_FillValue", real(v%FillValue)), trim(v%name) )
                             case("NF90_DOUBLE")
-                                call nc_check( nf90_put_att(ncid, v%varid, "_FillValue", v%FillValue) )
+                                call nc_check_new( nf90_put_att(ncid, v%varid, "_FillValue", v%FillValue), trim(v%name) )
                         end select
                     end if
 
@@ -1020,21 +1102,21 @@ contains
             ! Add additional variable attributes
 
             if (trim(v%long_name) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "long_name",     trim(v%long_name)) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "long_name",     trim(v%long_name)), trim(v%name) )
             if (trim(v%standard_name) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "standard_name", trim(v%standard_name)) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "standard_name", trim(v%standard_name)), trim(v%name) )
 
             if (trim(v%units) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "units", trim(v%units) ) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "units", trim(v%units) ), trim(v%name) )
 
             if (trim(v%axis) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "axis", trim(v%axis) ) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "axis", trim(v%axis) ), trim(v%name) )
 
             if (trim(v%calendar) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "calendar", trim(v%calendar) ) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "calendar", trim(v%calendar) ), trim(v%name) )
 
             if (trim(v%grid_mapping) .ne. "") &
-                call nc_check( nf90_put_att(ncid, v%varid, "grid_mapping", trim(v%grid_mapping) ) )
+                call nc_check_new( nf90_put_att(ncid, v%varid, "grid_mapping", trim(v%grid_mapping) ), trim(v%name) )
 
         end if
 
@@ -1042,15 +1124,16 @@ contains
         if (v%actual_range(1) .ne. 0.d0 .and. v%actual_range(2) .ne. 0.d0) then
             select case(trim(v%xtype))
                 case("NF90_INT")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", int(v%actual_range)) )
+                    call nc_check_new( nf90_put_att(ncid, v%varid, "actual_range", int(v%actual_range)), trim(v%name) )
                 case("NF90_FLOAT")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", real(v%actual_range)) )
+                    call nc_check_new( nf90_put_att(ncid, v%varid, "actual_range", real(v%actual_range)), trim(v%name) )
                 case("NF90_DOUBLE")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", v%actual_range) )
+                    call nc_check_new( nf90_put_att(ncid, v%varid, "actual_range", v%actual_range), trim(v%name) )
                 case("NF90_CHAR")
                     v%actual_range = (/ 0.d0, 0.d0 /)
                 case DEFAULT
                     write(*,*) "nc_put_att:: Error, wrong xtype defined:"//trim(v%xtype)
+                    write(0,*) "filename = ",trim(v%name)
                     write(0,*) "stopped by ncio."
                     stop 9
             end select
@@ -1094,9 +1177,9 @@ contains
         if ( stat .eq. noerr ) then
 
             ! Get number of dimensions and dimids
-            call nc_check ( nf90_inquire_variable(ncid, v%varid, ndims=ndims) )
+            call nc_check_new( nf90_inquire_variable(ncid, v%varid, ndims=ndims), trim(v%name) )
             if (allocated(dimids)) deallocate(dimids); allocate(dimids(ndims))
-            call nc_check ( nf90_inquire_variable(ncid, v%varid, dimids=dimids) )
+            call nc_check_new( nf90_inquire_variable(ncid, v%varid, dimids=dimids), trim(v%name) )
 
             ! Re-allocate dimnames for current variable
             if (allocated(v%dims)) deallocate(v%dims); allocate(v%dims(ndims))
@@ -1104,44 +1187,44 @@ contains
 
             ! Loop over dimensions and get the dimension names
             do i = 1, ndims
-                call nc_check ( nf90_inquire_dimension(ncid,dimids(i),name=v%dims(i),len=v%dlen(i)) )
+                call nc_check_new( nf90_inquire_dimension(ncid,dimids(i),name=v%dims(i),len=v%dlen(i)), trim(v%name) )
             end do
 
             if ( read_meta ) then
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "units", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "units", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%units = trim(tmpstr)
 
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "long_name", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "long_name", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%long_name = trim(tmpstr)
 
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "standard_name", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "standard_name", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%standard_name = trim(tmpstr)
 
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "axis", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "axis", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%axis = trim(tmpstr)
 
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "calendar", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "calendar", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%calendar = trim(tmpstr)
 
-                stat = nc_check_att( nf90_get_att(ncid, v%varid, "grid_mapping", tmpstr) )
+                stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "grid_mapping", tmpstr), trim(v%name) )
                 if (stat .eq. noerr) v%grid_mapping = trim(tmpstr)
 
                 select case(trim(v%xtype))
                     case("NF90_INT")
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "actual_range", tmpi2) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "actual_range", tmpi2), trim(v%name) )
                         if (stat .eq. noerr) v%actual_range = dble(tmpi2)
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "scale_factor", tmpi) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "scale_factor", tmpi), trim(v%name) )
                         if (stat .eq. noerr) v%scale_factor = dble(tmpi)
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "add_offset", tmpi) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "add_offset", tmpi), trim(v%name) )
                         if (stat .eq. noerr) v%add_offset = dble(tmpi)
 
                         call nc_get_att_double(ncid,v%varid,"missing_value",v%missing_value,stat)
                         if (stat .eq. noerr) v%missing_set = .TRUE.
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "_FillValue", tmpi) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "_FillValue", tmpi), trim(v%name) )
                         if (stat .eq. noerr) then
                             v%FillValue = dble(tmpi)
                             v%FillValue_set = .TRUE.
@@ -1156,19 +1239,19 @@ contains
 
                     case DEFAULT
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "actual_range", tmp2) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "actual_range", tmp2), trim(v%name) )
                         if (stat .eq. noerr) v%actual_range = tmp2
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "scale_factor", tmp) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "scale_factor", tmp), trim(v%name) )
                         if (stat .eq. noerr) v%scale_factor = tmp
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "add_offset", tmp) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "add_offset", tmp), trim(v%name) )
                         if (stat .eq. noerr) v%add_offset = tmp
 
                         call nc_get_att_double(ncid,v%varid,"missing_value",v%missing_value,stat)
                         if (stat .eq. noerr) v%missing_set = .TRUE.
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "_FillValue", tmp) )
+                        stat = nc_check_att_new( nf90_get_att(ncid, v%varid, "_FillValue", tmp), trim(v%name) )
                         if (stat .eq. noerr) then
                             v%FillValue = tmp
                             v%FillValue_set = .TRUE.
@@ -1233,10 +1316,10 @@ contains
         !else
         !    call nc_check( nf90_inq_dimid(ncid, name, dimid) )
         !end if
-        call nc_check( nf90_inq_dimid(nc_id, name, dimid) )
+        call nc_check_new( nf90_inq_dimid(nc_id, name, dimid), filename )
 
         ! Get the dimension length and close the file
-        call nc_check( nf90_inquire_dimension(nc_id, dimid, len=dimlen) )
+        call nc_check_new( nf90_inquire_dimension(nc_id, dimid, len=dimlen), filename )
 
         if (.not. present(ncid)) call nc_check( nf90_close(nc_id) )
 
@@ -1333,22 +1416,22 @@ contains
 
         ! Open the file
         call nc_check_open(filename, mode=nf90_nowrite, nc_id=nc_id)
-        call nc_check( nf90_inq_varid(nc_id, name, varid) )
-        call nc_check( nf90_inquire_variable(nc_id, varid, ndims=ndims) )
+        call nc_check_new( nf90_inq_varid(nc_id, name, varid), filename )
+        call nc_check_new( nf90_inquire_variable(nc_id, varid, ndims=ndims), trim(filename)//" : "//trim(name) )
 
         ! Allocate dim arrays
         allocate(dims0(ndims), names0(ndims), dimids(ndims))
 
         ! First get dimids
-        call nc_check( nf90_inquire_variable(nc_id, varid, dimids=dimids) )
+        call nc_check_new( nf90_inquire_variable(nc_id, varid, dimids=dimids), trim(filename)//" : "//trim(name) )
 
         ! Get the dimension name and length
         do q = 1, size(dimids)
-          call nc_check( nf90_inquire_dimension(nc_id, dimids(q), name=names0(q), len=dims0(q)) )
+          call nc_check_new( nf90_inquire_dimension(nc_id, dimids(q), name=names0(q), len=dims0(q)), trim(filename)//" : "//trim(names0(q)) )
         end do
 
         ! Close the file
-        call nc_check( nf90_close(nc_id) )
+        call nc_check_new( nf90_close(nc_id), filename )
 
         ! Check what optional arguments were provided and assign as necessary
         if (present(dims)) then
@@ -1382,11 +1465,11 @@ contains
         ! Open the file
         call nc_check_open(filename, mode=nf90_nowrite, nc_id=nc_id)
 
-        call nc_check( nf90_inq_varid(nc_id, name, varid) )
-        call nc_check( nf90_inquire_variable(nc_id, varid, ndims=ndims) )
+        call nc_check_new( nf90_inq_varid(nc_id, name, varid), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_inquire_variable(nc_id, varid, ndims=ndims), trim(filename)//" : "//trim(name) )
 
         ! Close the file
-        call nc_check( nf90_close(nc_id) )
+        call nc_check_new( nf90_close(nc_id), filename )
 
         return
 
@@ -1460,168 +1543,168 @@ contains
         character(len=*), intent(in) :: filename, varname, name
         character(len=*), intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_get_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_get_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_variable_int(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         integer, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_get_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_get_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_variable_sp(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         real, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_get_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_get_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_variable_dp(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         double precision, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_get_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_get_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_global_char(filename, name, value)
         character(len=*), intent(in) :: filename, name
         character(len=*), intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_global_int(filename, name, value)
         character(len=*), intent(in) :: filename, name
         integer, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_global_sp(filename, name, value)
         character(len=*), intent(in) :: filename, name
         real, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_read_attr_global_dp(filename, name, value)
         character(len=*), intent(in) :: filename, name
         double precision, intent(out) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid) )
-        call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_nowrite, ncid), filename )
+        call nc_check_new( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_variable_char(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         character(len=*), intent(in) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_put_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_put_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_variable_int(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         integer, intent(in) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_put_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_put_att(ncid, varid, trim(name), value) , trim(filename)//" : "//trim(name))
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_variable_sp(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         real, intent(in) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_put_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_put_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_variable_dp(filename, varname, name, value)
         character(len=*), intent(in) :: filename, varname, name
         double precision, intent(in) :: value
         integer :: ncid, varid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_inq_varid(ncid, trim(varname), varid) )
-        call nc_check( nf90_put_att(ncid, varid, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_inq_varid(ncid, trim(varname), varid), trim(filename)//" : "//trim(varname) )
+        call nc_check_new( nf90_put_att(ncid, varid, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_global_char(filename, name, value)
         character(len=*), intent(in) :: filename, name
         character(len=*), intent(in) :: value
         integer :: ncid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_global_int(filename, name, value)
         character(len=*), intent(in) :: filename, name
         integer, intent(in) :: value
         integer :: ncid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_global_sp(filename, name, value)
         character(len=*), intent(in) :: filename, name
         real, intent(in) :: value
         integer :: ncid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_attr_global_dp(filename, name, value)
         character(len=*), intent(in) :: filename, name
         double precision, intent(in) :: value
         integer :: ncid
-        call nc_check( nf90_open(filename, nf90_write, ncid) )
-        call nc_check( nf90_redef(ncid) )
-        call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value) )
-        call nc_check( nf90_enddef(ncid) )
-        call nc_check( nf90_close(ncid) )
+        call nc_check_new( nf90_open(filename, nf90_write, ncid), filename )
+        call nc_check_new( nf90_redef(ncid), filename )
+        call nc_check_new( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), trim(filename)//" : "//trim(name) )
+        call nc_check_new( nf90_enddef(ncid), filename )
+        call nc_check_new( nf90_close(ncid), filename )
     end subroutine
 
     subroutine nc_write_map(filename,grid_mapping_name,lambda,phi,alpha,x_e,y_n, &
@@ -1653,7 +1736,7 @@ contains
 
         ! Open the file, set for redefinition
         call nc_check_open(filename, ncid, nf90_write, nc_id)
-        call nc_check( nf90_redef(nc_id) )
+        call nc_check_new( nf90_redef(nc_id), filename )
 
         ! Check if grid mapping has been defined in this file
         ! (if not, define it according to input arguments)
@@ -1663,7 +1746,7 @@ contains
             ! Define the mapping variable as an integer with no dimensions,
             ! and include the grid mapping name
             
-            call nc_check( nf90_def_var(nc_id, trim(crs_name), NF90_INT, varid) )
+            call nc_check_new( nf90_def_var(nc_id, trim(crs_name), NF90_INT, varid), trim(filename)//" : "//trim(crs_name) )
             
             ! Add grid attributes depending on grid_mapping type
             select case(trim(grid_mapping_name))
@@ -1685,13 +1768,13 @@ contains
                     end if 
 
                     ! Add grid mapping attributes 
-                    call nc_check( nf90_put_att(nc_id,varid, "grid_mapping_name", trim(grid_mapping_name)) )
-                    call nc_check( nf90_put_att(nc_id,varid, "longitude_of_projection_origin", lambda) )
-                    call nc_check( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi) )
-                    call nc_check( nf90_put_att(nc_id,varid, "angle_of_oblique_tangent", alpha) )
-                    call nc_check( nf90_put_att(nc_id,varid, "scale_factor_at_projection_origin", 1.d0) )
-                    call nc_check( nf90_put_att(nc_id,varid, "false_easting",  x_e) )
-                    call nc_check( nf90_put_att(nc_id,varid, "false_northing", y_n) )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "grid_mapping_name", trim(grid_mapping_name)), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "longitude_of_projection_origin", lambda), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "angle_of_oblique_tangent", alpha), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "scale_factor_at_projection_origin", 1.d0), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "false_easting",  x_e), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "false_northing", y_n), filename )
 
                 case("polar_stereographic")
                     
@@ -1716,21 +1799,21 @@ contains
                     end if 
 
                     ! Add grid mapping attributes 
-                    call nc_check( nf90_put_att(nc_id,varid, "grid_mapping_name", trim(grid_mapping_name)) )
-                    call nc_check( nf90_put_att(nc_id,varid, "straight_vertical_longitude_from_pole", lambda) )
-                    call nc_check( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi_proj_orig) )
-                    call nc_check( nf90_put_att(nc_id,varid, "standard_parallel", phi) )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "grid_mapping_name", trim(grid_mapping_name)), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "straight_vertical_longitude_from_pole", lambda), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi_proj_orig), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "standard_parallel", phi), filename )
                     
                         
-                    call nc_check( nf90_put_att(nc_id,varid, "false_easting",  x_e) )
-                    call nc_check( nf90_put_att(nc_id,varid, "false_northing", y_n) )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "false_easting",  x_e), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "false_northing", y_n), filename )
 
                 case("lambert_conformal_conic")
 
-                    call nc_check( nf90_put_att(nc_id,varid, "longitude_of_central_meridian", lambda) )
-                    call nc_check( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi) )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "longitude_of_central_meridian", lambda), filename )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi), filename )
                     if (present(alpha)) &
-                    call nc_check( nf90_put_att(nc_id,varid, "standard_parallel", alpha) )
+                    call nc_check_new( nf90_put_att(nc_id,varid, "standard_parallel", alpha), filename )
                         
                 case("latitude_longitude","latlon","gaussian")
                     
@@ -1761,11 +1844,11 @@ contains
                         present(inverse_flattening)) then 
 
                         if (is_sphere) then  
-                            call nc_check( nf90_put_att(nc_id,varid, "semi_major_axis", semi_major_axis) )
-                            call nc_check( nf90_put_att(nc_id,varid, "inverse_flattening", 0.0d0) )
+                            call nc_check_new( nf90_put_att(nc_id,varid, "semi_major_axis", semi_major_axis), filename )
+                            call nc_check_new( nf90_put_att(nc_id,varid, "inverse_flattening", 0.0d0), filename )
                         else 
-                            call nc_check( nf90_put_att(nc_id,varid, "semi_major_axis", semi_major_axis) )
-                            call nc_check( nf90_put_att(nc_id,varid, "inverse_flattening", inverse_flattening) )
+                            call nc_check_new( nf90_put_att(nc_id,varid, "semi_major_axis", semi_major_axis), filename )
+                            call nc_check_new( nf90_put_att(nc_id,varid, "inverse_flattening", inverse_flattening), filename )
                             
                         end if 
 
@@ -2065,27 +2148,27 @@ contains
 
         ! Open the file, set for redefinition
         call nc_check_open(filename, ncid, nf90_write, nc_id)
-        call nc_check( nf90_redef(nc_id) )
+        call nc_check_new( nf90_redef(nc_id), filename )
 
         !! Define the variable in the file
         !if ( trim(v%name) .eq. "time" ) then
         if ( unlimited_i ) then
-            call nc_check( nf90_def_dim(nc_id, trim(v%name), NF90_UNLIMITED, v%dimid) )
+            call nc_check_new( nf90_def_dim(nc_id, trim(v%name), NF90_UNLIMITED, v%dimid), trim(filename)//" : "//trim(v%name) )
         else
-            call nc_check( nf90_def_dim(nc_id, trim(v%name), v%n, v%dimid) )
+            call nc_check_new( nf90_def_dim(nc_id, trim(v%name), v%n, v%dimid), trim(filename)//" : "//trim(v%name) )
         end if
 
         ! Assign attributes to coordinate variable.
         call nc_put_att(nc_id, v)
 
         ! End define mode.
-        call nc_check( nf90_enddef(nc_id) )
+        call nc_check_new( nf90_enddef(nc_id), filename )
 
         ! Put the variable's values in the file
-        call nc_check( nf90_put_var(nc_id, v%varid, v%dim) )
+        call nc_check_new( nf90_put_var(nc_id, v%varid, v%dim), trim(filename)//" : "//trim(v%name) )
 
         ! Close the file
-        if (.not. present(ncid)) call nc_check( nf90_close(nc_id) )
+        if (.not. present(ncid)) call nc_check_new( nf90_close(nc_id), filename )
 
         tmpchar = trim(v%name)
         write(*,"(a,a,a14,i11)") "ncio:: nc_write_dim:: ",trim(filename)//" : ",adjustl(tmpchar),size(v%dim)

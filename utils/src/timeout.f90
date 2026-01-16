@@ -19,6 +19,7 @@ module timeout
         character(len=56)     :: label 
         real(wp), allocatable :: times(:)
         character(len=56), allocatable :: vnms(:)
+        logical :: active
     end type
 
     private
@@ -40,21 +41,24 @@ contains
         ! Local variables 
         integer :: k, n 
         
-        ! Get total times to check 
-        n = size(tm%times)
-
         ! Assume this timestep is not in timeout
         out_now = .FALSE. 
 
-        do k = 1, n 
-            if (abs(time - tm%times(k)) .lt. time_tol) then 
-                out_now = .TRUE. 
-                exit 
-            end if
-        end do 
+        if (tm%active) then
 
-        if (verbose .and. out_now) then 
-            write(*,"(a16,a,2x,g12.3)") "timeout_check ", trim(tm%label), time 
+            ! Get total times to check 
+            n = size(tm%times)
+
+            do k = 1, n 
+                if (abs(time - tm%times(k)) .lt. time_tol) then 
+                    out_now = .TRUE. 
+                    exit 
+                end if
+            end do 
+
+            if (verbose .and. out_now) then 
+                write(*,"(a16,a,2x,g12.3)") "timeout_check ", trim(tm%label), time 
+            end if
         end if
 
         return
@@ -91,7 +95,15 @@ contains
 
         select case(trim(tm%method))
 
+            case("none")
+                tm%active = .FALSE.
+                
+                dt_const = 0.0
+                n = 1
+                times(1) = MV
+
             case("const")
+                tm%active = .TRUE.
                 
                 call nml_read(filename,group,"dt",dt_const)
 
@@ -101,7 +113,10 @@ contains
                     
                     if (n .gt. nmax) then 
                         write(error_unit,*) "timeout_init:: Error: too many output timesteps desired. &
-                        &Maximum value limited to nmax = ", nmax 
+                        &Maximum value limited to nmax = ", nmax
+                        write(error_unit,*) "group: "//trim(group)
+                        write(error_unit,*) "label: "//trim(label)
+                        write(error_unit,*) "method: "//trim(tm%method)
                         write(error_unit,*) "time_init = ", time_init 
                         write(error_unit,*) "time_end  = ", time_end 
                         write(error_unit,*) "dt        = ", dt_const 
@@ -116,10 +131,24 @@ contains
                     k0 = 1 
                     k1 = k0+n-1
 
+                    ! Make sure last timestep is also written
+                    if (times(k1) .lt. time_end) then 
+                        n  = n+1 
+                        k1 = k0+n-1
+                        times(k1) = time_end 
+                    end if
+                
+                else
+                    write(error_unit,*) "timeout_init:: Error: dt_const must be greater than zero."
+                    write(error_unit,*) "group: "//trim(group)
+                    write(error_unit,*) "label: "//trim(label)
+                    write(error_unit,*) "method: "//trim(tm%method)
+                    stop 
                 end if
 
             case("file","times")
-
+                tm%active = .TRUE.
+                
                 if (trim(tm%method) .eq. "file") then 
                     ! Load time information from an input file 
 
@@ -159,21 +188,21 @@ contains
 
                 n = k1-k0+1
 
+                ! Make sure last timestep is also written
+                if (times(k1) .lt. time_end) then 
+                    n  = n+1 
+                    k1 = k0+n-1
+                    times(k1) = time_end 
+                end if
+
             case DEFAULT
 
                 write(error_unit,*) "timeout_init:: Error: timeout method not recognized."
                 write(error_unit,*) "timeout.method = ", trim(tm%method)
                 stop 
             
-        end select 
+        end select
 
-        ! Make sure last timestep is also written
-        if (times(k1) .lt. time_end) then 
-            n  = n+1 
-            k1 = k0+n-1
-            times(k1) = time_end 
-        end if
-                    
         ! Store final times(k0:k1) vector of length n
         ! in timeout object for later use. 
         if (allocated(tm%times)) deallocate(tm%times)
@@ -188,16 +217,18 @@ contains
             ! Print summary
             write(*,*) "timeout: ", trim(tm%label)
             write(*,*) "  method    = ", trim(tm%method)
-            write(*,*) "  time_init = ", time_init 
-            write(*,*) "  time_end  = ", time_end 
-            write(*,*) "  n         = ", n 
+            write(*,*) "  active    = ", tm%active
+            if (tm%active) then
+                write(*,*) "  time_init = ", time_init 
+                write(*,*) "  time_end  = ", time_end 
+                write(*,*) "  n         = ", n 
 
-            do k = 1, n, 5
-                k0 = k 
-                k1 = min(k+5-1,n)
-                write(*,"(5g12.3)") tm%times(k0:k1)
-            end do 
-
+                do k = 1, n, 5
+                    k0 = k 
+                    k1 = min(k+5-1,n)
+                    write(*,"(5g12.3)") tm%times(k0:k1)
+                end do 
+            end if
         end if 
 
         return
