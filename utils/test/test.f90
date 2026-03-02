@@ -1,7 +1,8 @@
 program test
 
     !call test_derivatives()
-    call test_gaussian_quadrature()
+    !call test_gaussian_quadrature()
+    call test_esm()
 
 contains
 
@@ -103,5 +104,19 @@ contains
         return
 
     end subroutine test_gaussian_quadrature
+
+    subroutine test_esm()
+
+        use precision
+        use esm
+
+        implicit none
+
+        character(len=1024) :: parameter_file = "test_esm.nml"
+
+        
+        return
+
+    end subroutine test_esm
 
 end program test
