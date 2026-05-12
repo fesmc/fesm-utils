@@ -603,12 +603,13 @@ contains
         character(len=*) :: name 
         character(len=*), optional :: comment
         integer, optional :: io 
-        character(len=500) :: value_str  
+        character(len=:), allocatable :: value_str
+        character(len=16) :: tmp
         integer :: q 
 
         value_str = '"'//trim(value(1))//'"'
         do q = 2, size(value)
-            write(value_str,*) trim(value_str)//" "//'"'//trim(value(q))//'"'
+            value_str = value_str // " " // trim(adjustl(value(q)))
         end do 
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
@@ -624,12 +625,14 @@ contains
         character(len=*) :: name 
         character(len=*), optional :: comment
         integer, optional :: io 
-        character(len=500) :: value_str  
+        character(len=:), allocatable :: value_str
+        character(len=16) :: tmp
         integer :: q 
 
         value_str = ""
         do q = 1, size(value)
-            write(value_str,"(a,g12.3)") trim(value_str)//" ",value(q)
+            write(tmp,"(g12.3)") value(q)
+            value_str = value_str // " " // trim(adjustl(tmp))
         end do 
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
@@ -645,12 +648,14 @@ contains
         character(len=*) :: name 
         character(len=*), optional :: comment
         integer, optional :: io 
-        character(len=500) :: value_str  
+        character(len=:), allocatable :: value_str
+        character(len=16) :: tmp
         integer :: q 
 
         value_str = ""
         do q = 1, size(value)
-            write(value_str,"(a,g12.3)") trim(value_str)//" ",value(q)
+            write(tmp,"(g12.3)") value(q)
+            value_str = value_str // " " // trim(adjustl(tmp))
         end do 
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
@@ -661,25 +666,27 @@ contains
     
     subroutine nml_print_integer_vector(name,value,comment,io)
 
-        implicit none 
+        implicit none
         integer :: value(:)
-        character(len=*) :: name 
+        character(len=*) :: name
         character(len=*), optional :: comment
-        integer, optional :: io 
-        character(len=500) :: value_str  
-        integer :: q 
+        integer, optional :: io
+        character(len=:), allocatable :: value_str
+        character(len=16) :: tmp
+        integer :: q
 
         value_str = ""
         do q = 1, size(value)
-            write(value_str,"(a,i12)") trim(value_str)//" ",value(q)
-        end do 
+            write(tmp,"(i12)") value(q)
+            value_str = value_str // " " // trim(adjustl(tmp))
+        end do
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
-        return 
+        return
 
     end subroutine nml_print_integer_vector
-    
+
     subroutine nml_print_logical_vector(name,value,comment,io)
 
         implicit none 
@@ -687,15 +694,16 @@ contains
         character(len=*) :: name 
         character(len=*), optional :: comment
         integer, optional :: io 
-        character(len=500) :: value_str  
+        character(len=:), allocatable :: value_str
+        character(len=16) :: tmp 
         integer :: q 
 
         value_str = ""
         do q = 1, size(value)
             if (value(q)) then 
-                write(value_str,"(a,a1)") trim(value_str)//" ","T"
+                value_str = value_str // " " // "T"
             else
-                write(value_str,"(a,a1)") trim(value_str)//" ","F"
+                value_str = value_str // " " // "F"
             end if 
         end do 
 
