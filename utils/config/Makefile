@@ -7,6 +7,7 @@ openmp ?= 0
 
 # PATH options
 srcdir = src
+testdir = test
 bindir = bin
 libdir = libs
 objdir_serial = include-serial
@@ -43,6 +44,9 @@ $(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/esm.o: $(srcdir)/esm.f90 $(objdir)/varslice.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/grid_to_cdo.o: $(srcdir)/coordinates-light/grid_to_cdo.f90
@@ -100,6 +104,7 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 
 fesmutils_libs = 	$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
+					$(objdir)/esm.o \
 					$(objdir)/gaussian_filter.o \
 					$(objdir)/gaussian_quadrature.o \
 					$(objdir)/grid_to_cdo.o \
@@ -138,7 +143,7 @@ fesmutils-static: $(fesmutils_libs)
 	@echo " "
 
 test : fesmutils-static
-		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test.x $(srcdir)/test.f90 \
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test.x $(testdir)/test.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    $(bindir)/test.x is ready."

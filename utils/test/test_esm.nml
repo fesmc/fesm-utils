@@ -1,0 +1,7 @@
+! ====== ESM experiment definitions ======
+
+&ctrl
+    experiment      = "ctrl"
+    names           = "ref[ts,pr,zs,to,so]", "esm_ref[ts,pr,zs,to,so]", "lgm[ts,pr,zs,to,so]"
+    method          = "transient-anom"       ! "transient-anom/abs" or "index-anom/abs"
+/
