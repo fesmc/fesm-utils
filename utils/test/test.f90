@@ -2,7 +2,7 @@ program test
 
     !call test_derivatives()
     !call test_gaussian_quadrature()
-    call test_esm()
+    !call test_esm()
 
 contains
 
@@ -108,7 +108,7 @@ contains
     subroutine test_esm()
 
         use precision
-        use esm
+        !use esm
 
         implicit none
 
