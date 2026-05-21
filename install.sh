@@ -25,18 +25,18 @@ FFTWSRC=fftw-3.3.10
 
 # with omp enabled
 cd $FFTWSRC
-eval "./configure --disable-doc --prefix=$SRCDIR/fftw-omp --enable-openmp $COMPILER_OPTS"
-make clean
-make
-make install
+#eval "./configure --disable-doc --prefix=$SRCDIR/fftw-omp --enable-openmp $COMPILER_OPTS"
+#make clean
+#make
+#make install
 cd $SRCDIR
 
 # serial (without omp) 
 cd $FFTWSRC
-eval "./configure --disable-doc --prefix=$SRCDIR/fftw-serial $COMPILER_OPTS"
-make clean
-make
-make install
+#eval "./configure --disable-doc --prefix=$SRCDIR/fftw-serial $COMPILER_OPTS"
+#make clean
+#make
+#make install
 cd $SRCDIR
 
 ### LIS ###
@@ -46,7 +46,7 @@ LISSRC=lis-2.1.6
 
 # with omp enabled
 cd $LISSRC
-eval "./configure --prefix=$SRCDIR/lis-omp --enable-f90 --enable-omp $COMPILER_OPTS"
+eval "./configure --prefix=$SRCDIR/lis-omp --enable-f90 --enable-omp --enable-saamg $COMPILER_OPTS"
 make clean
 make
 make install
@@ -54,7 +54,7 @@ cd $SRCDIR
 
 # serial (without omp) 
 cd $LISSRC
-eval "./configure --prefix=$SRCDIR/lis-serial --enable-f90 $COMPILER_OPTS" 
+eval "./configure --prefix=$SRCDIR/lis-serial --enable-f90 --enable-saamg $COMPILER_OPTS" 
 make clean
 make
 make install

@@ -21,14 +21,14 @@ module esm
     type esm_state_class
 
         character(len=64)    :: name       ! label, e.g. "lgm", "pd", "hist", "proj"
-
-        ! Segment-mode timing metadata
-        real(wp)             :: t_start    ! start of valid time window [yr]
-        real(wp)             :: t_end      ! end   of valid time window [yr]
-
-        ! Interp-mode metadata
-        real(wp)             :: anchor     ! alpha value at which this state is "pure"
-
+        
+        ! Define which variables are active
+        logical :: is_active_ts
+        logical :: is_active_pr
+        logical :: is_active_zs
+        logical :: is_active_to
+        logical :: is_active_so
+        
         ! Atmospheric fields
         type(varslice_class) :: ts          ! surface temperature
         type(varslice_class) :: pr          ! precipitation
@@ -40,7 +40,15 @@ module esm
         ! Surface / topographic fields
         type(varslice_class) :: zs          ! surface elevation
 
-    end type esm_state_class
+    end type
+
+        ! ajr: for esm_state_class later when we introduce time interp methods
+        ! ! Segment-mode timing metadata
+        ! real(wp)             :: t_start    ! start of valid time window [yr]
+        ! real(wp)             :: t_end      ! end   of valid time window [yr]
+
+        ! ! Interp-mode metadata
+        ! real(wp)             :: anchor     ! alpha value at which this state is "pure"
 
     type esm_forcing_class
 
@@ -70,7 +78,7 @@ module esm
         ! General fields
         type(varslice_class) :: basins
 
-    end type esm_forcing_class
+    end type
 
     type esm_class
         ! Diagnostic / output fields
@@ -135,11 +143,59 @@ module esm
     public :: esm_forcing_class
     public :: esm_class
 
+    public :: esm_forcing_par_load
+
     public :: esm_experiment_class
     public :: esm_ice_class
 
 contains
 
+    subroutine esm_forcing_par_load(f, nml_path, experiment_alias)
+
+        implicit none
+        
+        type(esm_forcing_class), intent(out) :: f
+        character(len=*), intent(in) :: nml_path
+        character(len=*), intent(in) :: experiment_alias
+
+        ! Buffers for nml_read
+        character(len=64)  :: experiment = ""
+        character(len=128) :: names(10)  = ""
+        character(len=32)  :: method     = ""
+        logical            :: init_pars  = .false.
+        
+        integer :: i, n
+        character(len=32) :: tmp_name
+        character(len=10) :: tmp_vars(5)
+        integer           :: tmp_num_vars
+
+        ! 1. Load the &ctrl group using your module
+        call nml_read(nml_path, experiment_alias, "experiment", f%experiment, init=init_pars)
+        call nml_read(nml_path, experiment_alias, "names",      names,        init=init_pars)
+        call nml_read(nml_path, experiment_alias, "method",     f%method,     init=init_pars)
+
+        ! 3. Count valid climate entries
+        n = 0
+        do i = 1, size(names)
+            if (len_trim(names(i)) > 0) n = n + 1
+        end do
+        f%n_clim = n
+
+        ! 4. Allocate and parse the "alias[var1,var2]" strings
+        allocate(f%clims(n))
+        
+        do i = 1, n
+            ! Parse the string (e.g., "ref[ts,pr]")
+            !call parse_experiment_string(names(i), tmp_name, tmp_vars, tmp_num_vars)
+            
+            f%clim_name(i)    = tmp_name
+            f%clim(i)%name    = tmp_name
+            !f%clim(i)%num_vars = tmp_num_vars
+            
+            
+        end do
+
+    end subroutine esm_forcing_par_load
 
     ! =========================================================================
     ! varslice wrapper routines
