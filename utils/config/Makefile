@@ -104,7 +104,6 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 
 fesmutils_libs = 	$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
-					$(objdir)/esm.o \
 					$(objdir)/gaussian_filter.o \
 					$(objdir)/gaussian_quadrature.o \
 					$(objdir)/grid_to_cdo.o \
@@ -122,6 +121,8 @@ fesmutils_libs = 	$(objdir)/derivatives.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o
+
+#					$(objdir)/esm.o \
 
 ###############################################
 ##
