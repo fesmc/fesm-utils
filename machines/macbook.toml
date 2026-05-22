@@ -1,0 +1,12 @@
+# Local macOS development machine (gfortran via homebrew).
+#
+# fftw/lis build with autotools defaults. The utils build expects NC_CROOT and
+# NC_FROOT to be exported in your shell (see utils/config/macbook_gfortran).
+
+[machine]
+name = "macbook"
+
+[utils.config]
+gfortran = "macbook_gfortran"
+
+[compilers.gfortran]

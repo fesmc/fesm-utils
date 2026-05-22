@@ -1,0 +1,27 @@
+# Generic machine definition (equivalent to ./install.sh).
+# Use when no HPC-specific file applies.
+#
+# Each [compilers.<name>] table is a set of autotools configure variables
+# (KEY = "value") that are appended verbatim to the fftw/lis ./configure call,
+# exactly like the COMPILER_OPTS string in the old install scripts.
+#
+# [utils.config.<name>] maps a compiler to the config file under utils/config/
+# used by utils/config.py to generate the utils Makefile.
+
+[machine]
+name = "generic"
+
+[compilers.ifx]
+CC = "icx"
+F77 = "ifx"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[compilers.ifort]
+CC = "icc"
+F77 = "ifort"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[compilers.gfortran]
+# gfortran: rely on autotools defaults (no extra configure variables)
