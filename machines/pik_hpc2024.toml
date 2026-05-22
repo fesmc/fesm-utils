@@ -1,0 +1,50 @@
+# PIK HPC2024 (foote) cluster (equivalent to ./install_pik.sh).
+#
+# lis must be built with an older Intel toolchain (the 2024.0 oneAPI errors out),
+# so [components.lis] overrides the modules and the ifx compiler vars used for
+# the lis build only. A component compiler override REPLACES the machine-level
+# compiler table for that component.
+
+[machine]
+name = "pik_hpc2024"
+
+[utils.config]
+ifx = "pik_hpc2024_ifx"
+gfortran = "pik_hpc2024_gfortran"
+
+[compilers.ifx]
+CC = "icx"
+F77 = "ifx"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[compilers.ifort]
+CC = "icc"
+F77 = "ifort"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[compilers.gfortran]
+CC = "gcc"
+F77 = "gfortran"
+
+# --- lis-specific overrides ---
+
+[components.lis.modules]
+load = ["intel/oneAPI/2023.2.0"]
+
+[components.lis.compilers.ifx]
+# lis build drops CC for ifx under the 2023.2.0 toolchain
+F77 = "ifx"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[components.lis.compilers.ifort]
+CC = "icc"
+F77 = "ifort"
+FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+[components.lis.compilers.gfortran]
+CC = "gcc"
+F77 = "gfortran"

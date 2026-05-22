@@ -8,7 +8,38 @@ Currently, `fesm-utils` manages installation of `fftw`, `lis` and a collection o
 
 The `utils` subdirectory is self-contained and the modules can be compiled into a static library with a Makefile in the directory. `lis` and `fftw` are installed using the install scripts in the main directory (see below).
 
-## Configure and compile `lis` and `fftw`
+## Unified build (recommended): `build.py`
+
+`build.py` is a single entry point that builds any combination of the three
+components (`fftw`, `lis`, `utils`), for any machine, with or without OpenMP.
+Per-machine configuration lives in `machines/<name>.toml`.
+
+```bash
+./build.py --list-machines                                  # show known machines
+
+./build.py -m dkrz_levante -c ifx                           # build everything, omp + serial
+./build.py -m macbook -c gfortran --component utils --variant serial
+./build.py -m pik_hpc2024 -c ifx --component lis --variant omp
+./build.py -m generic -c gfortran --dry-run                 # print commands, don't run
+```
+
+Options:
+
+- `-m/--machine` — a file under `machines/` (e.g. `dkrz_levante`, `awi_albedo`, `pik_hpc2024`, `macbook`, `generic`).
+- `-c/--compiler` — `ifx`, `ifort`, or `gfortran` (whichever the machine defines).
+- `--component` — `fftw`, `lis`, `utils`, or `all` (default `all`).
+- `--variant` — `omp`, `serial`, or `both` (default `both`).
+- `--debug` — `utils` debug level: `0` normal, `1` debug, `2` profile (default `0`).
+- `--dry-run` — print the commands that would run, without executing.
+
+Each component keeps its native build: `fftw` and `lis` are configured/compiled
+with autotools and installed into `fftw-{omp,serial}` / `lis-{omp,serial}`;
+`utils` is built via its own `config.py` + `Makefile`. To add a new machine,
+copy an existing `machines/*.toml` and edit the compiler/module settings.
+
+The component-specific scripts below still work and are not affected by `build.py`.
+
+## Configure and compile `lis` and `fftw` (legacy scripts)
 
 To compile, run the install script and specify your compiler (currently `ifx`, `ifort` or `gfortran`):
 
