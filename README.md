@@ -4,20 +4,30 @@ Convenience repository holding external libraries needed to run fast Earth syste
 
 ## Directory structure
 
-Currently, `fesm-utils` manages installation of `fftw`, `lis` and a collection of useful modules `utils`.
+`fesm-utils` manages the build of three components:
 
-The `utils` subdirectory is self-contained and the modules can be compiled into a static library with a Makefile in the directory. `lis` and `fftw` are installed using the install scripts in the main directory (see below).
+- `fftw` — FFTW, built with autotools.
+- `lis` — the LIS solver library, built with autotools.
+- `utils` — a self-contained collection of Fortran modules compiled into a static library.
 
-## Unified build (recommended): `build.py`
+All three are built through a single driver, `build.py`, configured per machine via `machines/<name>.toml`.
 
-`build.py` is a single entry point that builds any combination of the three
-components (`fftw`, `lis`, `utils`), for any machine, with or without OpenMP.
-Per-machine configuration lives in `machines/<name>.toml`.
+## Building
+
+`build.py` builds any combination of the three components, for any machine, with or without OpenMP. Each (component × variant) is installed into its own subfolder, so an OpenMP-enabled and a serial version coexist:
+
+```bash
+fftw-omp     fftw-serial
+lis-omp      lis-serial
+utils/include-omp     utils/include-serial
+```
+
+### Usage
 
 ```bash
 ./build.py --list-machines                                  # show known machines
 
-./build.py -m dkrz_levante -c ifx                           # build everything, omp + serial
+./build.py -m dkrz_levante -c ifx                           # everything, omp + serial
 ./build.py -m macbook -c gfortran --component utils --variant serial
 ./build.py -m pik_hpc2024 -c ifx --component lis --variant omp
 ./build.py -m generic -c gfortran --dry-run                 # print commands, don't run
@@ -32,55 +42,24 @@ Options:
 - `--debug` — `utils` debug level: `0` normal, `1` debug, `2` profile (default `0`).
 - `--dry-run` — print the commands that would run, without executing.
 
-Each component keeps its native build: `fftw` and `lis` are configured/compiled
-with autotools and installed into `fftw-{omp,serial}` / `lis-{omp,serial}`;
-`utils` is built via its own `config.py` + `Makefile`. To add a new machine,
-copy an existing `machines/*.toml` and edit the compiler/module settings.
+### Adding a machine
 
-The component-specific scripts below still work and are not affected by `build.py`.
+Copy an existing file in `machines/` and edit the compiler flags, modules, and (for `utils`) the config-file mapping. Each `[compilers.<name>]` table is a set of autotools configure variables passed verbatim to the `fftw`/`lis` `./configure` call. See `machines/pik_hpc2024.toml` for an example of per-component module and compiler overrides.
 
-## Configure and compile `lis` and `fftw` (legacy scripts)
+### Building `utils` by hand
 
-To compile, run the install script and specify your compiler (currently `ifx`, `ifort` or `gfortran`):
-
-```bash
-./install.sh ifx
-```
-
-There are additional install scripts specific to certain HPC systems. If you are using one of these systems, these scripts should work:
-
-```bash
-./install_pik.sh ifx  # PIK HPC2024 (foote) cluster
-./install_dkrz.sh ifx # DKRZ levante cluster
-./install_awi.sh ifx  # AWI albedo cluster
-```
-
-Running the `install.sh` script will compile and "install" the following
-library versions into separate subfolders:
-
-```bash
-fftw-omp
-fftw-serial
-lis-omp
-lis-serial
-```
-
-These can then be linked to in any external program. See the internals of `install.sh` if you would like to customize any installation options further.
-
-## Configure and compile `utils`
-
-To make a static library of the `utils` modules, configure the Makefile for your system and compile.
+The `utils` static library can also be built directly with its own Makefile, independently of `build.py`:
 
 ```bash
 cd utils
-python config.py config/dkrz_levante_ifx  # replace with config file for your system
+python config.py config/dkrz_levante_ifx   # replace with config file for your system
 make clean
 make fesmutils-static
 ```
 
 ## Use the libraries
 
-Now a symlink can be made to these libraries for use within, e.g., CLIMBER-X:
+A symlink can be made to these libraries for use within, e.g., CLIMBER-X:
 
 ```bash
 cd climber-x/utils/
@@ -104,4 +83,4 @@ unzip lis-2.1.6.zip
 rm lis-2.1.6.zip
 ```
 
-Then, proceed with configure/compile instructions above.
+Then build with `build.py` as described above.
