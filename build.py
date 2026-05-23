@@ -96,6 +96,35 @@ def var_args(table):
     return " ".join(f"{k}={shlex.quote(str(v))}" for k, v in table.items())
 
 
+def intel_runtime_preamble(table):
+    """Handle the `intel_runtime_libs` flag for Intel/ifx autotools builds.
+
+    Older configs hard-coded `ac_cv_c_libs` as a long list of machine-specific
+    spack paths, which only existed on the one cluster they were copied from.
+    Instead, ask the compiler where its runtime libs live -- robust and
+    machine-independent.
+
+    If the flag is set, mutate `table` in place (drop the flag and any static
+    `ac_cv_c_libs`) and return (preamble, extra_var):
+      - preamble: shell that derives the lib dir from `$CC -print-file-name`.
+      - extra_var: an `ac_cv_c_libs=...` configure word referencing it.
+    Otherwise return ("", "").
+    """
+    if not table.pop("intel_runtime_libs", False):
+        return "", ""
+    cc = str(table.get("CC", "icx"))
+    # A static ac_cv_c_libs would override the derived one; drop it.
+    table.pop("ac_cv_c_libs", None)
+    preamble = (
+        f'_oneapi_libdir="$(dirname "$({shlex.quote(cc)} '
+        '-print-file-name=libimf.so)")" && '
+    )
+    extra_var = (
+        'ac_cv_c_libs="-L$_oneapi_libdir -lsvml -lirng -limf -lirc -ldl -lm"'
+    )
+    return preamble, extra_var
+
+
 DRY_RUN = False
 
 
@@ -122,9 +151,12 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     opts = [f"--prefix={shlex.quote(str(prefix))}"] + list(base_opts)
     if omp:
         opts.append(omp_opt)
-    vargs = var_args(configure_vars(machine, component, compiler))
+    table = dict(configure_vars(machine, component, compiler))
+    preamble, extra_var = intel_runtime_preamble(table)
+    vargs = " ".join(filter(None, [var_args(table), extra_var]))
     cmd = (
         module_prefix(modules_for(machine, component))
+        + preamble
         + f"./configure {' '.join(opts)} {vargs} && make clean && make && make install"
     )
     run(cmd, ROOT / src)

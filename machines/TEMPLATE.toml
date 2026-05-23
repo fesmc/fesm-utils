@@ -70,22 +70,24 @@ name = "my_cluster"
 # CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
 
 
-# --- ac_cv_c_libs : the Intel/ifx linker workaround (ADVANCED) ---------------
-# Some clusters need an explicit list of C runtime library paths so that the
-# ifx-built fftw/lis link correctly. This is captured in a single (long) field:
+# --- intel_runtime_libs : the Intel/ifx linker fix (ADVANCED) ----------------
+# ifx-built fftw/lis often fail at the LINK stage with missing Intel runtime
+# symbols (svml, irc, imf, ...) unless the Intel runtime lib dir is on the
+# linker path. Set this flag in an Intel compiler table to fix it:
 #
-#   ac_cv_c_libs = "-L/path/to/intel/lib ... -L/path/to/gcc/lib ... -lsvml -lirc ..."
+#   [compilers.ifx]
+#   CC = "icx"
+#   F77 = "ifx"
+#   intel_runtime_libs = true
 #
-# See machines/dkrz_levante.toml for a real, working example -- on Levante this
-# value is REQUIRED for ifx. Its exact origin is not documented; treat it as a
-# last-resort fix when an ifx fftw/lis build fails at the LINK stage with
-# missing Intel runtime symbols (svml, irc, imf, ...).
+# build.py then derives the lib dir by asking the compiler itself
+# (`$CC -print-file-name=libimf.so`) and appends a matching ac_cv_c_libs to the
+# fftw and lis configure commands. Because the path comes from the compiler, it
+# is machine-independent -- nothing cluster-specific gets pasted into this file.
 #
-# IMPORTANT: this value is machine-specific. Do NOT copy Levante's paths to a
-# different cluster -- the directories will not exist there. (machines/
-# awi_albedo.toml currently does exactly this and the header there warns it is
-# probably wrong.) On a new cluster, look for the equivalent Intel/GCC runtime
-# lib directories under that cluster's compiler install, or ask the sysadmin.
+# This replaces the old approach of hard-coding a long machine-specific
+# ac_cv_c_libs string (which broke whenever it was copied to another cluster).
+# See machines/dkrz_levante.toml and machines/awi_albedo.toml for live use.
 
 
 # --- Per-component overrides (ADVANCED) --------------------------------------

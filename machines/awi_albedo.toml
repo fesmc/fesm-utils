@@ -1,11 +1,10 @@
 # AWI Albedo cluster (equivalent to ./install_awi.sh, which is a symlink to
 # install_dkrz.sh -- so the fftw/lis configure settings are identical to DKRZ).
 #
-# NOTE: unlike dkrz_levante, no ac_cv_c_libs override is set here. The previous
-# value was copied from Levante and pointed at Levante spack trees that do not
-# exist on Albedo. If an ifx fftw/lis build fails at the link stage with missing
-# Intel runtime symbols (svml, irc, imf, ...), add an ac_cv_c_libs entry with
-# Albedo's own Intel/GCC runtime library paths (see machines/TEMPLATE.toml).
+# ifx uses intel_runtime_libs (see [compilers.ifx]): build.py derives the Intel
+# runtime lib dir from the compiler itself, so no machine-specific paths need to
+# be pasted here. This replaces the old hard-coded ac_cv_c_libs that was copied
+# from Levante and pointed at spack trees that do not exist on Albedo.
 
 [machine]
 name = "awi_albedo"
@@ -16,6 +15,7 @@ ifx = "awi_albedo_ifx"
 [compilers.ifx]
 CC = "icx"
 F77 = "ifx"
+intel_runtime_libs = true
 
 [compilers.ifort]
 CC = "icc"
