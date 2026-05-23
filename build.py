@@ -45,7 +45,10 @@ def die(msg):
 
 
 def list_machines():
-    return sorted(p.stem for p in MACHINE_DIR.glob("*.toml"))
+    # TEMPLATE.toml is a documented skeleton to copy, not a real machine.
+    return sorted(
+        p.stem for p in MACHINE_DIR.glob("*.toml") if p.stem != "TEMPLATE"
+    )
 
 
 def load_machine(name):
@@ -149,6 +152,13 @@ def build_utils(machine, compiler, omp, debug):
             f"'{machine['machine']['name']}'. Add one under utils/config/ and "
             f"reference it in [utils.config]."
         )
+    cfg_path = ROOT / "utils" / "config" / cfg
+    if not cfg_path.exists():
+        die(
+            f"utils config file '{cfg_path.relative_to(ROOT)}' (mapped from "
+            f"[utils.config].{compiler}) does not exist. Copy "
+            f"utils/config/TEMPLATE to create it."
+        )
     openmp = 1 if omp else 0
     cmd = (
         module_prefix(modules_for(machine, "utils"))
@@ -200,10 +210,19 @@ def main():
         action="store_true",
         help="print the build commands without executing them",
     )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="validate the machine config (compilers defined, utils config "
+        "files present) and print the resolved commands, without building",
+    )
     args = ap.parse_args()
 
     global DRY_RUN
-    DRY_RUN = args.dry_run
+    # --check is a no-build validation pass: it reuses the dry-run print path,
+    # while the resolution code (configure_vars, build_utils) raises clear
+    # errors for any missing compiler table or utils config file.
+    DRY_RUN = args.dry_run or args.check
 
     if args.list_machines:
         print("Available machines:")
@@ -230,7 +249,17 @@ def main():
             BUILDERS[component](machine, args.compiler, omp, args.debug)
             done.append(label)
 
-    print("\n\033[1mBuilt:\033[0m " + ", ".join(done))
+    if args.check:
+        print(
+            f"\n\033[1m✓ config valid:\033[0m "
+            f"{args.machine}/{args.compiler} resolves for "
+            + ", ".join(done)
+            + " (nothing was built)."
+        )
+    elif DRY_RUN:
+        print("\n\033[1mDry run:\033[0m " + ", ".join(done) + " (nothing was built).")
+    else:
+        print("\n\033[1mBuilt:\033[0m " + ", ".join(done))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,80 @@
+# =============================================================================
+# TEMPLATE utils config for fesm-utils.
+#
+# This file is only needed if you build the `utils` component on your machine.
+# It is a fragment of a Makefile: build.py runs  `python3 config.py config/<this>`
+# which pastes the lines below into utils/config/Makefile to produce the final
+# Makefile, then runs `make`.
+#
+# HOW TO USE
+#   1. Copy to  <machine>_<compiler>  matching your machine .toml, e.g.:
+#         cp utils/config/TEMPLATE utils/config/my_cluster_gfortran
+#   2. Reference it from machines/my_cluster.toml under [utils.config]:
+#         [utils.config]
+#         gfortran = "my_cluster_gfortran"
+#   3. Fill in the fields below.
+#
+# You MUST define all of: FC, INC_NC, LIB_NC, FFLAGS, LFLAGS, and the three
+# DFLAGS_* lines. $(objdir) is defined for you by the Makefile template -- leave
+# those references as-is.
+#
+# Look at the existing files in this directory for working examples:
+#   macbook_gfortran      laptop, NetCDF via shell env vars (NC_*)
+#   dkrz_levante_ifx      HPC cluster, Intel ifx, NetCDF via absolute paths
+#   pik_hpc2024_gfortran  HPC cluster, gfortran
+# =============================================================================
+
+
+# --- Fortran compiler --------------------------------------------------------
+# The Fortran compiler command (gfortran, ifx, ifort, ...).
+FC = gfortran
+
+
+# --- NetCDF location ---------------------------------------------------------
+# utils needs the NetCDF C and Fortran libraries. You need the install prefix of
+# each. Discover them on your machine with (after loading any netcdf module):
+#     nf-config --prefix     # NetCDF-Fortran root
+#     nc-config --prefix     # NetCDF-C root
+#     nf-config --flibs      # ready-made linker flags, if you prefer
+#
+# Two equally valid styles -- pick whichever fits your machine:
+#
+# (a) Hard-code absolute paths here (typical on HPC clusters):
+NETCDFFI_ROOT = /path/to/netcdf-fortran
+NETCDFC_ROOT  = /path/to/netcdf-c
+#
+# (b) Or expect environment variables to be exported in your shell instead, and
+#     reference them below (see utils/config/macbook_gfortran for this style).
+
+# Include path for NetCDF Fortran module files (netcdf.mod):
+INC_NC = -I${NETCDFFI_ROOT}/include
+
+# Link line for NetCDF. The -rpath options make the runtime loader find the same
+# shared libraries that were linked at build time -- keep them on clusters where
+# NetCDF lives outside the default library path.
+LIB_NC = -L${NETCDFFI_ROOT}/lib -Wl\,-rpath=${NETCDFFI_ROOT}/lib -lnetcdff -L${NETCDFC_ROOT}/lib -Wl\,-rpath=${NETCDFC_ROOT}/lib -lnetcdf
+
+
+# --- Compile flags -----------------------------------------------------------
+# FFLAGS must place/find the compiled .mod files in $(objdir). The line is given
+# twice: the second one (inside the openmp block) adds the OpenMP flag and is
+# used when build.py is called with --variant omp (or both).
+#   gfortran: module dir flag is  -J ; OpenMP flag is  -fopenmp
+#   ifx/ifort: module dir flag is  -module ; OpenMP flag is  -qopenmp
+FFLAGS = -ffree-line-length-none -I$(objdir) -J$(objdir)
+
+ifeq ($(openmp), 1)
+    FFLAGS = -ffree-line-length-none -I$(objdir) -J$(objdir) -fopenmp
+endif
+
+# Link flags for the final library/executable. Usually just the NetCDF libs.
+# -Wl,-zmuldefs is needed on some clusters to tolerate duplicate symbols; drop
+# it if your linker complains or it isn't needed.
+LFLAGS = $(LIB_NC)
+
+
+# --- Optimization / debug flag sets ------------------------------------------
+# Selected by build.py's --debug option: 0 -> NODEBUG, 1 -> DEBUG, 2 -> PROFILE.
+DFLAGS_NODEBUG = -O2 -march=native -ffree-line-length-none
+DFLAGS_DEBUG   = -w -g -ggdb -ffpe-trap=invalid,zero,overflow,underflow -fbacktrace -fcheck=all -ffree-line-length-none
+DFLAGS_PROFILE = -O2 -pg -ffree-line-length-none

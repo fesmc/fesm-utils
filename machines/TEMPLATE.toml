@@ -1,0 +1,124 @@
+# =============================================================================
+# TEMPLATE machine definition for fesm-utils.
+#
+# HOW TO USE THIS FILE
+#   1. Copy it to a new name, lower-case, no spaces:
+#         cp machines/TEMPLATE.toml machines/my_cluster.toml
+#   2. Edit the fields below following the comments.
+#   3. (Only if you build the `utils` component) also create a matching file
+#      under utils/config/  -- copy utils/config/TEMPLATE and see the
+#      [utils.config] section near the bottom of this file.
+#   4. Check it without building anything:
+#         ./build.py -m my_cluster -c gfortran --check
+#   5. When that looks right, do a real build:
+#         ./build.py -m my_cluster -c gfortran
+#
+# You never need to edit build.py to add a machine. Everything machine-specific
+# lives in this file (and the utils/config file). If you find yourself wanting
+# to change build.py, ask first -- it usually means a field belongs here.
+#
+# The build driver takes each [compilers.<name>] table and appends it, verbatim,
+# as KEY='value' arguments to the fftw and lis  ./configure  commands. So any
+# variable that ./configure understands can go in these tables.
+# =============================================================================
+
+
+# --- Machine identity --------------------------------------------------------
+# `name` is only used in log/error messages. By convention keep it identical to
+# the file name (without .toml).
+[machine]
+name = "my_cluster"
+
+
+# --- Modules to load (HPC clusters only) -------------------------------------
+# On clusters that use `module load`, list the modules needed for the build.
+# build.py prepends `module load <m> && ` for each one before configure/make.
+# Find the exact names with:  module avail   (or your cluster's docs).
+# On a laptop with compilers already on PATH, delete this whole section.
+#
+# [modules]
+# load = ["intel/oneAPI/2024.0", "netcdf-fortran/4.5.4"]
+
+
+# --- Compilers ---------------------------------------------------------------
+# Define one [compilers.<key>] table per compiler you want to support. The <key>
+# is what you pass to  -c/--compiler  (e.g.  -c gfortran).
+#
+# Common fields (all optional -- omit any you don't need; an empty table means
+# "use autotools defaults"):
+#   CC       C compiler command       (e.g. gcc, icx, icc)
+#   F77      Fortran compiler command (e.g. gfortran, ifx, ifort)
+#   FFLAGS   Fortran compile flags
+#   CFLAGS   C compile flags
+# These are the same strings that lived in the old install_*.sh COMPILER_OPTS.
+
+# gfortran is the simplest case: on most systems autotools auto-detects it, so
+# an empty table is enough.
+[compilers.gfortran]
+
+# Intel example (delete if your machine has no Intel compilers):
+# [compilers.ifx]
+# CC = "icx"
+# F77 = "ifx"
+# FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+# CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+#
+# [compilers.ifort]
+# CC = "icc"
+# F77 = "ifort"
+# FFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+# CFLAGS = "-Ofast -march=core-avx2 -mtune=core-avx2 -traceback"
+
+
+# --- ac_cv_c_libs : the Intel/ifx linker workaround (ADVANCED) ---------------
+# Some clusters need an explicit list of C runtime library paths so that the
+# ifx-built fftw/lis link correctly. This is captured in a single (long) field:
+#
+#   ac_cv_c_libs = "-L/path/to/intel/lib ... -L/path/to/gcc/lib ... -lsvml -lirc ..."
+#
+# See machines/dkrz_levante.toml for a real, working example -- on Levante this
+# value is REQUIRED for ifx. Its exact origin is not documented; treat it as a
+# last-resort fix when an ifx fftw/lis build fails at the LINK stage with
+# missing Intel runtime symbols (svml, irc, imf, ...).
+#
+# IMPORTANT: this value is machine-specific. Do NOT copy Levante's paths to a
+# different cluster -- the directories will not exist there. (machines/
+# awi_albedo.toml currently does exactly this and the header there warns it is
+# probably wrong.) On a new cluster, look for the equivalent Intel/GCC runtime
+# lib directories under that cluster's compiler install, or ask the sysadmin.
+
+
+# --- Per-component overrides (ADVANCED) --------------------------------------
+# Sometimes one component needs a different toolchain than the rest. You can
+# override the modules and/or the compiler table for a single component. The
+# override REPLACES the machine-level table for that component only.
+#
+# Real example (see machines/pik_hpc2024.toml): lis must build with an older
+# Intel module than fftw/utils. There it is written as:
+#
+#   [components.lis.modules]
+#   load = ["intel/oneAPI/2023.2.0"]
+#
+#   [components.lis.compilers.ifx]
+#   F77 = "ifx"
+#   FFLAGS = "..."
+#   CFLAGS = "..."
+#
+# Valid component names are: fftw, lis, utils.
+# If you don't need this, leave the whole section out.
+
+
+# --- utils config mapping (only if you build the `utils` component) ----------
+# The `utils` component is built by utils/config.py + a Makefile fragment, NOT
+# by autotools. For each compiler that should be able to build utils, point to a
+# file under utils/config/  (give the bare filename, no "config/" prefix):
+#
+# [utils.config]
+# gfortran = "my_cluster_gfortran"   # -> utils/config/my_cluster_gfortran
+# ifx      = "my_cluster_ifx"        # -> utils/config/my_cluster_ifx
+#
+# Each referenced file must exist. Copy utils/config/TEMPLATE to create one.
+# `./build.py ... --check` will tell you if a referenced file is missing.
+# If you never build utils on this machine, delete this section.
+[utils.config]
+gfortran = "my_cluster_gfortran"

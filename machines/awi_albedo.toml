@@ -1,9 +1,11 @@
 # AWI Albedo cluster (equivalent to ./install_awi.sh, which is a symlink to
 # install_dkrz.sh -- so the fftw/lis configure settings are identical to DKRZ).
 #
-# NOTE: the ac_cv_c_libs paths below point at Levante spack trees and are very
-# likely NOT valid on Albedo. They are reproduced faithfully from the current
-# install_awi.sh symlink. Update them to Albedo paths if ifx builds fail here.
+# NOTE: unlike dkrz_levante, no ac_cv_c_libs override is set here. The previous
+# value was copied from Levante and pointed at Levante spack trees that do not
+# exist on Albedo. If an ifx fftw/lis build fails at the link stage with missing
+# Intel runtime symbols (svml, irc, imf, ...), add an ac_cv_c_libs entry with
+# Albedo's own Intel/GCC runtime library paths (see machines/TEMPLATE.toml).
 
 [machine]
 name = "awi_albedo"
@@ -14,7 +16,6 @@ ifx = "awi_albedo_ifx"
 [compilers.ifx]
 CC = "icx"
 F77 = "ifx"
-ac_cv_c_libs = "-L/sw/spack-levante/intel-oneapi-compilers-2023.2.1-kfv7xx/compiler/2023.2.1/linux/compiler/lib/intel64_lin -L/sw/spack-levante/intel-oneapi-compilers-2023.2.1-kfv7xx/compiler/2023.2.1/linux/bin-llvm/../lib -L/sw/spack-levante/gcc-11.2.0-bcn7mb/lib/gcc/x86_64-pc-linux-gnu/11.2.0 -L/sw/spack-levante/gcc-11.2.0-bcn7mb/lib/gcc/x86_64-pc-linux-gnu/11.2.0/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/sw/spack-levante/gcc-11.2.0-bcn7mb/lib/gcc/x86_64-pc-linux-gnu/11.2.0/../../.. -L/lib -L/usr/lib -L/sw/spack-levante/intel-oneapi-compilers-2023.2.1-kfv7xx/compiler/2023.2.1/linux/lib -lsvml -lirng -limf -lm -lgcc_s -lirc -ldl -lirc_s"
 
 [compilers.ifort]
 CC = "icc"
