@@ -1,10 +1,5 @@
 # AWI Albedo cluster (equivalent to ./install_awi.sh, which is a symlink to
 # install_dkrz.sh -- so the fftw/lis configure settings are identical to DKRZ).
-#
-# ifx uses intel_runtime_libs (see [compilers.ifx]): build.py derives the Intel
-# runtime lib dir from the compiler itself, so no machine-specific paths need to
-# be pasted here. This replaces the old hard-coded ac_cv_c_libs that was copied
-# from Levante and pointed at spack trees that do not exist on Albedo.
 
 [machine]
 name = "awi_albedo"

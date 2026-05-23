@@ -9,9 +9,8 @@ ifx = "dkrz_levante_ifx"
 [compilers.ifx]
 CC = "icx"
 F77 = "ifx"
-# ifx needs explicit Intel runtime libs at the fftw/lis link stage. Rather than
-# hard-coding spack paths (the old, brittle approach), build.py derives the lib
-# dir from `icx -print-file-name=libimf.so` and sets ac_cv_c_libs accordingly.
+# ifx needs explicit Intel runtime libs at the fftw/lis link stage.
+# build.py derives the lib dir from `icx -print-file-name=libimf.so` and sets ac_cv_c_libs accordingly.
 intel_runtime_libs = true
 
 [compilers.ifort]
