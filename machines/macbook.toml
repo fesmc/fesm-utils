@@ -10,3 +10,5 @@ name = "macbook"
 gfortran = "macbook_gfortran"
 
 [compilers.gfortran]
+# No CC set: on macOS, build.py auto-detects the newest Homebrew gcc-N so
+# FFTW/LIS can enable OpenMP (Apple Clang, the default `cc`, cannot).

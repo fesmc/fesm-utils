@@ -18,6 +18,9 @@ those still work by hand. It just wraps them behind one consistent interface.
 """
 
 import argparse
+import glob
+import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -76,6 +79,47 @@ def configure_vars(machine, component, compiler):
             f"'{machine['machine']['name']}'. Available: {avail}"
         )
     return table
+
+
+def homebrew_gcc():
+    """Newest Homebrew `gcc-N` on macOS (basename), or None if none installed.
+
+    Apple Clang -- the default `cc` -- has no OpenMP support, so FFTW/LIS
+    configure fail their `--enable-openmp` check. Homebrew never installs an
+    unversioned `gcc` (that would shadow Apple's), only versioned binaries like
+    `gcc-15`, so we glob the standard prefixes and pick the highest version.
+    """
+    best = None
+    for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
+        for path in glob.glob(f"{prefix}/gcc-[0-9]*"):
+            m = re.fullmatch(r"gcc-(\d+)", os.path.basename(path))
+            if m:
+                ver = int(m.group(1))
+                if best is None or ver > best[0]:
+                    best = (ver, os.path.basename(path))
+    return best[1] if best else None
+
+
+def apply_default_cc(component, table, omp):
+    """On macOS, default CC to Homebrew gcc when the config leaves it unset.
+
+    Mutates `table` in place. Warns (only for OpenMP builds, where it actually
+    breaks) if no Homebrew gcc is found and the build will fall back to Apple
+    Clang.
+    """
+    if sys.platform != "darwin" or "CC" in table:
+        return
+    cc = homebrew_gcc()
+    if cc:
+        table["CC"] = cc
+        print(f"  {component}: macOS -- using Homebrew {cc} as C compiler (CC={cc})")
+    elif omp:
+        print(
+            "  \033[33mwarning:\033[0m no Homebrew gcc found; the C compiler will be "
+            "Apple Clang, which lacks OpenMP support, so this --enable-openmp build "
+            "will likely fail.\n"
+            "           Install one with: brew install gcc"
+        )
 
 
 def modules_for(machine, component):
@@ -153,6 +197,7 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     if omp:
         opts.append(omp_opt)
     table = dict(configure_vars(machine, component, compiler))
+    apply_default_cc(component, table, omp)
     preamble, extra_var = intel_runtime_preamble(table)
     vargs = " ".join(filter(None, [var_args(table), extra_var]))
     cmd = (
@@ -289,26 +334,40 @@ def main():
         args.variant
     ]
 
-    done = []
+    # Each (component, variant) is built independently: a failure in one is
+    # recorded and the rest still run, so a single broken target doesn't abort
+    # the whole build. Results are summarized at the end.
+    results = []  # (label, ok, error_message_or_None)
     for component in components:
         for omp in omp_variants:
             label = f"{component}-{'omp' if omp else 'serial'}"
             print(f"\n=== Building {label} "
                   f"[{args.machine}/{args.compiler}] ===")
-            BUILDERS[component](machine, args.compiler, omp, args.debug)
-            done.append(label)
+            try:
+                BUILDERS[component](machine, args.compiler, omp, args.debug)
+                results.append((label, True, None))
+            except (subprocess.CalledProcessError, SystemExit) as e:
+                print(f"\n\033[31m✗ {label} failed:\033[0m {e}")
+                results.append((label, False, str(e)))
+
+    succeeded = [label for label, ok, _ in results if ok]
+    failed = [(label, err) for label, ok, err in results if not ok]
 
     if args.check:
-        print(
-            f"\n\033[1m✓ config valid:\033[0m "
-            f"{args.machine}/{args.compiler} resolves for "
-            + ", ".join(done)
-            + " (nothing was built)."
-        )
+        title, note = "Config check", " (nothing was built)"
     elif DRY_RUN:
-        print("\n\033[1mDry run:\033[0m " + ", ".join(done) + " (nothing was built).")
+        title, note = "Dry run", " (nothing was built)"
     else:
-        print("\n\033[1mBuilt:\033[0m " + ", ".join(done))
+        title, note = "Build summary", ""
+    print(f"\n\033[1m{title}:\033[0m {args.machine}/{args.compiler}{note}")
+    if succeeded:
+        print(f"  \033[32m✓\033[0m {', '.join(succeeded)}")
+    if failed:
+        print(f"  \033[31m✗\033[0m {', '.join(label for label, _ in failed)}")
+        for label, err in failed:
+            first = (err or "").strip().splitlines()
+            print(f"      {label}: {first[0] if first else 'failed'}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
