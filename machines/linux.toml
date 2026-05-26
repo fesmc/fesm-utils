@@ -1,5 +1,6 @@
-# Generic machine definition (equivalent to ./install.sh).
-# Use when no HPC-specific file applies.
+# Generic Linux machine definition (equivalent to ./install.sh).
+# Use when no HPC-specific file applies. Named "linux" to match configme's
+# generic Linux base machine.
 #
 # Each [compilers.<name>] table is a set of autotools configure variables
 # (KEY = "value") that are appended verbatim to the fftw/lis ./configure call,
@@ -9,7 +10,7 @@
 # used by utils/config.py to generate the utils Makefile.
 
 [machine]
-name = "generic"
+name = "linux"
 
 [compilers.ifx]
 CC = "icx"

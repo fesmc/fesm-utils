@@ -30,12 +30,12 @@ utils/include-omp     utils/include-serial
 ./build.py -m dkrz_levante -c ifx                           # everything, omp + serial
 ./build.py -m macbook -c gfortran --component utils --variant serial
 ./build.py -m pik_hpc2024 -c ifx --component lis --variant omp
-./build.py -m generic -c gfortran --dry-run                 # print commands, don't run
+./build.py -m linux -c gfortran --dry-run                   # print commands, don't run
 ```
 
 Options:
 
-- `-m/--machine` — a file under `machines/` (e.g. `dkrz_levante`, `awi_albedo`, `pik_hpc2024`, `macbook`, `generic`).
+- `-m/--machine` — a file under `machines/` (e.g. `dkrz_levante`, `awi_albedo`, `pik_hpc2024`, `macbook`, `linux`).
 - `-c/--compiler` — `ifx`, `ifort`, or `gfortran` (whichever the machine defines).
 - `--component` — `fftw`, `lis`, `utils`, or `all` (default `all`).
 - `--variant` — `omp`, `serial`, or `both` (default `both`).
