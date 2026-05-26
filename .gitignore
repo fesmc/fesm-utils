@@ -6,3 +6,4 @@ Makefile
 *.a
 *.o
 *.x
+__pycache__/
