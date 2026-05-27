@@ -178,15 +178,22 @@ def intel_runtime_preamble(table):
 DRY_RUN = False
 
 
-def run(cmd, cwd):
+def run(cmd, cwd, login=False):
     print(f"\n\033[1m>>> [{cwd.relative_to(ROOT)}] {cmd}\033[0m\n", flush=True)
     if DRY_RUN:
         return
-    # Run via a login shell so module/PATH setup is honoured. On failure raise a
-    # CalledProcessError carrying the human-readable command (`cmd`) rather than
-    # the ['bash', '-lc', 'set -e; ...'] wrapper list, so the summary shows a
-    # one-line command you can copy-paste and re-run.
-    proc = subprocess.run(["bash", "-lc", f"set -e; {cmd}"], cwd=cwd)
+    # A login shell (`bash -lc`) is used ONLY when the machine config loads
+    # modules, because `module` is a shell function that needs the lmod init a
+    # login shell sources. When no modules are loaded (e.g. the generic `linux`
+    # machine), a login shell would re-source the user's rc files and reload a
+    # default module set, silently overriding the environment they already set
+    # up (a sourced module script, a hand-loaded gcc, etc.). So with no modules
+    # we use a plain non-login `bash -c` that inherits that environment verbatim.
+    # On failure raise a CalledProcessError carrying the human-readable command
+    # (`cmd`) rather than the ['bash', '-lc', 'set -e; ...'] wrapper list, so the
+    # summary shows a one-line command you can copy-paste and re-run.
+    shell_flag = "-lc" if login else "-c"
+    proc = subprocess.run(["bash", shell_flag, f"set -e; {cmd}"], cwd=cwd)
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
@@ -211,12 +218,13 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     apply_default_cc(component, table, omp)
     preamble, extra_var = intel_runtime_preamble(table)
     vargs = " ".join(filter(None, [var_args(table), extra_var]))
+    mods = modules_for(machine, component)
     cmd = (
-        module_prefix(modules_for(machine, component))
+        module_prefix(mods)
         + preamble
         + f"./configure {' '.join(opts)} {vargs} && make clean && make && make install"
     )
-    run(cmd, ROOT / src)
+    run(cmd, ROOT / src, login=bool(mods))
 
 
 def build_fftw(machine, compiler, omp):
