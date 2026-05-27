@@ -111,13 +111,21 @@ def apply_default_cc(component, table, omp):
     Mutates `table` in place. Warns (only for OpenMP builds, where it actually
     breaks) if no Homebrew gcc is found and the build will fall back to Apple
     Clang.
+
+    The detected gcc is pinned to ``-std=gnu17``: GCC 15 switched its default C
+    dialect to gnu23, under which an empty parameter list ``()`` means "no
+    parameters" rather than "unspecified". The fftw/lis C sources use old-style
+    ``(void (*)())`` casts that are then called with arguments, which gnu23
+    rejects as a hard error. Embedding the flag in CC (rather than CFLAGS) keeps
+    it from being clobbered by the packages' own CFLAGS.
     """
     if sys.platform != "darwin" or "CC" in table:
         return
     cc = homebrew_gcc()
     if cc:
-        table["CC"] = cc
-        print(f"  {component}: macOS -- using Homebrew {cc} as C compiler (CC={cc})")
+        table["CC"] = f"{cc} -std=gnu17"
+        print(f"  {component}: macOS -- using Homebrew {cc} as C compiler "
+              f"(CC={table['CC']})")
     elif omp:
         print(
             "  \033[33mwarning:\033[0m no Homebrew gcc found; the C compiler will be "
