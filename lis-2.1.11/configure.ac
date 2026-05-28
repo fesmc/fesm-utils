@@ -606,7 +606,11 @@ if test "$TARGET" = ""; then
 	             [_AC_LINKER_OPTION([$ac_arg], ac_cv_[]_AC_LANG_ABBREV[]_libs)])
 	          ;;
 	          # Ignore these flags.
-	        -lang* | -lcrt[[01]].o | -lcrtbegin.o | -lc | -lgcc | -libmil | -LANG:=*)
+	          # -loopopt* is a driver-internal optimisation flag that Intel
+	          # oneAPI (icx/ifx) prints in its verbose link output; it is not a
+	          # library, so it must not be collected here (otherwise it lands in
+	          # CLIBS and the link fails with "ld: cannot find -loopopt=1").
+	        -lang* | -lcrt[[01]].o | -lcrtbegin.o | -lc | -lgcc | -libmil | -LANG:=* | -loopopt*)
 	          ;;
 	        -lkernel32)
 	          test x"$CYGWIN" != xyes && ac_cv_[]_AC_LANG_ABBREV[]_libs="$ac_cv_[]_AC_LANG_ABBREV[]_libs $ac_arg"

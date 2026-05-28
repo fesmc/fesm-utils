@@ -6332,7 +6332,11 @@ esac
 fi
 	          ;;
 	          # Ignore these flags.
-	        -lang* | -lcrt[01].o | -lcrtbegin.o | -lc | -lgcc | -libmil | -LANG:=*)
+	          # -loopopt* is a driver-internal optimisation flag that Intel
+	          # oneAPI (icx/ifx) prints in its verbose link output; it is not a
+	          # library, so it must not be collected here (otherwise it lands in
+	          # CLIBS and the link fails with "ld: cannot find -loopopt=1").
+	        -lang* | -lcrt[01].o | -lcrtbegin.o | -lc | -lgcc | -libmil | -LANG:=* | -loopopt*)
 	          ;;
 	        -lkernel32)
 	          test x"$CYGWIN" != xyes && ac_cv_c_libs="$ac_cv_c_libs $ac_arg"
@@ -21615,6 +21619,13 @@ if { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_compile\""; } >&5
 
   for p in `eval "$output_verbose_link_cmd"`; do
     case $prev$p in
+
+    -loopopt*)
+       # Intel oneAPI (icx/ifx) print this driver-internal optimisation flag in
+       # their verbose link output. It is not a library; ignore it so it is not
+       # misparsed as -l and baked into postdeps (which would make every later
+       # link fail with "ld: cannot find -loopopt=1").
+       ;;
 
     -L* | -R* | -l*)
        # Some compilers place space between "-{L,R,l}" and the path.

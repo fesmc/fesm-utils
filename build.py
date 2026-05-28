@@ -238,24 +238,6 @@ def run(cmd, cwd, login=False):
 # autotools package.
 
 
-# Intel oneAPI (icx/ifx) emit a driver-internal token `-loopopt=N` in their
-# verbose link output. libtool -- even the current 2.5.4 -- has no filter for
-# it: its postdeps detection classifies any `-l*` token as a library, bakes
-# `-loopopt=N` into `postdeps`/`postdeps_FC`, and then injects it into every
-# shared-library link, so `ld` is asked for a library named `oopopt=N`:
-#     ld: cannot find -loopopt=1
-# The generated `libtool` script holds the poisoned postdeps, so we scrub the
-# token out of it after ./configure and before make. This keeps shared-library
-# builds working (yelmo-c, for example, links liblis as a shared object) without
-# disabling shared libraries. It is a no-op for non-Intel compilers (the token
-# never appears) and for static-only builds, so it is always safe to run.
-LIBTOOL_LOOPOPT_SCRUB = (
-    "if [ -f libtool ]; then "
-    "sed -i.bak -E 's/-loopopt=[0-9]*//g' libtool && rm -f libtool.bak; "
-    "fi"
-)
-
-
 def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     """Configure + make + install an autotools package into <name>-{omp,serial}."""
     suffix = "omp" if omp else "serial"
@@ -272,9 +254,7 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     cmd = (
         module_prefix(mods)
         + preamble
-        + f"./configure {' '.join(opts)} {vargs}"
-        + f" && {LIBTOOL_LOOPOPT_SCRUB}"
-        + " && make clean && make && make install"
+        + f"./configure {' '.join(opts)} {vargs} && make clean && make && make install"
     )
     run(cmd, ROOT / src, login=bool(mods))
 

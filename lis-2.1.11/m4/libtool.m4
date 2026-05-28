@@ -7708,6 +7708,13 @@ if AC_TRY_EVAL(ac_compile); then
   for p in `eval "$output_verbose_link_cmd"`; do
     case $prev$p in
 
+    -loopopt*)
+       # Intel oneAPI (icx/ifx) print this driver-internal optimisation flag in
+       # their verbose link output. It is not a library; ignore it so it is not
+       # misparsed as -l and baked into postdeps (which would make every later
+       # link fail with "ld: cannot find -loopopt=1").
+       ;;
+
     -L* | -R* | -l*)
        # Some compilers place space between "-{L,R,l}" and the path.
        # Remove the space.
