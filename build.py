@@ -124,18 +124,6 @@ def apply_default_cc(component, table, omp):
     cc = homebrew_gcc()
     if cc:
         table["CC"] = f"{cc} -std=gnu17"
-        # Modern autoconf (>= 2.70) AC_PROG_CC probes for the newest C standard
-        # the compiler supports and APPENDS the matching flag (e.g. -std=gnu23)
-        # to CC, *after* our -std=gnu17 pin. gcc honours the last -std on the
-        # command line, so the pin would be silently overridden and gcc-15 would
-        # compile under C23 -- where the old-style (void (*)()) casts in the
-        # lis/fftw sources, called with arguments, are a hard error. Pre-seed the
-        # probe's cache variables (c23 -> c11 -> c99, tried in that order) to "no"
-        # so autoconf leaves CC -- and therefore our pin -- untouched. Harmless
-        # for components whose configure predates this probe (the vars go unused).
-        table["ac_cv_prog_cc_c23"] = "no"
-        table["ac_cv_prog_cc_c11"] = "no"
-        table["ac_cv_prog_cc_c99"] = "no"
         print(f"  {component}: macOS -- using Homebrew {cc} as C compiler "
               f"(CC={table['CC']})")
     elif omp:
@@ -145,6 +133,29 @@ def apply_default_cc(component, table, omp):
             "will likely fail.\n"
             "           Install one with: brew install gcc"
         )
+
+
+def disable_autoconf_c_std_upgrade(table):
+    """Stop modern autoconf from forcing a newer C standard than the sources allow.
+
+    Mutates `table` in place. autoconf >= 2.70's AC_PROG_CC probes for the newest
+    C standard the compiler supports -- C23, then C11, then C99 -- and APPENDS the
+    matching flag (e.g. ``-std=gnu23``) to CC. fftw and lis are pre-C23 C: they
+    use old-style ``(void (*)())`` casts that are then called with arguments,
+    which C23 turns from a warning into a hard error (an empty ``()`` parameter
+    list now means ``(void)``). This bites every compiler whose autoconf-selected
+    edition is C23 -- gcc-15 (macOS, via Homebrew) and icx/ifx (HPC) alike.
+
+    Pre-seed the probe's cache variables to "no" so autoconf adds no ``-std`` flag
+    and the compiler falls back to its own (pre-C23) default. ``setdefault`` keeps
+    an explicit per-machine override winning, and the vars are simply unused by
+    configure scripts that predate the probe (e.g. fftw's), so this is always safe.
+
+    NB on macOS this is necessary but not sufficient: gcc-15's *built-in* default
+    is already C23, so `apply_default_cc` additionally pins ``-std=gnu17`` in CC.
+    """
+    for var in ("ac_cv_prog_cc_c23", "ac_cv_prog_cc_c11", "ac_cv_prog_cc_c99"):
+        table.setdefault(var, "no")
 
 
 def modules_for(machine, component):
@@ -254,6 +265,7 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
         opts.append(omp_opt)
     table = dict(configure_vars(machine, component, compiler))
     apply_default_cc(component, table, omp)
+    disable_autoconf_c_std_upgrade(table)
     preamble, extra_var = intel_runtime_preamble(table)
     vargs = " ".join(filter(None, [var_args(table), extra_var]))
     mods = modules_for(machine, component)
