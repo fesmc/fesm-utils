@@ -716,7 +716,10 @@ if test "$TARGET" = ""; then
     intel) FFLAGS="-fpp $FFLAGS"
          FCFLAGS="-fpp $FCFLAGS"
 #         LDFLAGS="-Vaxlib"
-         FCLDFLAGS="-nofor_main" ;;
+#        Modern Intel compilers (ifx and recent ifort) deprecate the underscore
+#        spelling "-nofor_main" (warning #10435) in favour of the hyphen form
+#        "-nofor-main"; the hyphen form is accepted by both classic ifort and ifx.
+         FCLDFLAGS="-nofor-main" ;;
     portland) FFLAGS="-O3 -fastsse -Mpreprocess $FFLAGS" 
          FCFLAGS="-O3 -fastsse -Mpreprocess $FCFLAGS" 
          FCLDFLAGS="-Mnomain" ;;
