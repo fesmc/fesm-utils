@@ -45,7 +45,7 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parent
 MACHINE_DIR = ROOT / "machines"
 FFTW_SRC = "fftw-3.3.10"
-LIS_SRC = "lis-2.1.6"
+LIS_SRC = "lis-2.1.11"
 COMPONENTS = ["fftw", "lis"]
 
 
