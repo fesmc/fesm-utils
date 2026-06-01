@@ -492,14 +492,24 @@ contains
             v%count = count
         else
             if (.not. ndims .eq. size(size_in)) then
-                write(*,"(a)") "nc_read:: ","Warning: "// &
-                "Variable dimensions in the file do not match those being read in."
-                write(*,"('  ndim = ', i2, ', size(size_in) = ', i2)") ndims, size(size_in)
-                write(*,*) trim(filename)//": ",trim(name)
+                ! Allow the caller's array to have extra trailing singleton
+                ! dimensions relative to the file variable (e.g. reading a
+                ! (x,y,z) file variable into an (x,y,z,1) array). Any extra
+                ! non-singleton dimension is a real shape mismatch.
+                do i = ndims+1, size(size_in)
+                    if (size_in(i) /= 1) then
+                        write(0,"(a)") "nc_read:: Error: "// &
+                        "Variable dimensions in the file do not match those being read in."
+                        write(0,"('  file ndims = ', i2, ', array ndims = ', i2)") &
+                            ndims, size(size_in)
+                        write(0,*) trim(filename)//": ",trim(name)
+                        stop "stopped by ncio."
+                    end if
+                end do
             end if
             allocate(v%count(ndims))
             v%count = 1
-            do i = 1, size(size_in)
+            do i = 1, min(ndims, size(size_in))
               v%count(i) = size_in(i)
             end do
         end if
