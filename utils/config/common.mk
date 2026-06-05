@@ -11,5 +11,7 @@ ifeq ($(openmp), 1)
     FFLAGS += $(FFLAGS_OPENMP)
 endif
 
-LFLAGS_EXTRA ?=
+# Extra link flags. -Wl,-zmuldefs is the default for Linux targets; the macbook
+# machine fragment disables it (macOS ld rejects it) by setting LFLAGS_EXTRA =.
+LFLAGS_EXTRA ?= -Wl,-zmuldefs
 LFLAGS = $(LIB_NC) $(LFLAGS_EXTRA)

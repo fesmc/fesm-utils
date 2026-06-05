@@ -14,9 +14,10 @@
 #         gfortran = "my_cluster_gfortran"
 #   3. Fill in the fields below.
 #
-# You MUST define all of: FC, INC_NC, LIB_NC, FFLAGS, LFLAGS, and the three
-# DFLAGS_* lines. $(objdir) is defined for you by the Makefile template -- leave
-# those references as-is.
+# You MUST define all of: FC, INC_NC, LIB_NC, FFLAGS, FFLAGS_OPENMP, and the
+# three DFLAGS_* lines. LFLAGS is set centrally by config/common.mk (which the
+# Makefile template `include`s for you). $(objdir) is defined for you by the
+# Makefile template -- leave those references as-is.
 #
 # Look at the existing files in this directory for working examples:
 #   macbook_gfortran      laptop, NetCDF via shell env vars (NC_*)
@@ -56,21 +57,19 @@ LIB_NC = -L${NETCDFFI_ROOT}/lib -Wl\,-rpath=${NETCDFFI_ROOT}/lib -lnetcdff -L${N
 
 
 # --- Compile flags -----------------------------------------------------------
-# FFLAGS must place/find the compiled .mod files in $(objdir). The line is given
-# twice: the second one (inside the openmp block) adds the OpenMP flag and is
-# used when build.py is called with --variant omp (or both).
+# FFLAGS must place/find the compiled .mod files in $(objdir).
+# FFLAGS_OPENMP is appended to FFLAGS by config/common.mk when build.py is
+# called with --variant omp (or both).
 #   gfortran: module dir flag is  -J ; OpenMP flag is  -fopenmp
 #   ifx/ifort: module dir flag is  -module ; OpenMP flag is  -qopenmp
 FFLAGS = -ffree-line-length-none -I$(objdir) -J$(objdir)
+FFLAGS_OPENMP = -fopenmp
 
-ifeq ($(openmp), 1)
-    FFLAGS = -ffree-line-length-none -I$(objdir) -J$(objdir) -fopenmp
-endif
-
-# Link flags for the final library/executable. Usually just the NetCDF libs.
-# -Wl,-zmuldefs is needed on some clusters to tolerate duplicate symbols; drop
-# it if your linker complains or it isn't needed.
-LFLAGS = $(LIB_NC)
+# Link flags are set by config/common.mk:
+#   LFLAGS = $(LIB_NC) $(LFLAGS_EXTRA)
+# where LFLAGS_EXTRA defaults to `-Wl,-zmuldefs` (needed on some clusters to
+# tolerate duplicate symbols). On macOS, where ld rejects -zmuldefs, set
+# `LFLAGS_EXTRA =` in this fragment to disable it.
 
 
 # --- Optimization / debug flag sets ------------------------------------------

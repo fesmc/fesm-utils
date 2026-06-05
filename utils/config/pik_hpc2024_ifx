@@ -1,18 +1,14 @@
-FC  = ifx
+FC = ifx
 
-INC_NC  = -I${NETCDFFI_ROOT}/include
-LIB_NC  = -L${NETCDFFI_ROOT}/lib -Wl\,-rpath=${NETCDFFI_ROOT}/lib -lnetcdff -L${NETCDFC_ROOT}/lib -Wl\,-rpath=${NETCDFC_ROOT}/lib -lnetcdf
+INC_NC = -I${NETCDFFI_ROOT}/include
+LIB_NC = -L${NETCDFFI_ROOT}/lib -Wl\,-rpath=${NETCDFFI_ROOT}/lib -lnetcdff -L${NETCDFC_ROOT}/lib -Wl\,-rpath=${NETCDFC_ROOT}/lib -lnetcdf
 # the -rpath options ensure that the same shared libraries are found at runtime
 
-FFLAGS  = -no-wrap-margin -module $(objdir) -L$(objdir)
-
-ifeq ($(openmp), 1)
-    FFLAGS  = -no-wrap-margin -module $(objdir) -L$(objdir) -qopenmp 
-endif 
-
-LFLAGS  = $(LIB_NC) -Wl,-zmuldefs
+# Compiler flags (ifx). FFLAGS_OPENMP is appended to FFLAGS by common.mk
+# when building with `make openmp=1`.
+FFLAGS = -no-wrap-margin -module $(objdir) -L$(objdir)
+FFLAGS_OPENMP = -qopenmp
 
 DFLAGS_NODEBUG = -Ofast -march=core-avx2 -mtune=core-avx2 -traceback -g #-O2 -fp-model precise
 DFLAGS_DEBUG   = -g -O0 -traceback -ftrapuv -fpe0 -check all -fp-model precise -debug full -heap-arrays -warn all
 DFLAGS_PROFILE = -O2 -fp-model precise -pg
-
