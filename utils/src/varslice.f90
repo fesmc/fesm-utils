@@ -277,8 +277,8 @@ contains
             ! 2. Read variable and convert units as needed
 
             ! Make sure var variable is deallocated and ready to be modified
-            if (allocated(var)) deallocate(var) 
-
+            if (allocated(vs%var)) deallocate(vs%var)
+            
             if (.not. with_time) then 
                 ! Handle cases that do not have time dimension (simpler)
 
