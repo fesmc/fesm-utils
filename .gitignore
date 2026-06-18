@@ -7,3 +7,8 @@ Makefile
 *.o
 *.x
 __pycache__/
+.claude
+.configme-build.toml
+.install.sh
+.upgrade.sh
+

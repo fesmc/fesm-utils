@@ -1,0 +1,5 @@
+# configme manifest for fesm-utils.
+package = "fesm-utils"
+deps = [
+    "fesm-utils/utils",
+]
