@@ -1,5 +1,8 @@
 fftw*
 lis*
+# SHTns: ignore the build-output prefixes, keep the vendored source (shtns-3.7.5)
+shtns-serial
+shtns-omp
 Makefile
 *.dSYM
 *.mod
