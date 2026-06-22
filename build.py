@@ -46,7 +46,8 @@ ROOT = Path(__file__).resolve().parent
 MACHINE_DIR = ROOT / "machines"
 FFTW_SRC = "fftw-3.3.10"
 LIS_SRC = "lis-2.1.11"
-COMPONENTS = ["fftw", "lis"]
+SHTNS_SRC = "shtns-3.7.5"
+COMPONENTS = ["fftw", "lis", "shtns"]
 
 
 def die(msg):
@@ -238,8 +239,15 @@ def run(cmd, cwd, login=False):
 # autotools package.
 
 
-def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
-    """Configure + make + install an autotools package into <name>-{omp,serial}."""
+def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt,
+                    extra_vars=None):
+    """Configure + make + install an autotools package into <name>-{omp,serial}.
+
+    `extra_vars` is an optional dict of KEY=value configure variables merged on
+    top of the machine compiler table (after the macOS/Intel CC fixups). It is
+    how a builder injects dependencies resolved at build time -- e.g. SHTns
+    pointing CPPFLAGS/LDFLAGS at the fftw-{omp,serial} prefix built here.
+    """
     suffix = "omp" if omp else "serial"
     prefix = ROOT / f"{component}-{suffix}"
     opts = [f"--prefix={shlex.quote(str(prefix))}"] + list(base_opts)
@@ -248,6 +256,8 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt):
     table = dict(configure_vars(machine, component, compiler))
     apply_default_cc(component, table, omp)
     disable_autoconf_c_std_upgrade(table)
+    if extra_vars:
+        table.update(extra_vars)
     preamble, extra_var = intel_runtime_preamble(table)
     vargs = " ".join(filter(None, [var_args(table), extra_var]))
     mods = modules_for(machine, component)
@@ -273,9 +283,31 @@ def build_lis(machine, compiler, omp):
     )
 
 
+def build_shtns(machine, compiler, omp):
+    """Build SHTns (spherical-harmonic transforms) against the local FFTW.
+
+    SHTns links FFTW, which fesm-utils builds into its own non-standard
+    fftw-{omp,serial} prefix, so configure cannot find it on the default search
+    path. Point CPPFLAGS/LDFLAGS at the matching FFTW variant (omp SHTns -> omp
+    FFTW). `make install` copies libshtns.a, shtns.h and the Fortran interface
+    shtns.f / shtns.f03 into the prefix include/lib dirs.
+    """
+    suffix = "omp" if omp else "serial"
+    fftw_prefix = ROOT / f"fftw-{suffix}"
+    extra_vars = {
+        "CPPFLAGS": f"-I{fftw_prefix}/include",
+        "LDFLAGS": f"-L{fftw_prefix}/lib",
+    }
+    build_autotools(
+        machine, "shtns", compiler, omp, SHTNS_SRC,
+        base_opts=[], omp_opt="--enable-openmp", extra_vars=extra_vars,
+    )
+
+
 BUILDERS = {
     "fftw": build_fftw,
     "lis": build_lis,
+    "shtns": build_shtns,
 }
 
 
