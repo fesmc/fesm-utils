@@ -1008,7 +1008,7 @@ contains
 
         implicit none
 
-        integer :: i, ncid, stat, ndims
+        integer :: i, ncid, stat, ndims, ncformat
 
         integer, allocatable :: dimids(:)
         type(ncvar) :: v
@@ -1075,6 +1075,18 @@ contains
                         write(0,*) "stopped by ncio."
                         stop 9
                 end select
+
+                ! Compress data variables when the file is in netCDF4 format
+                ! (opt-in via nc_create(...,netcdf4=.TRUE.)); no-op for classic files.
+                if (trim(v%xtype) .ne. "NF90_CHAR") then
+                    stat = nf90_inquire(ncid, formatNum=ncformat)
+                    if (stat .eq. noerr .and. &
+                        (ncformat .eq. nf90_format_netcdf4 .or. &
+                         ncformat .eq. nf90_format_netcdf4_classic)) then
+                        call nc_check_new( nf90_def_var_deflate(ncid, v%varid, &
+                            shuffle=1, deflate=1, deflate_level=1), trim(v%name) )
+                    end if
+                end if
             end if
 
             if (trim(v%xtype) .ne. "NF90_CHAR") then
@@ -1510,23 +1522,31 @@ contains
         clobber = .TRUE. 
         if (present(overwrite)) clobber = overwrite 
 
-        ! Check whether to write netcdf4 of netcdf3 
-        nc4 = .FALSE. 
-        if (present(netcdf4)) nc4 = netcdf4 
+        ! Check whether to write netcdf4 of netcdf3
+        ! Default to netCDF4 so output is compressed (deflate, see nc_put_att); pass
+        ! netcdf4=.FALSE. to force classic netCDF3.
+        nc4 = .TRUE.
+        if (present(netcdf4)) nc4 = netcdf4
 
-        ! Make sure options make sense 
-        if (nc4 .and. (.not. clobber)) then 
+        ! netCDF4 requires clobber; if a noclobber (append) write was requested without
+        ! an explicit netcdf4=.TRUE., silently fall back to classic rather than aborting.
+        if (nc4 .and. (.not. clobber) .and. .not. present(netcdf4)) nc4 = .FALSE.
+
+        ! Make sure options make sense
+        if (nc4 .and. (.not. clobber)) then
             write(0,*) "ncio:: nc_create:: Error: &
                        &only overwrite=.TRUE. is allowed with the NetCDF4 format"
             stop "stopped by ncio."
         end if 
 
-        cmode = nf90_clobber 
-        if (.not. clobber) cmode = nf90_noclobber 
+        cmode = nf90_clobber
+        if (.not. clobber) cmode = nf90_noclobber
 
-        !if (nc4) cmode = nf90_hdf5 
-        ! ajr, 2015-09-17: commented this out, because nf90_hdf5 object doesn't exist for all
-        ! installed versions of netcdf. This should be made more robust!!
+        ! Request the netCDF4/HDF5 format when asked, which enables per-variable
+        ! compression (deflate) in nc_write. ajr, 2015-09-17 had this commented out
+        ! because nf90_hdf5 was missing on some old netcdf installs; netcdf-c here
+        ! supports it. The flag is opt-in, so classic output is unchanged by default.
+        if (nc4) cmode = ior(cmode, nf90_netcdf4)
 
         ! Get ncio version for writing
         write(history,"(a,f5.2)") "Dataset generated using ncio v", NCIO_VERSION
