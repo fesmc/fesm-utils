@@ -13,10 +13,22 @@ module planet
         real(dp) :: R      ! in case of sphere (equivalent to a=R, f=inf)
 
         ! Parameters for output grid information (above are for internal calcs)
-        real(dp) :: semi_major_axis 
-        real(dp) :: inverse_flattening 
+        real(dp) :: semi_major_axis
+        real(dp) :: inverse_flattening
 
-    end type 
+    end type
+
+    type planet_def
+        ! One row of the planet parameter table (see PLANETS below).
+        character(len=32) :: name
+        real(dp) :: a, f, R, e
+        logical  :: is_sphere
+    end type
+
+    ! Data-driven planet table. To add a body/ellipsoid, append one entry here.
+    type(planet_def), parameter :: PLANETS(2) = [ &
+        planet_def("WGS84",           6378137.0_dp,  1.0_dp/298.257223563_dp, 6.371221E6_dp, 0.081819191_dp, .false.), &
+        planet_def("Spherical Earth", 6.371221E6_dp, 1e8_dp,                  6.371221E6_dp, 0.0_dp,         .true.) ]
 
     interface cartesian_distance
         module procedure cartesian_distance_float
@@ -41,49 +53,46 @@ contains
         implicit none 
 
         type(planet_class) :: now
-        character(len=*) name  
+        character(len=*) name
+        integer :: i, idx
 
         now%name = trim(name)
-        
-        now%a         = 1.0_dp 
-        now%f         = 1e8_dp 
-        now%e         = 0.0_dp
-        now%is_sphere = .TRUE. 
 
-        select case(trim(now%name))
-            case("WGS84")
-                now%a = 6378137.0_dp             ! Equatorial ellipsoid radius,   a in Snyder, WGS84
-                now%f = 1.0_dp/298.257223563_dp  ! Flattening of the ellipsoid
-                now%R = 6.371221E6_dp            ! Radius of round Earth
-                now%e = 0.081819191_dp           ! Eccentricity of the ellipsoid, e in Snyder, WGS84, see Snyder p. 13
-                now%is_sphere = .FALSE.         
+        ! Look up the named body in the data-driven table
+        idx = 0
+        do i = 1, size(PLANETS)
+            if (trim(now%name) == trim(PLANETS(i)%name)) then
+                idx = i
+                exit
+            end if
+        end do
 
-            case("Spherical Earth")
-                now%R = 6.371221E6_dp            ! Radius of round Earth
-                now%a = now%R                    ! a is the same as the radius
-                now%f = 1e8_dp                   ! flattening is zero (ie, 1/f=0)
-                now%e = 0.0_dp                   ! Elliptical parameter is zero 
+        if (idx == 0) then
+            write(*,"(a,a)") "planet:: planet_init: ", &
+                                   "error: planet type not yet defined: "//trim(now%name)
+            write(*,"(a)") "  Available choices are:"
+            do i = 1, size(PLANETS)
+                write(*,"(a)") "    '"//trim(PLANETS(i)%name)//"'"
+            end do
+            write(*,*)
+            stop
+        end if
 
-            case DEFAULT
-                
-                write(*,"(a,a)") "planet:: planet_init: ", &
-                                       "error: planet type not yet defined: "//trim(now%name)
-                write(*,"(a)") "  Available choices are: 'WGS84', 'Spherical Earth' "
-                write(*,*)
-                stop 
+        now%a         = PLANETS(idx)%a
+        now%f         = PLANETS(idx)%f
+        now%R         = PLANETS(idx)%R
+        now%e         = PLANETS(idx)%e
+        now%is_sphere = PLANETS(idx)%is_sphere
 
-        end select
+        ! Get summary grid parameters
+        now%semi_major_axis = now%a
+        if (now%is_sphere) then
+            now%inverse_flattening = 0.0_dp
+        else
+            now%inverse_flattening = 1.0_dp / now%f
+        end if
 
-        ! Get summary grid parameters 
-        if (now%is_sphere) then 
-            now%semi_major_axis    = now%a 
-            now%inverse_flattening = 0.0_dp 
-        else 
-            now%semi_major_axis    = now%a 
-            now%inverse_flattening = 1.0_dp / now%f 
-        end if 
-
-        !call planet_print(now) 
+        !call planet_print(now)
 
         return
 
