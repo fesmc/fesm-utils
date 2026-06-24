@@ -165,11 +165,22 @@ contains
     ! Also add additional projection rotation parameters if they exist
     ! (currently not used, but need to be stored in netcdf files)
     if (present(phi))    proj%phi    = phi
-    if (present(lambda)) proj%lambda = lambda 
-    if (present(x_e))    proj%x_e    = x_e 
-    if (present(y_n))    proj%y_n    = y_n 
+    if (present(lambda)) proj%lambda = lambda
+    if (present(x_e))    proj%x_e    = x_e
+    if (present(y_n))    proj%y_n    = y_n
 
-    if (trim(proj%method) .ne. "Undefined") then 
+    ! Rotated-pole is a rigid coordinate rotation, not a planar projection.
+    ! Handle it here directly; the stereographic/Snyder machinery below does
+    ! not apply. proj%lambda / proj%phi hold the rotated north pole position.
+    if (trim(proj%name) .eq. "rotated_pole" .or. &
+        trim(proj%name) .eq. "rotated_latitude_longitude") then
+        proj%method   = "rotated_pole"
+        proj%lambda_M = degrees_to_radians * proj%lambda   ! rotated N-pole longitude
+        proj%phi_M    = degrees_to_radians * proj%phi      ! rotated N-pole latitude
+        return
+    end if
+
+    if (trim(proj%method) .ne. "Undefined") then
         ! latitude_longitude grid assumed.
 
         ! === Determine alpha ================================
@@ -378,7 +389,11 @@ contains
 
             call oblique_laea_projection_ellipsoid_snyder(lambda,phi,x_IM_P_prime,y_IM_P_prime,proj)
 
-        case DEFAULT 
+        case("rotated_pole")
+
+            call rotated_pole_forward(lambda,phi,x_IM_P_prime,y_IM_P_prime,proj)
+
+        case DEFAULT
             write(*,*) "oblimap_projection:: error: projection method not recognized: "// &
                        trim(proj%method)
             write(*,*) "Only the following options are possible: "
@@ -433,7 +448,11 @@ contains
 
             call inverse_oblique_laea_projection_ellipsoid_snyder(x_IM_P_prime,y_IM_P_prime,lambda_P,phi_P,proj)
 
-        case DEFAULT 
+        case("rotated_pole")
+
+            call rotated_pole_inverse(x_IM_P_prime,y_IM_P_prime,lambda_P,phi_P,proj)
+
+        case DEFAULT
             write(*,*) "oblimap_projection:: error: projection method not recognized: "// &
                        trim(proj%method)
             write(*,*) "Only the following options are possible: "
@@ -448,9 +467,86 @@ contains
 
     end select 
 
-    return 
+    return
 
   end subroutine oblimap_projection_inverse
+
+  subroutine rotated_pole_forward(lambda, phi, rlon, rlat, proj)
+    ! Geographic (lon,lat) -> rotated (lon,lat), all in degrees.
+    ! Rigid rotation bringing the rotated north pole (proj%lambda,proj%phi)
+    ! to the geographic pole: v_rot = Ry(90-phi_p) . Rz(lambda_p) . v_geo .
+
+    implicit none
+
+    type(projection_class), intent(in) :: proj
+    real(dp), intent(in)  :: lambda, phi      ! geographic lon, lat (degrees)
+    real(dp), intent(out) :: rlon, rlat       ! rotated lon, lat (degrees)
+
+    real(dp) :: lam, ph, theta, lon_p
+    real(dp) :: vx, vy, vz, ax, ay, az, bx, by, bz
+
+    lam   = degrees_to_radians * lambda
+    ph    = degrees_to_radians * phi
+    lon_p = proj%lambda_M                      ! rotated N-pole longitude (rad)
+    theta = 0.5_dp*pi - proj%phi_M             ! 90 - rotated N-pole latitude (rad)
+
+    ! Unit vector of the geographic point
+    vx = cos(ph)*cos(lam); vy = cos(ph)*sin(lam); vz = sin(ph)
+
+    ! Rz(lon_p)
+    ax =  cos(lon_p)*vx + sin(lon_p)*vy
+    ay = -sin(lon_p)*vx + cos(lon_p)*vy
+    az =  vz
+
+    ! Ry(theta)
+    bx =  cos(theta)*ax - sin(theta)*az
+    by =  ay
+    bz =  sin(theta)*ax + cos(theta)*az
+
+    rlat = radians_to_degrees * asin(max(-1.0_dp, min(1.0_dp, bz)))
+    rlon = radians_to_degrees * atan2(by, bx)
+
+    return
+
+  end subroutine rotated_pole_forward
+
+  subroutine rotated_pole_inverse(rlon, rlat, lambda, phi, proj)
+    ! Rotated (lon,lat) -> geographic (lon,lat), all in degrees.
+    ! Inverse of rotated_pole_forward: v_geo = Rz(-lambda_p) . Ry(-(90-phi_p)) . v_rot .
+
+    implicit none
+
+    type(projection_class), intent(in) :: proj
+    real(dp), intent(in)  :: rlon, rlat       ! rotated lon, lat (degrees)
+    real(dp), intent(out) :: lambda, phi      ! geographic lon, lat (degrees)
+
+    real(dp) :: rl, rp, theta, lon_p
+    real(dp) :: vx, vy, vz, ax, ay, az, bx, by, bz
+
+    rl    = degrees_to_radians * rlon
+    rp    = degrees_to_radians * rlat
+    lon_p = proj%lambda_M
+    theta = 0.5_dp*pi - proj%phi_M
+
+    ! Unit vector of the rotated point
+    vx = cos(rp)*cos(rl); vy = cos(rp)*sin(rl); vz = sin(rp)
+
+    ! Ry(-theta)
+    ax =  cos(theta)*vx + sin(theta)*vz
+    ay =  vy
+    az = -sin(theta)*vx + cos(theta)*vz
+
+    ! Rz(-lon_p)
+    bx =  cos(lon_p)*ax - sin(lon_p)*ay
+    by =  sin(lon_p)*ax + cos(lon_p)*ay
+    bz =  az
+
+    phi    = radians_to_degrees * asin(max(-1.0_dp, min(1.0_dp, bz)))
+    lambda = radians_to_degrees * atan2(by, bx)
+
+    return
+
+  end subroutine rotated_pole_inverse
 
   SUBROUTINE oblique_sg_projection(lambda, phi, x_IM_P_prime, y_IM_P_prime, proj)
     ! This subroutine projects with an oblique stereographic projection the longitude-latitude

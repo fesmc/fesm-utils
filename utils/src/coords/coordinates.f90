@@ -635,8 +635,13 @@ contains
                 pts%cs%is_cartesian  = .FALSE. 
                 pts%cs%is_projection = .FALSE. 
             case("stereographic","polar_stereographic","lambert_azimuthal_equal_area")
-                pts%cs%is_cartesian  = .TRUE. 
-                pts%cs%is_projection = .TRUE. 
+                pts%cs%is_cartesian  = .TRUE.
+                pts%cs%is_projection = .TRUE.
+            case("rotated_pole","rotated_latitude_longitude")
+                ! Rotated lon/lat: geographic metric (geodesic distances), but
+                ! lon/lat are obtained from x/y by inverse rotation.
+                pts%cs%is_cartesian  = .FALSE.
+                pts%cs%is_projection = .TRUE.
             case("cartesian")
                 pts%cs%is_cartesian  = .TRUE. 
                 pts%cs%is_projection = .FALSE. 

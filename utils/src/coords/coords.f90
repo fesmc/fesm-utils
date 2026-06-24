@@ -3,6 +3,7 @@ module coords
     ! public geometry, projection, planet and geodesic interfaces. Additional
     ! submodules (mapping, conservative) are re-exported here as they land.
 
+    use precision
     use coord_constants
     use geodesic
     use planet
