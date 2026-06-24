@@ -9,6 +9,7 @@ module coords
     use planet
     use oblimap_projection_module
     use gaussian_latitudes
+    use kdtree
     use coordinates
 
     implicit none
