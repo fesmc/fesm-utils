@@ -93,6 +93,10 @@ $(objdir)/planet.o: $(srcdir)/coords/planet.f90 $(objdir)/precision.o $(objdir)/
 $(objdir)/projection_oblimap2.o: $(srcdir)/coords/projection_oblimap2.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/planet.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/coordinates.o: $(srcdir)/coords/coordinates.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
+								$(objdir)/projection_oblimap2.o $(objdir)/planet.o $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
+
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
@@ -128,6 +132,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
 					$(objdir)/projection_oblimap2.o \
+					$(objdir)/coordinates.o \
 					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
 					$(objdir)/gaussian_filter.o \
