@@ -59,25 +59,25 @@ $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
 $(objdir)/esm.o: $(srcdir)/esm.f90 $(objdir)/varslice.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/grid_to_cdo.o: $(srcdir)/coordinates-light/grid_to_cdo.f90
+$(objdir)/grid_to_cdo.o: $(srcdir)/coords/grid_to_cdo.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/gaussian_filter.o: $(srcdir)/coordinates-light/gaussian_filter.f90
+$(objdir)/gaussian_filter.o: $(srcdir)/coords/gaussian_filter.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/gaussian_quadrature.o: $(srcdir)/gaussian_quadrature.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/index.o: $(srcdir)/coordinates-light/index.f90
+$(objdir)/index.o: $(srcdir)/coords/index.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/interp1D.o: $(srcdir)/coordinates-light/interp1D.f90
+$(objdir)/interp1D.o: $(srcdir)/coords/interp1D.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/interp2D.o: $(srcdir)/coordinates-light/interp2D.f90
+$(objdir)/interp2D.o: $(srcdir)/coords/interp2D.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/mapping_scrip.o: $(srcdir)/coordinates-light/mapping_scrip.f90 $(objdir)/ncio.o $(objdir)/interp2D.o \
+$(objdir)/mapping_scrip.o: $(srcdir)/coords/mapping_scrip.f90 $(objdir)/ncio.o $(objdir)/interp2D.o \
 								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_to_cdo.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
