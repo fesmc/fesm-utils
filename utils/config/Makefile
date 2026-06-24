@@ -81,6 +81,18 @@ $(objdir)/mapping_scrip.o: $(srcdir)/coords/mapping_scrip.f90 $(objdir)/ncio.o $
 								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_to_cdo.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/coord_constants.o: $(srcdir)/coords/coord_constants.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/geodesic.o: $(srcdir)/coords/geodesic.f90
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/planet.o: $(srcdir)/coords/planet.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/geodesic.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/projection_oblimap2.o: $(srcdir)/coords/projection_oblimap2.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/planet.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
@@ -112,7 +124,11 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping_scrip.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-fesmutils_libs = 	$(objdir)/derivatives.o \
+fesmutils_libs = 	$(objdir)/coord_constants.o \
+					$(objdir)/geodesic.o \
+					$(objdir)/planet.o \
+					$(objdir)/projection_oblimap2.o \
+					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
 					$(objdir)/gaussian_filter.o \
 					$(objdir)/gaussian_quadrature.o \
