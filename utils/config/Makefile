@@ -106,9 +106,14 @@ $(objdir)/kdtree.o: $(srcdir)/coords/kdtree.f90 $(objdir)/precision.o
 $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(objdir)/coord_constants.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
+								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/geodesic.o \
 								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
-								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o
+								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
+								$(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
@@ -150,6 +155,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/gaussian_latitudes.o \
 					$(objdir)/kdtree.o \
 					$(objdir)/weight_map.o \
+					$(objdir)/mapping.o \
 					$(objdir)/coords.o \
 					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
@@ -212,6 +218,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_kdtree.x $(testdir)/coords/test_kdtree.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_weightmap.x $(testdir)/coords/test_weightmap.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_mapinit.x $(testdir)/coords/test_mapinit.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."

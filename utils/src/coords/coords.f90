@@ -12,6 +12,7 @@ module coords
     use kdtree
     use weight_map
     use coordinates
+    use mapping
 
     implicit none
 
