@@ -7,6 +7,7 @@ module coords
     use geodesic
     use planet
     use oblimap_projection_module
+    use gaussian_latitudes
     use coordinates
 
     implicit none

@@ -97,8 +97,12 @@ $(objdir)/coordinates.o: $(srcdir)/coords/coordinates.f90 $(objdir)/precision.o 
 								$(objdir)/projection_oblimap2.o $(objdir)/planet.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
+$(objdir)/gaussian_latitudes.o: $(srcdir)/coords/gaussian_latitudes.f90 $(objdir)/precision.o $(objdir)/coord_constants.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/coord_constants.o $(objdir)/geodesic.o \
-								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o
+								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
+								$(objdir)/gaussian_latitudes.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
@@ -137,6 +141,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/planet.o \
 					$(objdir)/projection_oblimap2.o \
 					$(objdir)/coordinates.o \
+					$(objdir)/gaussian_latitudes.o \
 					$(objdir)/coords.o \
 					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
@@ -191,6 +196,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_geodinverse.x $(testdir)/coords/test_geodinverse.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_proj.x $(testdir)/coords/test_proj.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gauss.x $(testdir)/coords/test_gauss.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
