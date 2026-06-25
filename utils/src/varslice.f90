@@ -98,7 +98,12 @@ contains
         integer :: nx, ny, nz, nt
         integer :: i, j, k, t
         integer :: ndim
+        real(wp) :: miss                        ! missing value used for mapping
         logical, allocatable :: mask_int(:,:)   ! per-slice interpolation mask (logical form of mask_out)
+
+        ! Missing value: caller override, else the package default
+        miss = mv
+        if (present(missing_value)) miss = missing_value
 
         ! Consistency check: is this at least a 2D field?
         ndim = size(vs_src%dim,1)
@@ -137,7 +142,7 @@ contains
         do t = 1, nt
         do k = 1, nz
             call map_field(map,trim(vs_tgt%par%name),vs_src%var(:,:,k,t),vs_tgt%var(:,:,k,t), &
-                            method=method,missing_value=mv,reset=reset,mask_pack=mask_pack, &
+                            method=method,missing_value=miss,reset=reset,mask_pack=mask_pack, &
                             fill_method=fill_method,filt_method=filt_method,filt_par=filt_par, &
                             verbose=verbose,mask2=mask_int)
         end do
