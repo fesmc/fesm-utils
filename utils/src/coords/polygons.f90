@@ -10,8 +10,85 @@ module polygons
     private
 
     public :: polygon_area, point_in_polygon, polygon_clip
+    public :: polygon_clip_sphere
 
 contains
+
+    subroutine polygon_clip_sphere(sv, cv, ov, no)
+        ! Sutherland-Hodgman clipping on the unit sphere. Vertices are 3D unit
+        ! vectors; polygon edges are great-circle arcs. The clip polygon cv must
+        ! be convex and oriented counter-clockwise (interior on the +(a x b) side
+        ! of each edge a->b). Output ov(3,:) has no vertices (0 if no overlap).
+        real(dp), intent(in)  :: sv(:,:), cv(:,:)    ! (3, ns), (3, nc)
+        real(dp), allocatable, intent(out) :: ov(:,:)
+        integer,  intent(out) :: no
+
+        real(dp), allocatable :: iv(:,:), wv(:,:)
+        real(dp) :: a(3), b(3), p(3), q(3), x(3)
+        integer  :: ns, nc, ni, nw, cap, e, k, kprev
+        logical  :: pin, qin
+
+        ns = size(sv,2); nc = size(cv,2)
+        cap = ns + nc + 4
+        allocate(iv(3,cap), wv(3,cap))
+        ni = ns
+        iv(:,1:ns) = sv
+
+        do e = 1, nc
+            a = cv(:,e); b = cv(:, mod(e,nc)+1)
+            nw = 0
+            if (ni == 0) exit
+            do k = 1, ni
+                kprev = k-1; if (kprev == 0) kprev = ni
+                p = iv(:,kprev); q = iv(:,k)
+                pin = (dot_product(q_cross(a,b), p) >= 0.0_dp)
+                qin = (dot_product(q_cross(a,b), q) >= 0.0_dp)
+                if (qin) then
+                    if (.not. pin) then
+                        call arc_intersect(p, q, a, b, x)
+                        nw = nw+1; wv(:,nw) = x
+                    end if
+                    nw = nw+1; wv(:,nw) = q
+                else if (pin) then
+                    call arc_intersect(p, q, a, b, x)
+                    nw = nw+1; wv(:,nw) = x
+                end if
+            end do
+            ni = nw
+            iv(:,1:nw) = wv(:,1:nw)
+        end do
+
+        no = ni
+        allocate(ov(3, max(no,1)))
+        if (no > 0) ov(:,1:no) = iv(:,1:no)
+        deallocate(iv, wv)
+    end subroutine polygon_clip_sphere
+
+    pure function q_cross(u, v) result(w)
+        real(dp), intent(in) :: u(3), v(3)
+        real(dp) :: w(3)
+        w(1) = u(2)*v(3) - u(3)*v(2)
+        w(2) = u(3)*v(1) - u(1)*v(3)
+        w(3) = u(1)*v(2) - u(2)*v(1)
+    end function q_cross
+
+    subroutine arc_intersect(s, e, a, b, x)
+        ! Intersection of great-circle arc s->e with the great circle through a,b.
+        real(dp), intent(in)  :: s(3), e(3), a(3), b(3)
+        real(dp), intent(out) :: x(3)
+        real(dp) :: nse(3), nab(3), dir(3), nrm
+        nab = q_cross(a, b)
+        nse = q_cross(s, e)
+        dir = q_cross(nab, nse)
+        nrm = sqrt(sum(dir**2))
+        if (nrm < 1.0e-30_dp) then
+            x = e; return
+        end if
+        dir = dir / nrm
+        ! choose the intersection lying on the arc s->e (same hemisphere as its midpoint)
+        if (dot_product(dir, s+e) < 0.0_dp) dir = -dir
+        x = dir
+    end subroutine arc_intersect
 
     pure function polygon_area(x, y) result(area)
         ! Unsigned area of the polygon with vertices (x,y) via the shoelace formula.
