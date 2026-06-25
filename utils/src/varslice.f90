@@ -3,9 +3,9 @@ module varslice
     use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit
     
     use precision
-    use ncio 
-    use nml 
-    use mapping_scrip
+    use ncio
+    use nml
+    use mapping, only : map_class, map_field
 
     implicit none 
 
@@ -73,7 +73,7 @@ module varslice
     
 contains
 
-    subroutine varslice_map_to_grid(vs_tgt,vs_src,mps,mask_out,method,reset,missing_value, &
+    subroutine varslice_map_to_grid(vs_tgt,vs_src,map,mask_out,method,reset,missing_value, &
                                     mask_pack,fill_method,filt_method,filt_par,verbose)
         ! Given a input vs object on a source grid src,
         ! map the variable to a target grid tgt and store
@@ -83,7 +83,7 @@ contains
 
         type(varslice_class),  intent(INOUT) :: vs_tgt
         type(varslice_class),  intent(IN)    :: vs_src
-        type(map_scrip_class), intent(IN)    :: mps
+        type(map_class),       intent(IN)    :: map
         integer,                intent(OUT), optional :: mask_out(:,:)   ! Mask showing where interpolation was done
         character(len=*),       intent(IN),  optional :: method
         logical,                intent(IN),  optional :: reset           ! Reset var_tgt initially to missing_value?
@@ -97,7 +97,8 @@ contains
         ! Local variables
         integer :: nx, ny, nz, nt
         integer :: i, j, k, t
-        integer :: ndim 
+        integer :: ndim
+        logical, allocatable :: mask_int(:,:)   ! per-slice interpolation mask (logical form of mask_out)
 
         ! Consistency check: is this at least a 2D field?
         ndim = size(vs_src%dim,1)
@@ -112,8 +113,8 @@ contains
         end if
 
         ! Determine size of target var
-        nx = mps%dst_grid_dims(1)
-        ny = mps%dst_grid_dims(2)
+        nx = map%G%nx
+        ny = map%G%ny
         nz = size(vs_src%var,3)         ! z should keep the same dimension
         nt = size(vs_src%var,4)         ! time should keep the same dimension
         
@@ -129,14 +130,21 @@ contains
         allocate(vs_tgt%y(ny))
         allocate(vs_tgt%var(nx,ny,nz,nt))
 
+        ! Per-slice interpolation mask (logical); converted to mask_out below
+        allocate(mask_int(nx,ny))
 
         ! Loop over dimensions and remap variable
         do t = 1, nt
         do k = 1, nz
-            call map_scrip_field(mps,trim(vs_tgt%par%name),vs_src%var(:,:,k,t),vs_tgt%var(:,:,k,t), &
-                            mask_out,method,reset,mv,mask_pack,fill_method,filt_method,filt_par,verbose)
+            call map_field(map,trim(vs_tgt%par%name),vs_src%var(:,:,k,t),vs_tgt%var(:,:,k,t), &
+                            method=method,missing_value=mv,reset=reset,mask_pack=mask_pack, &
+                            fill_method=fill_method,filt_method=filt_method,filt_par=filt_par, &
+                            verbose=verbose,mask2=mask_int)
         end do
         end do
+
+        ! Report where interpolation was done (last slice), as an integer 0/1 mask
+        if (present(mask_out)) mask_out = merge(1, 0, mask_int)
 
         ! Done! target field should now be available.
 
