@@ -8,8 +8,9 @@ module mapping_scrip
     use ncio 
     use index 
     use interp2D
-    use gaussian_filter, only : filter_gaussian, filter_gaussian_fast 
+    use gaussian_filter, only : filter_gaussian, filter_gaussian_fast
     use grid_to_cdo, only : call_system_cdo
+    use weight_map, only : weight_map_t, weight_map_alloc, weight_map_index, MAP_WEIGHT
 
     use, intrinsic :: iso_fortran_env, only: error_unit
 
@@ -102,8 +103,9 @@ module mapping_scrip
     public :: map_scrip_field
     public :: map_scrip_init
     public :: map_scrip_init_from_griddesc
-    public :: map_scrip_load 
+    public :: map_scrip_load
     public :: map_scrip_end
+    public :: map_scrip_to_weight_map
 
     public :: nc_read_interp 
 
@@ -596,6 +598,28 @@ contains
         return 
 
     end subroutine map_scrip_field_double
+
+    subroutine map_scrip_to_weight_map(mps,wm)
+        ! Stage A bridge: convert an in-memory SCRIP map (map_scrip_class, as read
+        ! from a plain CDO SCRIP file) into the unified weight_map store as a
+        ! MAP_WEIGHT. The SCRIP link arrays are assumed grouped by destination in
+        ! ascending order (the CDO convention, and the same assumption made by
+        ! map_scrip_field); weight_map_index builds the CSR offsets from that.
+
+        implicit none
+
+        type(map_scrip_class), intent(IN)    :: mps
+        type(weight_map_t),    intent(INOUT) :: wm
+
+        call weight_map_alloc(wm, MAP_WEIGHT, mps%src_grid_size, mps%dst_grid_size, mps%num_links)
+        wm%src = mps%src_address
+        wm%dst = mps%dst_address
+        wm%w   = mps%remap_matrix(1,:)
+        call weight_map_index(wm)
+
+        return
+
+    end subroutine map_scrip_to_weight_map
 
     subroutine map_scrip_init(mps,grid_name_src,grid_name_tgt,method,fldr,load,clean)
         ! Generate mapping weights from grid1 to grid2

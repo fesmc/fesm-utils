@@ -78,7 +78,8 @@ $(objdir)/interp2D.o: $(srcdir)/coords/interp2D.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/mapping_scrip.o: $(srcdir)/coords/mapping_scrip.f90 $(objdir)/ncio.o $(objdir)/interp2D.o \
-								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_to_cdo.o
+								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_to_cdo.o \
+								$(objdir)/weight_map.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/coord_constants.o: $(srcdir)/coords/coord_constants.f90 $(objdir)/precision.o
@@ -110,7 +111,8 @@ $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
-								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o
+								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
+								$(objdir)/mapping_scrip.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
