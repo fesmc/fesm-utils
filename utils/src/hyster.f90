@@ -797,7 +797,6 @@ contains
         ! Local variables 
         integer :: i, j, nx, ny 
         real(wp) :: yuni(2)
-        real(wp), parameter :: pi = 4.0_wp*atan(1.0_wp)
 
         ! Get 2 numbers from uniform distribution between 0 and 1
         call random_number(yuni)
