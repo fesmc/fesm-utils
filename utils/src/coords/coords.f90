@@ -13,6 +13,7 @@ module coords
     use weight_map
     use coordinates
     use mapping
+    use map_io
 
     implicit none
 
