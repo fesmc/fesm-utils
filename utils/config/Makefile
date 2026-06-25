@@ -141,6 +141,9 @@ $(objdir)/nml.o: $(srcdir)/nml.f90
 $(objdir)/precision.o: $(srcdir)/precision.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/staggering.o: $(srcdir)/staggering.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -189,6 +192,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/ncio.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
+					$(objdir)/constants.o \
 					$(objdir)/subgrid.o \
 					$(objdir)/staggering.o \
 					$(objdir)/timer.o \
