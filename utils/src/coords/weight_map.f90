@@ -16,7 +16,7 @@ module weight_map
     ! offset array giving, for each target k, the link range dst_off(k):dst_off(k+1)-1.
 
     use precision,       only: dp
-    use coord_constants, only: MISSING_VALUE_DEFAULT
+    use constants, only: mv_dp
 
     implicit none
     private
@@ -119,7 +119,7 @@ contains
         real(dp) :: val
         logical  :: ok
 
-        miss = MISSING_VALUE_DEFAULT
+        miss = mv_dp
         if (present(missing_value)) miss = missing_value
         rad = huge(1.0_dp)
         if (present(radius)) rad = radius

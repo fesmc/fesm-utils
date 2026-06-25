@@ -1,7 +1,7 @@
 module planet
 
     use precision, only: dp
-    use coord_constants
+    use constants
     use geodesic
 
     implicit none 

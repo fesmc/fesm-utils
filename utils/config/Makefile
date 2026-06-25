@@ -82,23 +82,20 @@ $(objdir)/mapping_scrip.o: $(srcdir)/coords/mapping_scrip.f90 $(objdir)/ncio.o $
 								$(objdir)/weight_map.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/coord_constants.o: $(srcdir)/coords/coord_constants.f90 $(objdir)/precision.o
-	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
-
 $(objdir)/geodesic.o: $(srcdir)/coords/geodesic.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/planet.o: $(srcdir)/coords/planet.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/geodesic.o
+$(objdir)/planet.o: $(srcdir)/coords/planet.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/geodesic.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/projection_oblimap2.o: $(srcdir)/coords/projection_oblimap2.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/planet.o
+$(objdir)/projection_oblimap2.o: $(srcdir)/coords/projection_oblimap2.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/planet.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/coordinates.o: $(srcdir)/coords/coordinates.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
+$(objdir)/coordinates.o: $(srcdir)/coords/coordinates.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/projection_oblimap2.o $(objdir)/planet.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
-$(objdir)/gaussian_latitudes.o: $(srcdir)/coords/gaussian_latitudes.f90 $(objdir)/precision.o $(objdir)/coord_constants.o
+$(objdir)/gaussian_latitudes.o: $(srcdir)/coords/gaussian_latitudes.f90 $(objdir)/precision.o $(objdir)/constants.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/kdtree.o: $(srcdir)/coords/kdtree.f90 $(objdir)/precision.o
@@ -107,10 +104,10 @@ $(objdir)/kdtree.o: $(srcdir)/coords/kdtree.f90 $(objdir)/precision.o
 $(objdir)/polygons.o: $(srcdir)/coords/polygons.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(objdir)/coord_constants.o
+$(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(objdir)/constants.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
+$(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
 								$(objdir)/mapping_scrip.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
@@ -118,7 +115,7 @@ $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
-$(objdir)/ncio_interp.o: $(srcdir)/coords/ncio_interp.f90 $(objdir)/precision.o $(objdir)/coord_constants.o \
+$(objdir)/ncio_interp.o: $(srcdir)/coords/ncio_interp.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/ncio.o $(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
@@ -126,7 +123,7 @@ $(objdir)/conservative.o: $(srcdir)/coords/conservative.f90 $(objdir)/precision.
 								$(objdir)/kdtree.o $(objdir)/weight_map.o $(objdir)/polygons.o $(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/geodesic.o \
+$(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/geodesic.o \
 								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
 								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
 								$(objdir)/mapping.o $(objdir)/map_io.o $(objdir)/ncio_interp.o $(objdir)/conservative.o
@@ -166,7 +163,7 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-fesmutils_libs = 	$(objdir)/coord_constants.o \
+fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
 					$(objdir)/projection_oblimap2.o \
@@ -192,7 +189,6 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/ncio.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
-					$(objdir)/constants.o \
 					$(objdir)/subgrid.o \
 					$(objdir)/staggering.o \
 					$(objdir)/timer.o \

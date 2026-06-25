@@ -1,32 +1,9 @@
 
 module interp2D
     
+    use precision, only: dp, sp, wp
+    use constants, only: mv_dp, ERR_DIST, pi
     implicit none 
-
-    ! === coord_constants ===================================
-
-    ! Internal constants
-    integer,  parameter :: dp  = kind(1.d0)
-    integer,  parameter :: sp  = kind(1.0)
-
-    ! Choose the precision of the coord library (sp,dp)
-    integer,  parameter :: wp = sp 
-
-
-    ! Missing value and aliases
-    real(dp), parameter :: MISSING_VALUE_DEFAULT = -9999.0_dp 
-    real(dp), parameter :: mv = MISSING_VALUE_DEFAULT
-    
-    ! Error distance (very large) and error index 
-    real(dp), parameter :: ERR_DIST = 1E8_dp 
-    integer,  parameter :: ERR_IND  = -1 
-
-    ! Mathematical constants
-    real(dp), parameter  :: pi  = 2._dp*acos(0._dp)
-    real(dp), parameter  :: degrees_to_radians = pi / 180._dp  ! Conversion factor between radians and degrees
-    real(dp), parameter  :: radians_to_degrees = 180._dp / pi  ! Conversion factor between degrees and radians
-     
-    ! ======================================================
 
     interface interp_bilinear 
         module procedure interp_bilinear_dble 
@@ -157,7 +134,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         fill_missing = .FALSE. 
@@ -280,7 +257,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         ! Get x-indices corresponding to nearest neighbor
@@ -390,7 +367,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         ! Now loop over output grid points and perform
@@ -470,7 +447,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         ! Now loop over output grid points and perform
@@ -544,7 +521,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         ! Maximum distance to be considered a nearest neighbor 
@@ -607,7 +584,7 @@ contains
         if (present(mask)) mask_interp = mask 
 
         ! Determine missing value if present 
-        missing_val = MISSING_VALUE_DEFAULT
+        missing_val = mv_dp
         if (present(missing_value)) missing_val = missing_value
 
         ! Maximum distance to be considered a nearest neighbor 
@@ -684,10 +661,10 @@ contains
                 ! Find a neighbor value in var0 
 
                 ! Populate distance matrix where necessary 
-                dist = MV 
+                dist = mv_dp 
                 do j1 = 1, ny 
                 do i1 = 1, nx 
-                    if (var0(i1,j1) .ne. MV) then 
+                    if (var0(i1,j1) .ne. mv_dp) then 
                         dist(i1,j1) = sqrt( real( (i1-i)**2 + (j1-j)**2 ) ) * dx_km 
                     end if 
                 end do 
@@ -701,7 +678,7 @@ contains
                     ! Loop over nearest neighbors to get average 
 
                     ! Find minimum populated neighbor 
-                    ij = minloc(dist,mask=dist.ne.MV .and. var0.ne.MV)
+                    ij = minloc(dist,mask=dist.ne.mv_dp .and. var0.ne.mv_dp)
 
                     ! Check if no neighbors found 
                     if (ij(1) .eq. 0) exit 
@@ -712,7 +689,7 @@ contains
                     n_now = n_now + 1 
 
                     ! Reset distance of neighbor to zero so it cannot be used again
-                    dist(ij(1),ij(2)) = MV 
+                    dist(ij(1),ij(2)) = mv_dp 
                 end do 
 
                 ! If no neighbors found, use fill value 

@@ -19,7 +19,7 @@ module ncio_interp
     use, intrinsic :: iso_fortran_env, only : error_unit
 
     use precision,       only : dp, sp
-    use coord_constants, only : MV => MISSING_VALUE_DEFAULT
+    use constants, only : MV => mv_dp
     use ncio
     use mapping,         only : map_class, map_field
 

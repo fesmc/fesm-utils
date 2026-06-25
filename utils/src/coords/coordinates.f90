@@ -13,7 +13,7 @@
 module coordinates
 
     use precision, only: dp, sp
-    use coord_constants
+    use constants
 
     use oblimap_projection_module
     use planet
@@ -939,8 +939,8 @@ contains
         
         if (define_fields) then
             allocate(grid%x(grid%G%nx,grid%G%ny),grid%y(grid%G%nx,grid%G%ny))
-            grid%x = MISSING_VALUE_DEFAULT
-            grid%y = MISSING_VALUE_DEFAULT
+            grid%x = mv_dp
+            grid%y = mv_dp
         end if 
 
         grid%x = unpack(pts%x,maski==1,grid%x)
@@ -949,22 +949,22 @@ contains
         ! Store area 
         if (define_fields) then
             allocate(grid%area(grid%G%nx,grid%G%ny))
-            grid%area = MISSING_VALUE_DEFAULT 
+            grid%area = mv_dp 
         end if 
         grid%area = unpack(pts%area,maski==1,grid%area)
 
         ! Store border 
         if (define_fields) then 
             allocate(grid%border(grid%G%nx,grid%G%ny))
-            grid%border = MISSING_VALUE_DEFAULT
+            grid%border = mv_dp
         end if 
         grid%border = unpack(pts%border,maski==1,grid%border)
 
         if (allocated(pts%lon) .and. allocated(pts%lat)) then 
             if (define_fields) then
                 allocate(grid%lon(grid%G%nx,grid%G%ny),grid%lat(grid%G%nx,grid%G%ny))
-                grid%lon = MISSING_VALUE_DEFAULT 
-                grid%lat = MISSING_VALUE_DEFAULT 
+                grid%lon = mv_dp 
+                grid%lat = mv_dp 
             end if 
             grid%lon = unpack(pts%lon,maski==1,grid%lon)
             grid%lat = unpack(pts%lat,maski==1,grid%lat)

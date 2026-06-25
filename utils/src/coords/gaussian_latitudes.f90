@@ -8,7 +8,7 @@ module gaussian_latitudes
     ! resolution alone rather than read from a file.
 
     use precision, only: dp
-    use coord_constants, only: pi, radians_to_degrees
+    use constants, only: pi, radians_to_degrees
 
     implicit none
 

@@ -13,7 +13,7 @@ module conservative
     ! Lat-lon / Gaussian *targets* need great-circle clipping (stage C, later).
 
     use precision,       only: dp
-    use coord_constants, only: degrees_to_radians
+    use constants, only: degrees_to_radians
     use coordinates,     only: grid_class, compare_coord
     use oblimap_projection_module, only: oblimap_projection, oblimap_projection_inverse
     use planet,          only: planet_area

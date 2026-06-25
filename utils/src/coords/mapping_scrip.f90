@@ -14,33 +14,10 @@ module mapping_scrip
 
     use, intrinsic :: iso_fortran_env, only: error_unit
 
+    use precision, only: dp, sp
+    use constants, only: mv => mv_dp, pi
     implicit none 
 
-
-    ! === coord_constants ===================================
-
-    ! Internal constants
-    integer,  parameter :: dp  = kind(1.d0)
-    integer,  parameter :: sp  = kind(1.0)
-
-    ! Choose the precision of the coord library (sp,dp)
-    integer,  parameter :: wp = sp 
-
-
-    ! Missing value and aliases
-    real(dp), parameter :: MISSING_VALUE_DEFAULT = -9999.0_dp 
-    real(dp), parameter :: MV = MISSING_VALUE_DEFAULT
-    
-    ! Error distance (very large) and error index 
-    real(dp), parameter :: ERR_DIST = 1E8_dp 
-    integer,  parameter :: ERR_IND  = -1 
-
-    ! Mathematical constants
-    real(dp), parameter  :: pi  = 2._dp*acos(0._dp)
-    real(dp), parameter  :: degrees_to_radians = pi / 180._dp  ! Conversion factor between radians and degrees
-    real(dp), parameter  :: radians_to_degrees = 180._dp / pi  ! Conversion factor between degrees and radians
-     
-    ! ======================================================
 
     type map_scrip_class
 

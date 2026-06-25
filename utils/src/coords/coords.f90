@@ -4,7 +4,7 @@ module coords
     ! submodules (mapping, conservative) are re-exported here as they land.
 
     use precision
-    use coord_constants
+    use constants
     use geodesic
     use planet
     use oblimap_projection_module

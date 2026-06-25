@@ -13,7 +13,7 @@ module mapping
     ! distance) and exact distances are geodesic.
 
     use precision,       only: dp, sp
-    use coord_constants, only: degrees_to_radians, MISSING_VALUE_DEFAULT, ERR_DIST
+    use constants, only: degrees_to_radians, mv_dp, ERR_DIST
     use coordinates,     only: points_class, grid_class, grid_axis_class, coord_system, &
                                grid_to_points, compare_coord
     use planet,          only: planet_distance, cartesian_distance, &
@@ -345,7 +345,7 @@ contains
 
         mtd = "mean"
         if (present(method)) mtd = trim(method)
-        miss = MISSING_VALUE_DEFAULT
+        miss = mv_dp
         if (present(missing_value)) miss = missing_value
         reset_pts = .true.
         if (present(reset)) reset_pts = reset
@@ -415,7 +415,7 @@ contains
         allocate(v1(size(var1,1),size(var1,2)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
         v2 = real(var2, dp)
-        miss = MISSING_VALUE_DEFAULT
+        miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
         if (present(filt_par)) then
             allocate(fpar(size(filt_par)))
@@ -459,7 +459,7 @@ contains
         allocate(v1(size(var1,1),size(var1,2)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
         v2 = real(var2, dp)
-        miss = MISSING_VALUE_DEFAULT
+        miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
         call map_field_grid_grid(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
@@ -619,7 +619,7 @@ contains
         real(dp) :: dx1, dx1t, dx2, dx2t, dy1, dy1t, p1, p0
         real(dp) :: wsum, vsum, w
 
-        miss = MISSING_VALUE_DEFAULT
+        miss = mv_dp
         if (present(missing_value)) miss = missing_value
         use_cart = map%is_same_map .and. map%cs%is_cartesian
         xyc = map%cs%xy_conv

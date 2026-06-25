@@ -47,7 +47,7 @@
 MODULE oblimap_projection_module
 
     use precision, only: dp
-    use coord_constants
+    use constants
     use planet
 
     implicit none 
