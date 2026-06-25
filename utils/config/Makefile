@@ -116,10 +116,14 @@ $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
+$(objdir)/conservative.o: $(srcdir)/coords/conservative.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
+								$(objdir)/kdtree.o $(objdir)/weight_map.o $(objdir)/polygons.o $(objdir)/mapping.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/coord_constants.o $(objdir)/geodesic.o \
 								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
 								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
-								$(objdir)/mapping.o $(objdir)/map_io.o
+								$(objdir)/mapping.o $(objdir)/map_io.o $(objdir)/conservative.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
@@ -164,6 +168,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/weight_map.o \
 					$(objdir)/mapping.o \
 					$(objdir)/map_io.o \
+					$(objdir)/conservative.o \
 					$(objdir)/coords.o \
 					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
@@ -236,6 +241,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_mapio.x $(testdir)/coords/test_mapio.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_polygons.x $(testdir)/coords/test_polygons.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative.x $(testdir)/coords/test_conservative.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."

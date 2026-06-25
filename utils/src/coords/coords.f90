@@ -15,6 +15,7 @@ module coords
     use coordinates
     use mapping
     use map_io
+    use conservative
 
     implicit none
 
