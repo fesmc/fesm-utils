@@ -15,6 +15,7 @@ module coords
     use coordinates
     use mapping
     use map_io
+    use ncio_interp
     use conservative
 
     implicit none
