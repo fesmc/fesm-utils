@@ -43,6 +43,7 @@ module mapping
 
     interface map_field
         module procedure map_field_grid_grid, map_field_points_points
+        module procedure map_field_grid_points, map_field_points_grid
     end interface
 
     public :: map_class, map_init, map_field
@@ -298,6 +299,46 @@ contains
         if (present(mask2)) mask2 = reshape(m2, shape(mask2))
         deallocate(v1, v2, m2)
     end subroutine map_field_grid_grid
+
+    subroutine map_field_grid_points(map, name, var1, var2, method, missing_value, radius, mask2)
+        ! source on a grid (2D), target a point set (1D)
+        type(map_class),  intent(in)  :: map
+        character(len=*), intent(in)  :: name
+        real(dp),         intent(in)  :: var1(:,:)
+        real(dp),         intent(out) :: var2(:)
+        character(len=*), intent(in)  :: method
+        real(dp), optional, intent(in)  :: missing_value
+        real(dp), optional, intent(in)  :: radius
+        logical,  optional, intent(out) :: mask2(:)
+        real(dp), allocatable :: v1(:)
+        integer :: n1
+        n1 = size(var1)
+        allocate(v1(n1))
+        v1 = reshape(var1, [n1])
+        call map_apply_vec(map, v1, var2, method, missing_value, radius, mask2)
+        deallocate(v1)
+    end subroutine map_field_grid_points
+
+    subroutine map_field_points_grid(map, name, var1, var2, method, missing_value, radius, mask2)
+        ! source a point set (1D), target on a grid (2D)
+        type(map_class),  intent(in)  :: map
+        character(len=*), intent(in)  :: name
+        real(dp),         intent(in)  :: var1(:)
+        real(dp),         intent(out) :: var2(:,:)
+        character(len=*), intent(in)  :: method
+        real(dp), optional, intent(in)  :: missing_value
+        real(dp), optional, intent(in)  :: radius
+        logical,  optional, intent(out) :: mask2(:,:)
+        real(dp), allocatable :: v2(:)
+        logical,  allocatable :: m2(:)
+        integer :: n2
+        n2 = size(var2)
+        allocate(v2(n2), m2(n2))
+        call map_apply_vec(map, var1, v2, method, missing_value, radius, m2)
+        var2 = reshape(v2, shape(var2))
+        if (present(mask2)) mask2 = reshape(m2, shape(mask2))
+        deallocate(v2, m2)
+    end subroutine map_field_points_grid
 
     ! ----- apply dispatch (bilinear handled here; rest delegate to weight_map) -
 
