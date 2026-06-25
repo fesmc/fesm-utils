@@ -3,13 +3,11 @@ module timeout
     use nml 
     use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit
 
+    use precision, only: sp, dp, wp
+    use constants, only: mv
     implicit none
 
-    integer,  parameter :: sp  = kind(1.0)
-    integer,  parameter :: dp  = kind(1.0d0)
-    integer,  parameter :: wp  = sp 
 
-    real(wp), parameter :: MV  = -9999.0_wp 
 
     real(wp), parameter :: time_tol = 1e-6 
     logical,  parameter :: verbose  = .TRUE. 

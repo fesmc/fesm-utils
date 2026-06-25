@@ -6,17 +6,12 @@ module esm
     use ncio
     use varslice
 
+    use precision, only: dp, sp, wp
+    use constants, only: mv
     implicit none
 
-    ! Internal constants
-    integer,  parameter :: dp  = kind(1.d0)
-    integer,  parameter :: sp  = kind(1.0)
 
-    ! Working precision
-    integer,  parameter :: wp = sp
 
-    ! Default missing value
-    real(wp), parameter :: mv = -9999.0_wp
 
     type esm_state_class
 

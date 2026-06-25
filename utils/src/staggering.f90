@@ -2,6 +2,7 @@ module staggering
 
     use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit    
     use precision
+    use constants, only: TOL_UNDERFLOW
 
     implicit none
 

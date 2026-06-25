@@ -4,16 +4,12 @@ module hyster
     use nml 
     use ncio 
 
+    use precision, only: sp, dp, wp
+    use constants, only: mv, pi
     implicit none 
 
-    integer,  parameter :: sp  = kind(1.0)
-    integer,  parameter :: dp  = kind(1.0d0)
-    integer,  parameter :: wp  = sp 
 
-    real(wp), parameter :: MV  = -9999.0_wp 
 
-    ! Mathematical constants
-    real(wp), parameter :: pi  = real(2._dp*acos(0.0_dp),wp)
     
     type hyster_par_class  
         character(len=56) :: label 

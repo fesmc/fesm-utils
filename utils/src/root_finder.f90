@@ -1,13 +1,8 @@
 module root_finder
 
-    implicit none 
+    use precision, only: dp, sp, wp
 
-    ! Internal constants
-    integer,  parameter :: dp  = kind(1.d0)
-    integer,  parameter :: sp  = kind(1.0)
-
-    ! Choose the working precision of the library (sp,dp)
-    integer,  parameter :: wp = sp 
+    implicit none
 
     private
     public :: solve_newton 
