@@ -103,6 +103,9 @@ $(objdir)/gaussian_latitudes.o: $(srcdir)/coords/gaussian_latitudes.f90 $(objdir
 $(objdir)/kdtree.o: $(srcdir)/coords/kdtree.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/polygons.o: $(srcdir)/coords/polygons.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(objdir)/coord_constants.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -157,6 +160,7 @@ fesmutils_libs = 	$(objdir)/coord_constants.o \
 					$(objdir)/coordinates.o \
 					$(objdir)/gaussian_latitudes.o \
 					$(objdir)/kdtree.o \
+					$(objdir)/polygons.o \
 					$(objdir)/weight_map.o \
 					$(objdir)/mapping.o \
 					$(objdir)/map_io.o \
@@ -230,6 +234,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_ccsm3_grl.x $(testdir)/coords/test_ccsm3_grl.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_mapio.x $(testdir)/coords/test_mapio.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_polygons.x $(testdir)/coords/test_polygons.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."

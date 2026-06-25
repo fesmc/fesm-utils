@@ -10,6 +10,7 @@ module coords
     use oblimap_projection_module
     use gaussian_latitudes
     use kdtree
+    use polygons
     use weight_map
     use coordinates
     use mapping
