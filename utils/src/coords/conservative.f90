@@ -5,12 +5,16 @@ module conservative
     ! is clipped against the target cell and the overlap area becomes the link
     ! weight. The result is a MAP_WEIGHT applied as an area-weighted mean.
     !
-    ! This stage handles target grids whose cells live in a shared planar
-    ! (Cartesian / same-projection) system as the source. Cross-system and
-    ! spherical (great-circle) clipping are later stages.
+    ! Two planar modes are supported:
+    !   - same-system: source and target share a Cartesian/projected plane;
+    !     cells are clipped directly.
+    !   - lat-lon source -> projected target: source cell corners (lon/lat) are
+    !     projected into the target projection plane, then clipped there.
+    ! Lat-lon / Gaussian *targets* need great-circle clipping (stage C, later).
 
     use precision,   only: dp
     use coordinates, only: grid_class, compare_coord
+    use oblimap_projection_module, only: oblimap_projection
     use kdtree
     use weight_map
     use polygons
@@ -28,25 +32,32 @@ contains
         type(grid_class), intent(in)    :: grid1, grid2
 
         type(kdtree_t) :: tree
+        logical  :: same_sys, do_project
         integer  :: n1, n2, nx1, ny1, nx2, ny2
-        integer  :: i, j, ic, jc, c, cc, nf, nl, nlmax, no
-        real(dp) :: rad, diag1, diag2, area
-        real(dp) :: scx(4), scy(4), tcx(4), tcy(4), qpt(2)
+        integer  :: i, j, ic, jc, c, cs, cc, k, nf, nl, nlmax, no
+        real(dp) :: rad, diag2, area, maxsrcdiag, d, xyc, px, py
+        real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
+        real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source corners in target plane
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
         integer,  allocatable :: tsrc(:), tdst(:)
         real(dp), allocatable :: tw(:)
 
-        if (.not. (compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian)) then
-            write(*,*) "conservative:: map_init_conservative: stage-B planar clip requires"
-            write(*,*) "  source and target to share a Cartesian/projected system."
-            write(*,*) "  (cross-system and spherical clipping are later stages.)"
+        same_sys   = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian
+        do_project = (.not. same_sys) .and. grid2%cs%is_projection .and. (.not. grid1%cs%is_cartesian)
+
+        if (.not. (same_sys .or. do_project)) then
+            write(*,*) "conservative:: map_init_conservative: stage-B planar clip supports"
+            write(*,*) "  (a) same Cartesian/projected system, or"
+            write(*,*) "  (b) lat-lon source -> projected target."
+            write(*,*) "  Lat-lon/Gaussian targets need the spherical clip (stage C)."
             stop
         end if
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
+        xyc = grid2%cs%xy_conv
 
         map%name1 = grid1%name
         map%name2 = grid2%name
@@ -55,7 +66,7 @@ contains
         map%G     = grid2%G
         map%npts  = n2
         map%nmax  = 0
-        map%is_same_map = .true.
+        map%is_same_map = same_sys
         if (allocated(map%x)) deallocate(map%x, map%y, map%lon, map%lat)
         allocate(map%x(n2), map%y(n2), map%lon(n2), map%lat(n2))
         map%x   = reshape(grid2%x,   [n2])
@@ -63,22 +74,38 @@ contains
         map%lon = reshape(grid2%lon, [n2])
         map%lat = reshape(grid2%lat, [n2])
 
-        ! k-d tree over source cell centers (planar x,y in axis units)
-        allocate(emb(2, n1))
-        emb(1,:) = reshape(grid1%x, [n1])
-        emb(2,:) = reshape(grid1%y, [n1])
+        ! Express every source cell (corners + center) in the TARGET plane.
+        allocate(scornx(4, n1), scorny(4, n1), emb(2, n1))
+        maxsrcdiag = 0.0_dp
+        do jc = 1, ny1
+            do ic = 1, nx1
+                cs = (jc-1)*nx1 + ic
+                call cell_corners_grid(grid1, ic, jc, lx, ly)
+                if (same_sys) then
+                    scornx(:,cs) = lx; scorny(:,cs) = ly
+                    emb(1,cs) = grid1%x(ic,jc); emb(2,cs) = grid1%y(ic,jc)
+                else
+                    ! lx,ly are lon,lat -> project into the target projection plane
+                    do k = 1, 4
+                        call oblimap_projection(lx(k), ly(k), px, py, grid2%cs%proj)
+                        scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
+                    end do
+                    call oblimap_projection(grid1%lon(ic,jc), grid1%lat(ic,jc), px, py, grid2%cs%proj)
+                    emb(1,cs) = px/xyc; emb(2,cs) = py/xyc
+                end if
+                d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
+                       + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
+                maxsrcdiag = max(maxsrcdiag, d)
+            end do
+        end do
         call kdtree_build(tree, emb)
 
-        ! candidate search radius: target diag + source diag (generous)
-        diag1 = sqrt(grid1%G%dx**2 + grid1%G%dy**2)
+        ! candidate radius: half target diagonal + largest source-cell diagonal
         diag2 = sqrt(grid2%G%dx**2 + grid2%G%dy**2)
-        rad   = 0.5_dp*diag1 + 0.5_dp*diag2 + 0.25_dp*max(diag1, diag2)
+        rad   = 0.5_dp*diag2 + maxsrcdiag
 
         allocate(cidx(n1), cd2(n1))
-        nlmax = 0
-        ! generous link estimate: each target overlaps a handful of source cells
-        nlmax = n2 * max(16, int(2.0_dp*(diag2/max(diag1,1.0e-12_dp) + 1.0_dp))**2)
-        nlmax = max(nlmax, n2*8)
+        nlmax = max(n2*16, n1)
         allocate(tsrc(nlmax), tdst(nlmax), tw(nlmax))
 
         nl = 0
@@ -89,15 +116,14 @@ contains
                 qpt = [grid2%x(i,j), grid2%y(i,j)]
                 call kdtree_radius(tree, qpt, rad, cidx, cd2, nf)
                 do cc = 1, nf
-                    ic = mod(cidx(cc)-1, nx1) + 1
-                    jc = (cidx(cc)-1)/nx1 + 1
-                    call cell_corners_grid(grid1, ic, jc, scx, scy)
-                    call polygon_clip(scx, scy, tcx, tcy, ox, oy, no)
+                    cs = cidx(cc)
+                    call polygon_clip(scornx(:,cs), scorny(:,cs), tcx, tcy, ox, oy, no)
                     if (no >= 3) then
                         area = polygon_area(ox(1:no), oy(1:no))
                         if (area > 0.0_dp) then
+                            if (nl >= nlmax) call grow_links(tsrc, tdst, tw, nlmax)
                             nl = nl + 1
-                            tsrc(nl) = cidx(cc)
+                            tsrc(nl) = cs
                             tdst(nl) = c
                             tw(nl)   = area
                         end if
@@ -113,9 +139,24 @@ contains
         call weight_map_index(map%wm)
 
         call kdtree_free(tree)
-        deallocate(emb, cidx, cd2, tsrc, tdst, tw)
+        deallocate(emb, scornx, scorny, cidx, cd2, tsrc, tdst, tw)
         if (allocated(ox)) deallocate(ox, oy)
     end subroutine map_init_conservative
+
+    subroutine grow_links(tsrc, tdst, tw, cap)
+        ! Double the temporary link buffers (safety for dense overlaps).
+        integer,  allocatable, intent(inout) :: tsrc(:), tdst(:)
+        real(dp), allocatable, intent(inout) :: tw(:)
+        integer,               intent(inout) :: cap
+        integer,  allocatable :: itmp(:)
+        real(dp), allocatable :: rtmp(:)
+        integer :: newcap
+        newcap = cap*2
+        allocate(itmp(newcap)); itmp(1:cap) = tsrc; call move_alloc(itmp, tsrc)
+        allocate(itmp(newcap)); itmp(1:cap) = tdst; call move_alloc(itmp, tdst)
+        allocate(rtmp(newcap)); rtmp(1:cap) = tw;   call move_alloc(rtmp, tw)
+        cap = newcap
+    end subroutine grow_links
 
     subroutine cell_corners_grid(grid, i, j, cx, cy)
         ! Four corners (CCW) of cell (i,j) in axis units, from adjacent-axis
