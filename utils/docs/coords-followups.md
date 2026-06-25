@@ -89,26 +89,33 @@ Tabulate each module's local `wp` value. Proceed only once all are confirmed
 
 ---
 
-## 2. Interpolation parity gaps (close only where needed)
+## 2. Interpolation parity gaps — **closed**
 
 The grid→grid path is at full parity and richer than the old `coordinates`
-library (adds conservative count/stdev, weighted/poisson fill-smoothing). Gaps:
+library (adds conservative count/stdev, weighted/poisson fill-smoothing). The
+remaining combo gaps are now closed:
 
-- **fill / smoothing / `mask_pack` / `reset` live only on `map_field_grid_grid`.**
-  `points→grid` has a 2-D target and should support them but doesn't;
-  `grid→points` / `points→points` (1-D targets) could still take `mask_pack`/`reset`.
-- **sp/integer generics exist only for `grid→grid`**; the other three combos are
-  dp-only (old lib had integer/float/double for all four).
-- **`border` option not ported.** Old `border` relaxed the neighbor criterion so
-  domain-edge cells still fill. coords' default already uses whatever valid
-  neighbors exist (graceful degradation), so this is likely subsumed — confirm on a
-  real case before adding.
+- **DONE — full surface on every combo.** `map_field_grid_grid` was refactored
+  into two private dp cores keyed by target rank: `map_field_to_grid` (2-D target:
+  `reset`/`mask_pack`/`fill_method`/`filt_method`) and `map_field_to_points` (1-D
+  target: `reset`/`mask_pack`). All four public combos delegate to them, so
+  `points→grid` now carries fill/smoothing and the 1-D-target combos carry
+  `reset`/`mask_pack`. (fill/smoothing stay 2-D-target only — they are grid ops.)
+  The 1-D-target combos changed `var2` from `intent(out)` to `intent(inout)` to
+  support `reset` (default `reset=.true.` blanks first, so callers are unaffected).
+- **DONE — sp/integer generics for all four combos.** Added `sp`+`int` wrappers
+  for `points→grid`, `grid→points`, `points→points` (mirroring the existing
+  `grid_grid_sp/int`); accumulation stays dp. The generic `map_field` now resolves
+  12 specifics, distinguishable by var1/var2 type+rank.
+- **`border` — subsumed, not ported.** coords' default already degrades
+  gracefully to whatever valid neighbors exist, which covers the old `border`
+  (domain-edge fill) behavior. No separate option added.
 - **Dropped by design** (not interpolation per se): `subset`/`subset2` region
   extraction, `coordinates_sigma`.
 
-In-tree consumers (`varslice`, `ncio_interp`) are all grid→grid, so they have
-everything. The gaps only bite if something maps onto a `points→grid` target and
-wants fill/smoothing.
+Coverage: `test/coords/test_parity.f90` exercises every new combo + wrapper
+(constant transfer, `reset`/`mask_pack`), and checks `points→grid` fill/smoothing
+matches the trusted `grid→grid` path bit-for-bit.
 
 ---
 

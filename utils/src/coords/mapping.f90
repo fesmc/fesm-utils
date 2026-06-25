@@ -47,7 +47,10 @@ module mapping
     interface map_field
         module procedure map_field_grid_grid, map_field_points_points
         module procedure map_field_grid_points, map_field_points_grid
-        module procedure map_field_grid_grid_sp, map_field_grid_grid_int
+        module procedure map_field_grid_grid_sp,    map_field_grid_grid_int
+        module procedure map_field_points_grid_sp,  map_field_points_grid_int
+        module procedure map_field_grid_points_sp,  map_field_grid_points_int
+        module procedure map_field_points_points_sp, map_field_points_points_int
     end interface
 
     public :: map_class, map_init, map_field, map_read
@@ -299,22 +302,11 @@ contains
 
     ! ----- map_field overloads ------------------------------------------------
 
-    subroutine map_field_points_points(map, name, var1, var2, method, missing_value, radius, mask2)
-        type(map_class),  intent(in)  :: map
-        character(len=*), intent(in)  :: name
-        real(dp),         intent(in)  :: var1(:)
-        real(dp),         intent(out) :: var2(:)
-        character(len=*), intent(in)  :: method
-        real(dp), optional, intent(in)  :: missing_value
-        real(dp), optional, intent(in)  :: radius
-        logical,  optional, intent(out) :: mask2(:)
-        call map_apply_vec(map, var1, var2, method, missing_value, radius, mask2)
-    end subroutine map_field_points_points
-
-    subroutine map_field_grid_grid(map, name, var1, var2, method, missing_value, radius, mask2, &
-                                   reset, mask_pack, fill_method, filt_method, filt_par, verbose)
-        ! Map a 2D source field var1 onto the 2D target var2 (dp worker).
-        ! Beyond the bare apply this matches the legacy map_scrip_field surface:
+    subroutine map_field_to_grid(map, name, v1, var2, method, missing_value, radius, mask2, &
+                                 reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+        ! Core 2D-target worker: the source is already flattened to the vector v1,
+        ! so this serves both grid (2D) and points (1D) sources. It carries the
+        ! full post-apply surface (matching the legacy map_scrip_field):
         !   reset       - .true. (default) blanks var2 to missing first; .false.
         !                 leaves non-interpolated target points untouched (var2 is
         !                 read on entry, hence intent(inout)).
@@ -323,7 +315,7 @@ contains
         !   filt_method - smooth the result ("gaussian"/"gaussian-fast"/"poisson"/"none").
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
-        real(dp),         intent(in)    :: var1(:,:)
+        real(dp),         intent(in)    :: v1(:)
         real(dp),         intent(inout) :: var2(:,:)
         character(len=*), optional, intent(in)  :: method
         real(dp),         optional, intent(in)  :: missing_value
@@ -339,8 +331,8 @@ contains
         character(len=56) :: mtd
         real(dp) :: miss
         logical  :: reset_pts
-        integer  :: n1, n2, nx, ny
-        real(dp), allocatable :: v1(:), v2(:), var2_save(:,:)
+        integer  :: n2, nx, ny
+        real(dp), allocatable :: v2(:), var2_save(:,:)
         logical,  allocatable :: m2(:), m2d(:,:), maskp2d(:,:)
 
         mtd = "mean"
@@ -351,7 +343,7 @@ contains
         if (present(reset)) reset_pts = reset
 
         nx = size(var2,1); ny = size(var2,2)
-        n1 = size(var1);   n2 = size(var2)
+        n2 = size(var2)
 
         ! Target-point packing mask (which points to interpolate)
         allocate(maskp2d(nx,ny))
@@ -365,8 +357,7 @@ contains
         end if
 
         ! Apply the map over all targets, then restrict to the packing mask
-        allocate(v1(n1), v2(n2), m2(n2), m2d(nx,ny))
-        v1 = reshape(var1, [n1])
+        allocate(v2(n2), m2(n2), m2d(nx,ny))
         call map_apply_vec(map, v1, v2, mtd, miss, radius, m2)
         var2 = reshape(v2, [nx,ny])
         m2d  = reshape(m2, [nx,ny]) .and. maskp2d
@@ -384,9 +375,112 @@ contains
             call map_postprocess(var2, miss, maskp2d, name, fill_method, filt_method, filt_par, verbose)
         end if
 
-        deallocate(v1, v2, m2, m2d, maskp2d)
+        deallocate(v2, m2, m2d, maskp2d)
         if (allocated(var2_save)) deallocate(var2_save)
+    end subroutine map_field_to_grid
+
+    subroutine map_field_to_points(map, name, v1, var2, method, missing_value, radius, mask2, &
+                                   reset, mask_pack)
+        ! Core 1D-target worker: the source is already flattened to v1. 1D targets
+        ! support reset/mask_pack only (fill/filter are inherently 2D grid ops):
+        !   reset     - .true. (default) blanks var2 to missing first; .false.
+        !               leaves non-interpolated target points untouched.
+        !   mask_pack - only interpolate where .true.; others keep the reset value.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(dp),         intent(in)    :: v1(:)
+        real(dp),         intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+
+        character(len=56) :: mtd
+        real(dp) :: miss
+        logical  :: reset_pts
+        integer  :: n2
+        real(dp), allocatable :: v2(:), var2_save(:)
+        logical,  allocatable :: m2(:), maskp(:)
+
+        mtd = "mean"
+        if (present(method)) mtd = trim(method)
+        miss = mv_dp
+        if (present(missing_value)) miss = missing_value
+        reset_pts = .true.
+        if (present(reset)) reset_pts = reset
+
+        n2 = size(var2)
+
+        allocate(maskp(n2))
+        maskp = .true.
+        if (present(mask_pack)) maskp = mask_pack
+
+        if (.not. reset_pts) then
+            allocate(var2_save(n2))
+            var2_save = var2
+        end if
+
+        allocate(v2(n2), m2(n2))
+        call map_apply_vec(map, v1, v2, mtd, miss, radius, m2)
+        var2 = v2
+        m2   = m2 .and. maskp
+
+        if (reset_pts) then
+            where (.not. m2) var2 = miss
+        else
+            where (.not. m2) var2 = var2_save
+        end if
+
+        if (present(mask2)) mask2 = m2
+
+        deallocate(v2, m2, maskp)
+        if (allocated(var2_save)) deallocate(var2_save)
+    end subroutine map_field_to_points
+
+    subroutine map_field_grid_grid(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                   reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+        ! Map a 2D source field var1 onto the 2D target var2 (dp).
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(dp),         intent(in)    :: var1(:,:)
+        real(dp),         intent(inout) :: var2(:,:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:,:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:,:)
+        character(len=*), optional, intent(in)  :: fill_method
+        character(len=*), optional, intent(in)  :: filt_method
+        real(dp),         optional, intent(in)  :: filt_par(:)
+        logical,          optional, intent(in)  :: verbose
+
+        real(dp), allocatable :: v1(:)
+        allocate(v1(size(var1)))
+        v1 = reshape(var1, [size(var1)])
+        call map_field_to_grid(map, name, v1, var2, method, missing_value, radius, mask2, &
+                               reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+        deallocate(v1)
     end subroutine map_field_grid_grid
+
+    subroutine map_field_points_points(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                       reset, mask_pack)
+        ! source a point set (1D), target a point set (1D)
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(dp),         intent(in)    :: var1(:)
+        real(dp),         intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+        call map_field_to_points(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                 reset, mask_pack)
+    end subroutine map_field_points_points
 
     subroutine map_field_grid_grid_sp(map, name, var1, var2, method, missing_value, radius, mask2, &
                                       reset, mask_pack, fill_method, filt_method, filt_par, verbose)
@@ -542,45 +636,260 @@ contains
         deallocate(mask2d)
     end subroutine map_postprocess
 
-    subroutine map_field_grid_points(map, name, var1, var2, method, missing_value, radius, mask2)
+    subroutine map_field_grid_points(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                     reset, mask_pack)
         ! source on a grid (2D), target a point set (1D)
-        type(map_class),  intent(in)  :: map
-        character(len=*), intent(in)  :: name
-        real(dp),         intent(in)  :: var1(:,:)
-        real(dp),         intent(out) :: var2(:)
-        character(len=*), intent(in)  :: method
-        real(dp), optional, intent(in)  :: missing_value
-        real(dp), optional, intent(in)  :: radius
-        logical,  optional, intent(out) :: mask2(:)
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(dp),         intent(in)    :: var1(:,:)
+        real(dp),         intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
         real(dp), allocatable :: v1(:)
-        integer :: n1
-        n1 = size(var1)
-        allocate(v1(n1))
-        v1 = reshape(var1, [n1])
-        call map_apply_vec(map, v1, var2, method, missing_value, radius, mask2)
+        allocate(v1(size(var1)))
+        v1 = reshape(var1, [size(var1)])
+        call map_field_to_points(map, name, v1, var2, method, missing_value, radius, mask2, &
+                                 reset, mask_pack)
         deallocate(v1)
     end subroutine map_field_grid_points
 
-    subroutine map_field_points_grid(map, name, var1, var2, method, missing_value, radius, mask2)
+    subroutine map_field_points_grid(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                     reset, mask_pack, fill_method, filt_method, filt_par, verbose)
         ! source a point set (1D), target on a grid (2D)
-        type(map_class),  intent(in)  :: map
-        character(len=*), intent(in)  :: name
-        real(dp),         intent(in)  :: var1(:)
-        real(dp),         intent(out) :: var2(:,:)
-        character(len=*), intent(in)  :: method
-        real(dp), optional, intent(in)  :: missing_value
-        real(dp), optional, intent(in)  :: radius
-        logical,  optional, intent(out) :: mask2(:,:)
-        real(dp), allocatable :: v2(:)
-        logical,  allocatable :: m2(:)
-        integer :: n2
-        n2 = size(var2)
-        allocate(v2(n2), m2(n2))
-        call map_apply_vec(map, var1, v2, method, missing_value, radius, m2)
-        var2 = reshape(v2, shape(var2))
-        if (present(mask2)) mask2 = reshape(m2, shape(mask2))
-        deallocate(v2, m2)
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(dp),         intent(in)    :: var1(:)
+        real(dp),         intent(inout) :: var2(:,:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:,:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:,:)
+        character(len=*), optional, intent(in)  :: fill_method
+        character(len=*), optional, intent(in)  :: filt_method
+        real(dp),         optional, intent(in)  :: filt_par(:)
+        logical,          optional, intent(in)  :: verbose
+        call map_field_to_grid(map, name, var1, var2, method, missing_value, radius, mask2, &
+                               reset, mask_pack, fill_method, filt_method, filt_par, verbose)
     end subroutine map_field_points_grid
+
+    ! ----- sp / integer wrappers for the points/grid combos (accumulate in dp) -
+
+    subroutine map_field_points_grid_sp(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                        reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+        ! source a point set (1D), target on a grid (2D); sp store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(sp),         intent(in)    :: var1(:)
+        real(sp),         intent(inout) :: var2(:,:)
+        character(len=*), optional, intent(in)  :: method
+        real(sp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:,:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:,:)
+        character(len=*), optional, intent(in)  :: fill_method
+        character(len=*), optional, intent(in)  :: filt_method
+        real(sp),         optional, intent(in)  :: filt_par(:)
+        logical,          optional, intent(in)  :: verbose
+
+        real(dp), allocatable :: v1(:), v2(:,:), fpar(:)
+        logical,  allocatable :: m2(:,:)
+        real(dp) :: miss
+        integer  :: nx, ny
+
+        nx = size(var2,1); ny = size(var2,2)
+        allocate(v1(size(var1)), v2(nx,ny), m2(nx,ny))
+        v1 = real(var1, dp)
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+        if (present(filt_par)) then
+            allocate(fpar(size(filt_par)))
+            fpar = real(filt_par, dp)
+        end if
+
+        call map_field_to_grid(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                               mask2=m2, reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
+                               filt_method=filt_method, filt_par=fpar, verbose=verbose)
+
+        var2 = real(v2, sp)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+        if (allocated(fpar)) deallocate(fpar)
+    end subroutine map_field_points_grid_sp
+
+    subroutine map_field_points_grid_int(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                         reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+        ! source a point set (1D), target on a grid (2D); integer store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        integer,          intent(in)    :: var1(:)
+        integer,          intent(inout) :: var2(:,:)
+        character(len=*), optional, intent(in)  :: method
+        integer,          optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:,:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:,:)
+        character(len=*), optional, intent(in)  :: fill_method
+        character(len=*), optional, intent(in)  :: filt_method
+        real(dp),         optional, intent(in)  :: filt_par(:)
+        logical,          optional, intent(in)  :: verbose
+
+        real(dp), allocatable :: v1(:), v2(:,:)
+        logical,  allocatable :: m2(:,:)
+        real(dp) :: miss
+        integer  :: nx, ny
+
+        nx = size(var2,1); ny = size(var2,2)
+        allocate(v1(size(var1)), v2(nx,ny), m2(nx,ny))
+        v1 = real(var1, dp)
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+
+        call map_field_to_grid(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                               mask2=m2, reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
+                               filt_method=filt_method, filt_par=filt_par, verbose=verbose)
+
+        var2 = nint(v2)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+    end subroutine map_field_points_grid_int
+
+    subroutine map_field_grid_points_sp(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                        reset, mask_pack)
+        ! source on a grid (2D), target a point set (1D); sp store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(sp),         intent(in)    :: var1(:,:)
+        real(sp),         intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        real(sp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+
+        real(dp), allocatable :: v1(:), v2(:)
+        logical,  allocatable :: m2(:)
+        real(dp) :: miss
+
+        allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
+        v1 = reshape(real(var1, dp), [size(var1)])
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+
+        call map_field_to_points(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+
+        var2 = real(v2, sp)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+    end subroutine map_field_grid_points_sp
+
+    subroutine map_field_grid_points_int(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                         reset, mask_pack)
+        ! source on a grid (2D), target a point set (1D); integer store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        integer,          intent(in)    :: var1(:,:)
+        integer,          intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        integer,          optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+
+        real(dp), allocatable :: v1(:), v2(:)
+        logical,  allocatable :: m2(:)
+        real(dp) :: miss
+
+        allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
+        v1 = reshape(real(var1, dp), [size(var1)])
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+
+        call map_field_to_points(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+
+        var2 = nint(v2)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+    end subroutine map_field_grid_points_int
+
+    subroutine map_field_points_points_sp(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                          reset, mask_pack)
+        ! source a point set (1D), target a point set (1D); sp store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        real(sp),         intent(in)    :: var1(:)
+        real(sp),         intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        real(sp),         optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+
+        real(dp), allocatable :: v1(:), v2(:)
+        logical,  allocatable :: m2(:)
+        real(dp) :: miss
+
+        allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
+        v1 = real(var1, dp)
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+
+        call map_field_to_points(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+
+        var2 = real(v2, sp)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+    end subroutine map_field_points_points_sp
+
+    subroutine map_field_points_points_int(map, name, var1, var2, method, missing_value, radius, mask2, &
+                                           reset, mask_pack)
+        ! source a point set (1D), target a point set (1D); integer store.
+        type(map_class),  intent(in)    :: map
+        character(len=*), intent(in)    :: name
+        integer,          intent(in)    :: var1(:)
+        integer,          intent(inout) :: var2(:)
+        character(len=*), optional, intent(in)  :: method
+        integer,          optional, intent(in)  :: missing_value
+        real(dp),         optional, intent(in)  :: radius
+        logical,          optional, intent(out) :: mask2(:)
+        logical,          optional, intent(in)  :: reset
+        logical,          optional, intent(in)  :: mask_pack(:)
+
+        real(dp), allocatable :: v1(:), v2(:)
+        logical,  allocatable :: m2(:)
+        real(dp) :: miss
+
+        allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
+        v1 = real(var1, dp)
+        v2 = real(var2, dp)
+        miss = mv_dp
+        if (present(missing_value)) miss = real(missing_value, dp)
+
+        call map_field_to_points(map, name, v1, v2, method=method, missing_value=miss, radius=radius, &
+                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+
+        var2 = nint(v2)
+        if (present(mask2)) mask2 = m2
+        deallocate(v1, v2, m2)
+    end subroutine map_field_points_points_int
 
     ! ----- apply dispatch (bilinear handled here; rest delegate to weight_map) -
 

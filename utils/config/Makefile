@@ -247,6 +247,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_ncio_interp.x $(testdir)/coords/test_ncio_interp.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_parity.x $(testdir)/coords/test_parity.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
