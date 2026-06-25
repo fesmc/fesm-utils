@@ -223,6 +223,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_bilinear.x $(testdir)/coords/test_bilinear.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_ccsm3_grl.x $(testdir)/coords/test_ccsm3_grl.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
