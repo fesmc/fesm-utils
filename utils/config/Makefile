@@ -56,9 +56,6 @@ $(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
 $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/esm.o: $(srcdir)/esm.f90 $(objdir)/varslice.o
-	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
-
 $(objdir)/grid_to_cdo.o: $(srcdir)/coords/grid_to_cdo.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -197,8 +194,6 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o
 
-#					$(objdir)/esm.o \
-
 ###############################################
 ##
 ## Compilation of complete programs
@@ -217,13 +212,6 @@ fesmutils-static: $(fesmutils_libs)
 	@echo " "
 	@echo "    $(objdir)/libfesmutils.a is ready."
 	@echo " "
-
-test : fesmutils-static
-		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test.x $(testdir)/test.f90 \
-			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
-		@echo " "
-		@echo "    $(bindir)/test.x is ready."
-		@echo " "
 
 # coords library test programs
 test-coords : fesmutils-static
@@ -275,8 +263,8 @@ usage:
 	@echo ""
 	@echo "    * USAGE * "
 	@echo ""
-	@echo " make test       : compiles test.x"
-	@echo " make clean      : cleans object files"
+	@echo " make test-coords : compiles the coords test programs"
+	@echo " make clean       : cleans object files"
 	@echo ""
 
 clean:
