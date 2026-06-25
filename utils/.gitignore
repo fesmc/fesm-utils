@@ -1,0 +1,4 @@
+# Runtime outputs from tests/benchmarks (not source)
+bench_tmp/
+logs/
+test_wm_*.nc

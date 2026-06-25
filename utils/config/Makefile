@@ -263,6 +263,13 @@ test-coords : fesmutils-static
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
 
+bench-coords : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/bench_conservative.x $(testdir)/coords/bench_conservative.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
+		@echo " "
+
 .PHONY : usage
 usage:
 	@echo ""

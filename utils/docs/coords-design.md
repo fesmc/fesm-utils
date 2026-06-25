@@ -167,6 +167,29 @@ Each is gated on its validation before the next; validation is self-contained
 5. **Migrate `varslice`** to the unified `map_field`; remove the legacy SCRIP
    applier. (Separate, isolated change.)
 
+## Status (2026-06)
+
+All milestones are implemented and gate-tested (`make test-coords`, 16 programs):
+
+1. Scaffold + geometry — **done**.
+2. Unified IDW mapping (`weight_map`, k-d tree, `map_init`/`map_field`,
+   SCRIP-superset I/O) — **done**.
+3. Conservative A→B and 4. Conservative C — **done** (planar same-system +
+   cross-system; spherical great-circle clip via NSUB=8 subsampling).
+5. `varslice` migrated to `map_field`; the legacy SCRIP applier (`map_scrip_field`)
+   is retained only as a test reference. The `nc_read_interp` family moved to a new
+   `ncio_interp` module (also on `map_field`).
+
+Stage-A bridge: `map_scrip_to_weight_map` imports a plain CDO SCRIP map into the
+unified store; `map_read` loads one straight into a `map_class`.
+
+**Performance vs `cdo`** is measured in [coords-performance.md](coords-performance.md)
+(`make bench-coords`). Summary: correctness matches `cdo` and planar/cartesian
+remapping (which `cdo` cannot do natively) is fast and exact; but conservative
+weight generation is not yet speed-competitive with `cdo`'s C implementation
+(~25× slower for lat-lon→lat-lon), and the cross-system projected path has a known,
+fixable O(n_src·n_tgt) search inefficiency. The runtime `cdo` dependency is removed.
+
 ## Validation
 
 Self-contained only:
