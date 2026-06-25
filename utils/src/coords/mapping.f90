@@ -213,8 +213,15 @@ contains
                     tquad(nl) = quadrant_latlon(pts2%lon(i), pts2%lat(i), &
                                                 pts1%lon(j), pts1%lat(j))
                 end if
-                txn(nl) = pts1%x(j)
-                tyn(nl) = pts1%y(j)
+                ! Store neighbor position in the map's metric space (for bilinear):
+                ! projected meters when Cartesian, otherwise lon/lat degrees.
+                if (use_cart) then
+                    txn(nl) = pts1%x(j)*xyc
+                    tyn(nl) = pts1%y(j)*xyc
+                else
+                    txn(nl) = pts1%lon(j)
+                    tyn(nl) = pts1%lat(j)
+                end if
             end do
         end do
 
@@ -268,7 +275,7 @@ contains
         real(dp), optional, intent(in)  :: missing_value
         real(dp), optional, intent(in)  :: radius
         logical,  optional, intent(out) :: mask2(:)
-        call weight_map_apply(map%wm, var1, var2, method, missing_value, radius, mask2)
+        call map_apply_vec(map, var1, var2, method, missing_value, radius, mask2)
     end subroutine map_field_points_points
 
     subroutine map_field_grid_grid(map, name, var1, var2, method, missing_value, radius, mask2)
@@ -286,10 +293,125 @@ contains
         n1 = size(var1); n2 = size(var2)
         allocate(v1(n1), v2(n2), m2(n2))
         v1 = reshape(var1, [n1])
-        call weight_map_apply(map%wm, v1, v2, method, missing_value, radius, m2)
+        call map_apply_vec(map, v1, v2, method, missing_value, radius, m2)
         var2 = reshape(v2, shape(var2))
         if (present(mask2)) mask2 = reshape(m2, shape(mask2))
         deallocate(v1, v2, m2)
     end subroutine map_field_grid_grid
+
+    ! ----- apply dispatch (bilinear handled here; rest delegate to weight_map) -
+
+    subroutine map_apply_vec(map, var1, var2, method, missing_value, radius, mask2)
+        type(map_class),  intent(in)  :: map
+        real(dp),         intent(in)  :: var1(:)
+        real(dp),         intent(out) :: var2(:)
+        character(len=*), intent(in)  :: method
+        real(dp), optional, intent(in)  :: missing_value
+        real(dp), optional, intent(in)  :: radius
+        logical,  optional, intent(out) :: mask2(:)
+        if (trim(method) == "bilinear" .or. trim(method) == "bilin") then
+            call bilinear_apply(map, var1, var2, missing_value, mask2)
+        else
+            call weight_map_apply(map%wm, var1, var2, method, missing_value, radius, mask2)
+        end if
+    end subroutine map_apply_vec
+
+    subroutine bilinear_apply(map, var1, var2, missing_value, mask2)
+        ! Bilinear from the 4 quadrant corners. If all 4 are present and valid,
+        ! true bilinear; otherwise graceful degradation to quadrant inverse-
+        ! distance over the surviving corners (default per coords-design Q7).
+        type(map_class),  intent(in)  :: map
+        real(dp),         intent(in)  :: var1(:)
+        real(dp),         intent(out) :: var2(:)
+        real(dp), optional, intent(in)  :: missing_value
+        logical,  optional, intent(out) :: mask2(:)
+
+        real(dp) :: miss, a, f, xyc
+        logical  :: use_cart
+        integer  :: k, j, j1, j2, q
+        integer  :: iq(4)                  ! link position of nearest valid neighbor per quadrant
+        real(dp) :: dq(4)
+        real(dp) :: z1, z2, z3, z4, tx, ty
+        real(dp) :: alpha1, alpha2, alpha3, ymid1, ymid0
+        real(dp) :: dx1, dx1t, dx2, dx2t, dy1, dy1t, p1, p0
+        real(dp) :: wsum, vsum, w
+
+        miss = MISSING_VALUE_DEFAULT
+        if (present(missing_value)) miss = missing_value
+        use_cart = map%is_same_map .and. map%cs%is_cartesian
+        xyc = map%cs%xy_conv
+        a   = map%cs%planet%a
+        f   = map%cs%planet%f
+
+        var2 = miss
+        if (present(mask2)) mask2 = .false.
+
+        do k = 1, map%wm%n_dst
+            j1 = map%wm%dst_off(k); j2 = map%wm%dst_off(k+1) - 1
+            if (j2 < j1) cycle
+
+            ! nearest valid neighbor in each quadrant
+            iq = 0; dq = huge(1.0_dp)
+            do j = j1, j2
+                q = map%wm%quadrant(j)
+                if (q >= 1 .and. q <= 4) then
+                    if (var1(map%wm%src(j)) /= miss .and. map%wm%dist(j) < dq(q)) then
+                        dq(q) = map%wm%dist(j); iq(q) = j
+                    end if
+                end if
+            end do
+
+            if (all(iq > 0)) then
+                ! all four corners -> true bilinear
+                z1 = var1(map%wm%src(iq(1)))
+                z2 = var1(map%wm%src(iq(2)))
+                z3 = var1(map%wm%src(iq(3)))
+                z4 = var1(map%wm%src(iq(4)))
+                if (use_cart) then
+                    tx = map%x(k)*xyc; ty = map%y(k)*xyc
+                else
+                    tx = map%lon(k);   ty = map%lat(k)
+                end if
+                ymid1 = 0.5_dp*(map%wm%yn(iq(2)) + map%wm%yn(iq(1)))
+                ymid0 = 0.5_dp*(map%wm%yn(iq(3)) + map%wm%yn(iq(4)))
+                if (use_cart) then
+                    dx1  = cartesian_distance(tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+                    dx1t = cartesian_distance(map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+                    dx2  = cartesian_distance(tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+                    dx2t = cartesian_distance(map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+                    dy1  = cartesian_distance(tx, ty, tx, ymid0)
+                    dy1t = cartesian_distance(tx, ymid1, tx, ymid0)
+                else
+                    dx1  = planet_distance(a, f, tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+                    dx1t = planet_distance(a, f, map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+                    dx2  = planet_distance(a, f, tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+                    dx2t = planet_distance(a, f, map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+                    dy1  = planet_distance(a, f, tx, ty, tx, ymid0)
+                    dy1t = planet_distance(a, f, tx, ymid1, tx, ymid0)
+                end if
+                alpha1 = 0.0_dp; if (dx1t > 0.0_dp) alpha1 = dx1/dx1t
+                alpha2 = 0.0_dp; if (dx2t > 0.0_dp) alpha2 = dx2/dx2t
+                alpha3 = 0.0_dp; if (dy1t > 0.0_dp) alpha3 = dy1/dy1t
+                p1 = z2 + alpha1*(z1 - z2)
+                p0 = z3 + alpha2*(z4 - z3)
+                var2(k) = p0 + alpha3*(p1 - p0)
+                if (present(mask2)) mask2(k) = .true.
+            else
+                ! graceful degradation: quadrant inverse-distance over survivors
+                wsum = 0.0_dp; vsum = 0.0_dp
+                do q = 1, 4
+                    if (iq(q) > 0) then
+                        w = 1.0_dp / max(dq(q), 1.0e-12_dp)**2
+                        wsum = wsum + w
+                        vsum = vsum + w*var1(map%wm%src(iq(q)))
+                    end if
+                end do
+                if (wsum > 0.0_dp) then
+                    var2(k) = vsum/wsum
+                    if (present(mask2)) mask2(k) = .true.
+                end if
+            end if
+        end do
+    end subroutine bilinear_apply
 
 end module mapping
