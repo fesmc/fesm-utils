@@ -33,9 +33,9 @@ regime               n_src    n_tgt   t_coords   t_cdo    coords/cdo   cons_co  
 cart->cart  n60       3600    14400    0.037      n/a        n/a        1.1e-14    n/a          n/a
 cart->cart  n120     14400    57600    0.150      n/a        n/a        2.7e-15    n/a          n/a
 cart->cart  n180     32400   129600    0.340      n/a        n/a        9.5e-16    n/a          n/a
-ll->stereo  dx40km   16380     2888    8.08       0.057      142x       0          0            3.5e-1
-ll->stereo  dx20km   16380    11476   25.2        0.085      295x       0          0            3.5e-1
-ll->stereo  dx10km   16380    45904  100.4        0.197      510x       0          0            3.6e-1
+ll->stereo  dx40km   16380     2888    0.020      0.049      0.40x      0          0            2.0e-1
+ll->stereo  dx20km   16380    11476    0.042      0.077      0.55x      0          0            2.2e-1
+ll->stereo  dx10km   16380    45904    0.127      0.194      0.65x      0          0            2.3e-1
 ll->ll      dx1.5deg 16380    29040    1.81       0.076       24x       0          0            2.8e-3
 ll->ll      dx1.0deg 16380    65160    2.86       0.123       23x       0          0            5.9e-3
 ll->ll      dx0.75   16380   115680    4.28       0.172       25x       0          0            3.6e-3
@@ -53,10 +53,10 @@ idw ll->stereo dx10  16380    45904    0.482      0.124      3.9x        3.3e-2
 
 ## What this says
 
-**Is coords competitive with cdo on raw weight-generation speed?** Not yet, for
-spherical or cross-system cases — `cdo`'s mature C implementation (YAC) is
-~25× faster for lat-lon→lat-lon conservative and dramatically faster for the
-cross-system case. coords' advantage is **correctness with no runtime `cdo`
+**Is coords competitive with cdo on raw weight-generation speed?** For the
+cross-system (lat-lon→projected) case it is now **faster than cdo** (0.4–0.65×
+its time); for lat-lon→lat-lon conservative `cdo`'s mature C implementation (YAC)
+is still ~25× faster. coords' advantage is **correctness with no runtime `cdo`
 dependency**, a single in-memory weight store, and being **fast and exact where
 `cdo` does not natively apply**.
 
@@ -73,35 +73,37 @@ Regime by regime:
    weight generation is a one-time cost, then `map_field` is cheap.
 
 3. **Lat-lon → regional projected (cross-system planar).** Correct (conservation
-   exact) but **pathologically slow** — 100 s for 46k targets, ~500× slower than
-   cdo, scaling as O(n_src·n_tgt). Root cause (see below) is a fixable search
-   inefficiency, not the clipping itself.
+   exact) and now **fast** — 0.13 s for 46k targets, ~0.65× cdo's time. The
+   candidate search runs on the unit sphere (see below); the planar
+   Sutherland-Hodgman clip itself was never the bottleneck.
 
 4. **IDW (kdtree shepard vs `cdo gendis`).** Comparable accuracy (~3e-2),
    ~2.5–4× slower than cdo at these sizes; the gap is mostly k-d tree build +
    exact-distance re-rank overhead.
 
-### The cross-system slowdown (fixable)
+### The cross-system slowdown (fixed)
 
-`conservative_planar` builds a k-d tree over the source-cell centers projected
-into the **target** plane, and for each target searches a radius
+Originally `conservative_planar` built a k-d tree over the source-cell centers
+projected into the **target** plane, and for each target searched a radius
 `0.5·target_diag + maxsrcdiag`, where `maxsrcdiag` is the largest projected
 source-cell diagonal. When the source is **global** and the target is a
 **regional** projection, source cells far from the projection center distort
 enormously (stereographic blows up away from its center), so `maxsrcdiag`
-becomes huge. The radius then pulls nearly every source cell for every target,
-defeating the k-d tree and degrading to O(n_src·n_tgt).
+became huge. The radius then pulled nearly every source cell for every target,
+defeating the k-d tree and degrading to O(n_src·n_tgt) — 100 s for 46k targets.
 
-Fix directions (future work): restrict the source set to cells whose centers lie
-near the target domain before computing `maxsrcdiag` (e.g. pre-clip the source by
-the target bounding region), or perform the candidate search on the sphere (as
-the spherical path does) rather than in the distorting projection plane. Either
-keeps the candidate set per target O(1) and should bring cross-system timing in
-line with the lat-lon→lat-lon path.
+**Fix:** for the cross-system path the candidate search now runs on the **unit
+sphere** (the same undistorted geometry `conservative_spherical` uses): the k-d
+tree is built over source-cell centers as 3D unit vectors, and each target queries
+a chord radius from the source + target angular cell size (the projected target's
+cell size is converted to degrees via the planet radius). Source corners are still
+projected into the target plane once for the planar clip, but the candidate set
+per target is now O(1). Result: 100 s → 0.13 s, conservation unchanged (exact).
+The `same_sys` path is undistorted and keeps its planar tree.
 
 ### Accuracy caveat for projected targets
 
-`max|co-cdo|` is ~3.5e-1 for `ll->stereo` vs ~3e-3 for `ll->ll`. Conservation is
+`max|co-cdo|` is ~2e-1 for `ll->stereo` vs ~3e-3 for `ll->ll`. Conservation is
 exact (`cons = 0`) in both, so this is an interpolation-detail difference, not a
 mass error. It is concentrated where the two pipelines treat grid edges
 differently — the benchmark uses the deliberately simple CDO grid descriptions
@@ -114,10 +116,9 @@ discrepancy warrants a closer per-point look before relying on it.
 
 coords delivers the design's **correctness** goal (matches cdo on lat-lon
 conservation; handles planar cases cdo cannot) and removes the runtime cdo
-dependency. The design's **speed** goal is only partly met: the k-d tree avoids
-O(N·M) for IDW neighbor search, but conservative weight generation is not yet
-competitive with cdo's C implementation, and the cross-system path has a specific,
-fixable inefficiency. For the typical workflow — generate weights once, then
-apply `map_field` many times — current speed is acceptable for cartesian and
-lat-lon targets; cross-system projected targets should be optimized before use at
-scale.
+dependency. The design's **speed** goal is largely met: the k-d tree avoids
+O(N·M) for IDW neighbor search, cartesian and cross-system conservative weight
+generation are at or faster than cdo, and only the lat-lon→lat-lon spherical clip
+remains ~25× slower than cdo's C implementation. For the typical workflow —
+generate weights once, then apply `map_field` many times — current speed is
+acceptable across all regimes.

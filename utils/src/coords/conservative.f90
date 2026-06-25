@@ -52,6 +52,7 @@ contains
         integer  :: n1, n2, nx1, ny1, nx2, ny2
         integer  :: i, j, ic, jc, c, cs, cc, k, nf, nl, nlmax, no
         real(dp) :: rad, diag2, area, maxsrcdiag, d, xyc, px, py
+        real(dp) :: cx, cy, cz, srcdeg, tgtdeg
         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source corners in target plane
@@ -90,8 +91,22 @@ contains
         map%lon = reshape(grid2%lon, [n2])
         map%lat = reshape(grid2%lat, [n2])
 
-        ! Express every source cell (corners + center) in the TARGET plane.
-        allocate(scornx(4, n1), scorny(4, n1), emb(2, n1))
+        ! Express every source cell's corners in the TARGET plane (the planar clip
+        ! runs there in both modes). The candidate-search tree differs by mode:
+        !   - same-system: planar tree over projected source centers.
+        !   - cross-system (lat-lon -> projection): tree over source centers on the
+        !     UNIT SPHERE. Projecting source centers would distort enormously far
+        !     from the projection origin (stereographic diverges near the antipode),
+        !     inflating the search radius until every target pulls nearly every
+        !     source and the k-d tree degrades to O(n_src*n_tgt). The sphere is
+        !     undistorted, so the candidate set per target stays O(1).
+        !     (see docs/coords-performance.md)
+        allocate(scornx(4, n1), scorny(4, n1))
+        if (same_sys) then
+            allocate(emb(2, n1))
+        else
+            allocate(emb(3, n1))
+        end if
         maxsrcdiag = 0.0_dp
         do jc = 1, ny1
             do ic = 1, nx1
@@ -100,25 +115,38 @@ contains
                 if (same_sys) then
                     scornx(:,cs) = lx; scorny(:,cs) = ly
                     emb(1,cs) = grid1%x(ic,jc); emb(2,cs) = grid1%y(ic,jc)
+                    d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
+                           + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
+                    maxsrcdiag = max(maxsrcdiag, d)
                 else
-                    ! lx,ly are lon,lat -> project into the target projection plane
+                    ! lx,ly are lon,lat -> project corners into the target plane
                     do k = 1, 4
                         call oblimap_projection(lx(k), ly(k), px, py, grid2%cs%proj)
                         scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
                     end do
-                    call oblimap_projection(grid1%lon(ic,jc), grid1%lat(ic,jc), px, py, grid2%cs%proj)
-                    emb(1,cs) = px/xyc; emb(2,cs) = py/xyc
+                    ! candidate search uses the undistorted unit-sphere center
+                    call lonlat_to_xyz(grid1%lon(ic,jc), grid1%lat(ic,jc), cx, cy, cz)
+                    emb(1,cs) = cx; emb(2,cs) = cy; emb(3,cs) = cz
                 end if
-                d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
-                       + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
-                maxsrcdiag = max(maxsrcdiag, d)
             end do
         end do
         call kdtree_build(tree, emb)
 
-        ! candidate radius: half target diagonal + largest source-cell diagonal
-        diag2 = sqrt(grid2%G%dx**2 + grid2%G%dy**2)
-        rad   = 0.5_dp*diag2 + maxsrcdiag
+        ! candidate radius
+        if (same_sys) then
+            ! planar: half target diagonal + largest source-cell diagonal
+            diag2 = sqrt(grid2%G%dx**2 + grid2%G%dy**2)
+            rad   = 0.5_dp*diag2 + maxsrcdiag
+        else
+            ! chord on the unit sphere from source + target angular cell size.
+            ! source is lon/lat (degrees); the projected target's cell size (grid
+            ! units) is converted to degrees via the planet radius. Mirrors the
+            ! radius in conservative_spherical: chord(src + tgt + 0.5*tgt).
+            srcdeg = max(grid1%G%dx, grid1%G%dy)
+            tgtdeg = (max(grid2%G%dx, grid2%G%dy)*xyc/grid2%cs%planet%a) &
+                     / degrees_to_radians
+            rad    = chord(srcdeg + 1.5_dp*tgtdeg)
+        end if
 
         allocate(cidx(n1), cd2(n1))
         nlmax = max(n2*16, n1)
@@ -129,8 +157,13 @@ contains
             do i = 1, nx2
                 c = (j-1)*nx2 + i                 ! target cell (column-major)
                 call cell_corners_grid(grid2, i, j, tcx, tcy)
-                qpt = [grid2%x(i,j), grid2%y(i,j)]
-                call kdtree_radius(tree, qpt, rad, cidx, cd2, nf)
+                if (same_sys) then
+                    qpt = [grid2%x(i,j), grid2%y(i,j)]
+                    call kdtree_radius(tree, qpt, rad, cidx, cd2, nf)
+                else
+                    call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
+                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
+                end if
                 do cc = 1, nf
                     cs = cidx(cc)
                     call polygon_clip(scornx(:,cs), scorny(:,cs), tcx, tcy, ox, oy, no)
