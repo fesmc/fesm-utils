@@ -130,6 +130,9 @@ $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
+$(objdir)/ncio_transpose.o: $(srcdir)/ncio_transpose.f90 $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
+
 $(objdir)/nml.o: $(srcdir)/nml.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -185,6 +188,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/interp2D.o \
 					$(objdir)/mapping_scrip.o \
 					$(objdir)/ncio.o \
+					$(objdir)/ncio_transpose.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
 					$(objdir)/subgrid.o \
