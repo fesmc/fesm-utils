@@ -20,32 +20,35 @@ module conservative
     use kdtree
     use weight_map
     use polygons
-    use mapping,         only: map_class
 
     implicit none
     private
 
     integer, parameter :: NSUB = 8   ! great-circle segments per parallel edge (stage C)
 
-    public :: map_init_conservative
+    public :: conservative_weights
 
 contains
 
-    subroutine map_init_conservative(map, grid1, grid2)
-        ! Dispatch: planar clip for Cartesian/projected targets, spherical clip
-        ! (great-circle arcs) for lat-lon / Gaussian targets.
-        type(map_class),  intent(inout) :: map
-        type(grid_class), intent(in)    :: grid1, grid2
+    subroutine conservative_weights(wm, grid1, grid2)
+        ! Build the conservative MAP_WEIGHT weight store for grid1 -> grid2 via
+        ! analytic polygon clipping. Dispatch: planar clip for Cartesian/projected
+        ! targets, spherical clip (great-circle arcs) for lat-lon / Gaussian
+        ! targets. The map_class target metadata is assembled by the caller
+        ! (mapping%map_init_conservative); this routine only fills the weight store,
+        ! which keeps `conservative` independent of `mapping` (no circular use).
+        type(weight_map_t), intent(inout) :: wm
+        type(grid_class),   intent(in)    :: grid1, grid2
         if (grid2%cs%is_cartesian) then
-            call conservative_planar(map, grid1, grid2)
+            call conservative_planar(wm, grid1, grid2)
         else
-            call conservative_spherical(map, grid1, grid2)
+            call conservative_spherical(wm, grid1, grid2)
         end if
-    end subroutine map_init_conservative
+    end subroutine conservative_weights
 
-    subroutine conservative_planar(map, grid1, grid2)
-        type(map_class),  intent(inout) :: map
-        type(grid_class), intent(in)    :: grid1, grid2
+    subroutine conservative_planar(wm, grid1, grid2)
+        type(weight_map_t), intent(inout) :: wm
+        type(grid_class),   intent(in)    :: grid1, grid2
 
         type(kdtree_t) :: tree
         logical  :: same_sys, do_project
@@ -75,21 +78,6 @@ contains
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
         xyc = grid2%cs%xy_conv
-
-        map%name1 = grid1%name
-        map%name2 = grid2%name
-        map%cs    = grid2%cs
-        map%is_grid = .true.
-        map%G     = grid2%G
-        map%npts  = n2
-        map%nmax  = 0
-        map%is_same_map = same_sys
-        if (allocated(map%x)) deallocate(map%x, map%y, map%lon, map%lat)
-        allocate(map%x(n2), map%y(n2), map%lon(n2), map%lat(n2))
-        map%x   = reshape(grid2%x,   [n2])
-        map%y   = reshape(grid2%y,   [n2])
-        map%lon = reshape(grid2%lon, [n2])
-        map%lat = reshape(grid2%lat, [n2])
 
         ! Express every source cell's corners in the TARGET plane (the planar clip
         ! runs there in both modes). The candidate-search tree differs by mode:
@@ -181,23 +169,23 @@ contains
             end do
         end do
 
-        call weight_map_alloc(map%wm, MAP_WEIGHT, n1, n2, nl)
-        map%wm%src(1:nl) = tsrc(1:nl)
-        map%wm%dst(1:nl) = tdst(1:nl)
-        map%wm%w(1:nl)   = tw(1:nl)
-        call weight_map_index(map%wm)
+        call weight_map_alloc(wm, MAP_WEIGHT, n1, n2, nl)
+        wm%src(1:nl) = tsrc(1:nl)
+        wm%dst(1:nl) = tdst(1:nl)
+        wm%w(1:nl)   = tw(1:nl)
+        call weight_map_index(wm)
 
         call kdtree_free(tree)
         deallocate(emb, scornx, scorny, cidx, cd2, tsrc, tdst, tw)
         if (allocated(ox)) deallocate(ox, oy)
     end subroutine conservative_planar
 
-    subroutine conservative_spherical(map, grid1, grid2)
+    subroutine conservative_spherical(wm, grid1, grid2)
         ! Stage C: clip on the unit sphere for lat-lon / Gaussian targets. Cell
         ! parallels (constant-latitude edges) are subsampled into NSUB great-
         ! circle segments; overlap area is the geodesic polygon area.
-        type(map_class),  intent(inout) :: map
-        type(grid_class), intent(in)    :: grid1, grid2
+        type(weight_map_t), intent(inout) :: wm
+        type(grid_class),   intent(in)    :: grid1, grid2
 
         type(kdtree_t) :: tree
         integer  :: n1, n2, nx1, ny1, nx2, ny2
@@ -218,14 +206,6 @@ contains
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
         a = grid2%cs%planet%a; f = grid2%cs%planet%f
-
-        map%name1 = grid1%name; map%name2 = grid2%name
-        map%cs = grid2%cs; map%is_grid = .true.; map%G = grid2%G
-        map%npts = n2; map%nmax = 0; map%is_same_map = compare_coord(grid1, grid2)
-        if (allocated(map%x)) deallocate(map%x, map%y, map%lon, map%lat)
-        allocate(map%x(n2), map%y(n2), map%lon(n2), map%lat(n2))
-        map%x = reshape(grid2%x,[n2]); map%y = reshape(grid2%y,[n2])
-        map%lon = reshape(grid2%lon,[n2]); map%lat = reshape(grid2%lat,[n2])
 
         ! Source cell corners as lon/lat, plus 3D centers for the tree
         allocate(slon(4,n1), slat(4,n1), emb(3,n1))
@@ -278,9 +258,9 @@ contains
             end do
         end do
 
-        call weight_map_alloc(map%wm, MAP_WEIGHT, n1, n2, nl)
-        map%wm%src(1:nl) = tsrc(1:nl); map%wm%dst(1:nl) = tdst(1:nl); map%wm%w(1:nl) = tw(1:nl)
-        call weight_map_index(map%wm)
+        call weight_map_alloc(wm, MAP_WEIGHT, n1, n2, nl)
+        wm%src(1:nl) = tsrc(1:nl); wm%dst(1:nl) = tdst(1:nl); wm%w(1:nl) = tw(1:nl)
+        call weight_map_index(wm)
 
         call kdtree_free(tree)
         deallocate(emb, slon, slat, cidx, cd2, cidx_r, tsrc, tdst, tw)

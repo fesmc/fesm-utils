@@ -106,7 +106,7 @@ $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(
 
 $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
-								$(objdir)/mapping_scrip.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o
+								$(objdir)/mapping_scrip.o $(objdir)/conservative.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
@@ -116,8 +116,9 @@ $(objdir)/ncio_interp.o: $(srcdir)/coords/ncio_interp.f90 $(objdir)/precision.o 
 								$(objdir)/ncio.o $(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
-$(objdir)/conservative.o: $(srcdir)/coords/conservative.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
-								$(objdir)/kdtree.o $(objdir)/weight_map.o $(objdir)/polygons.o $(objdir)/mapping.o
+$(objdir)/conservative.o: $(srcdir)/coords/conservative.f90 $(objdir)/precision.o $(objdir)/constants.o \
+								$(objdir)/coordinates.o $(objdir)/projection_oblimap2.o $(objdir)/planet.o \
+								$(objdir)/kdtree.o $(objdir)/weight_map.o $(objdir)/polygons.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/geodesic.o \
@@ -242,6 +243,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_xsys.x $(testdir)/coords/test_conservative_xsys.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_sphere.x $(testdir)/coords/test_conservative_sphere.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_init_con.x $(testdir)/coords/test_map_init_con.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_varslice_map.x $(testdir)/coords/test_varslice_map.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
