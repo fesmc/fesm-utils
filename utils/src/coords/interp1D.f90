@@ -3,144 +3,163 @@ module interp1D
 
     use precision, only: dp, sp, wp
     use constants, only: mv_dp, pi
-    implicit none 
-    
+    implicit none
+
+    ! interp_linear and interp_spline are generic over sp and dp. The dp routines
+    ! are authoritative (the numerics live in one place); the sp variants promote
+    ! their arguments to dp, call the dp routine, and demote the result back to sp.
     interface interp_linear
-        module procedure interp_linear_pt, interp_linear_vec 
-    end interface 
+        module procedure interp_linear_pt_sp,  interp_linear_pt_dp
+        module procedure interp_linear_vec_sp, interp_linear_vec_dp
+    end interface
+
+    interface interp_spline
+        module procedure interp_spline_sp, interp_spline_dp
+    end interface
 
     private
-    public :: interp_align 
+    public :: interp_align
     public :: interp_linear
     public :: interp1D_bins
     public :: interp_spline
-    
+
 contains
 
     function interp_align(x,y,xout,missing_value,tol) result(yout)
-        ! Fill in a vector of times with the nearest input 
+        ! Fill in a vector of times with the nearest input
         ! times to within a certain tolerance
-        implicit none 
- 
+        implicit none
+
         real(wp), dimension(:), intent(IN) :: x, y
         real(wp), dimension(:), intent(IN) :: xout
-        real(wp), intent(IN), optional :: missing_value, tol 
+        real(wp), intent(IN), optional :: missing_value, tol
         real(wp), dimension(size(xout)) :: yout
-        real(wp) :: tolerance 
-        integer :: i, n, nout 
+        real(wp) :: tolerance
+        integer :: i, n, nout
 
         ! Length of output vector
         nout = size(xout)
 
-        ! Define tolerance for filling points 
+        ! Define tolerance for filling points
 !         tolerance = 0.1d0
-        tolerance = minval(xout(2:nout)-xout(1:nout-1),dim=1)*0.49d0 
-        if (present(tol)) tolerance = tol 
+        tolerance = minval(xout(2:nout)-xout(1:nout-1),dim=1)*0.49d0
+        if (present(tol)) tolerance = tol
 
         ! Define missing values and fill vector intially
         yout = mv_dp
         if (present(missing_value)) yout = missing_value
 
-        do i = 1, nout 
+        do i = 1, nout
             n = minloc(abs(x-xout(i)),dim=1)
-            if (abs(x(n)-xout(i)) <= tolerance) yout(i) = y(n) 
-        end do 
-        
+            if (abs(x(n)-xout(i)) <= tolerance) yout(i) = y(n)
+        end do
+
         return
 
     end function interp_align
 
-    function interp_linear_pt(x,y,xout) result(yout)
+    function interp_linear_pt_sp(x,y,xout) result(yout)
+        ! sp wrapper around interp_linear_pt_dp
+        implicit none
+        real(sp), dimension(:), intent(IN) :: x, y
+        real(sp),               intent(IN) :: xout
+        real(sp) :: yout
+        yout = real(interp_linear_pt_dp(real(x,dp),real(y,dp),real(xout,dp)), sp)
+    end function interp_linear_pt_sp
+
+    function interp_linear_pt_dp(x,y,xout) result(yout)
         ! Interpolate y from ordered x to ordered xout positions
 
-        implicit none 
- 
-        real(wp), dimension(:), intent(IN) :: x, y
-        real(wp), intent(IN) :: xout
-        real(wp) :: yout 
-        integer :: i, j, n, nout 
+        implicit none
 
-        n    = size(x) 
+        real(dp), dimension(:), intent(IN) :: x, y
+        real(dp), intent(IN) :: xout
+        real(dp) :: yout
+        integer :: i, j, n, nout
+
+        n    = size(x)
 
         if (xout .lt. x(1)) then
             yout = y(1)
         else if (xout .gt. x(n)) then
             yout = y(n)
         else
-            do j = 1, n 
-                if (x(j) .ge. xout) exit 
+            do j = 1, n
+                if (x(j) .ge. xout) exit
             end do
 
-            if (j .eq. 1) then 
-                yout = y(1) 
-            else if (j .eq. n+1) then 
+            if (j .eq. 1) then
+                yout = y(1)
+            else if (j .eq. n+1) then
                 yout = y(n)
-            else 
+            else
                 yout = interp_linear_internal(x(j-1:j),y(j-1:j),xout)
-            end if 
-        end if 
+            end if
+        end if
 
-        return 
+        return
 
-      end function interp_linear_pt
+      end function interp_linear_pt_dp
 
-    function interp_linear_vec(x,y,xout) result(yout)
+    function interp_linear_vec_sp(x,y,xout) result(yout)
+        ! sp wrapper around interp_linear_vec_dp
+        implicit none
+        real(sp), dimension(:), intent(IN) :: x, y
+        real(sp), dimension(:), intent(IN) :: xout
+        real(sp), dimension(size(xout)) :: yout
+        yout = real(interp_linear_vec_dp(real(x,dp),real(y,dp),real(xout,dp)), sp)
+    end function interp_linear_vec_sp
+
+    function interp_linear_vec_dp(x,y,xout) result(yout)
         ! Interpolate y from ordered x to ordered xout positions
 
-        implicit none 
- 
-        real(wp), dimension(:), intent(IN) :: x, y
-        real(wp), dimension(:), intent(IN) :: xout
-        real(wp), dimension(size(xout)) :: yout 
-        integer :: i, j, n, nout 
+        implicit none
 
-        n    = size(x) 
+        real(dp), dimension(:), intent(IN) :: x, y
+        real(dp), dimension(:), intent(IN) :: xout
+        real(dp), dimension(size(xout)) :: yout
+        integer :: i, j, n, nout
+
+        n    = size(x)
         nout = size(xout)
 
-!         write(*,*) minval(x), maxval(x), n, nout
-
-        do i = 1, nout 
+        do i = 1, nout
             if (xout(i) .lt. x(1)) then
                 yout(i) = y(1)
-!                 write(*,*) 1, xout(i)
             else if (xout(i) .gt. x(n)) then
                 yout(i) = y(n)
-!                 write(*,*) 2, xout(i)
             else
-                do j = 1, n 
-                    if (x(j) .ge. xout(i)) exit 
+                do j = 1, n
+                    if (x(j) .ge. xout(i)) exit
                 end do
 
-                if (j .eq. 1) then 
-                    yout(i) = y(1) 
-!                     write(*,*) 3, xout(i)
-                else if (j .eq. n+1) then 
+                if (j .eq. 1) then
+                    yout(i) = y(1)
+                else if (j .eq. n+1) then
                     yout(i) = y(n)
-!                     write(*,*) 4, xout(i)
-                else 
+                else
                     yout(i) = interp_linear_internal(x(j-1:j),y(j-1:j),xout(i))
-!                     write(*,*) 5, xout(i)
-                end if 
-            end if 
+                end if
+            end if
         end do
 
-        return 
+        return
 
-      end function interp_linear_vec
+      end function interp_linear_vec_dp
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     !   Subroutine :  interp_linear_internal
     !   Author     :  Alex Robinson
-    !   Purpose    :  Interpolates for the y value at the desired x value, 
+    !   Purpose    :  Interpolates for the y value at the desired x value,
     !                 given x and y values around the desired point.
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     function interp_linear_internal(x,y,xout) result(yout)
 
         implicit none
 
-        real(wp), intent(IN)  :: x(2), y(2), xout
-        real(wp) :: yout
-        real(wp) :: alph
+        real(dp), intent(IN)  :: x(2), y(2), xout
+        real(dp) :: yout
+        real(dp) :: alph
 
         if ( xout .lt. x(1) .or. xout .gt. x(2) ) then
             write(*,*) "interp1: xout < x0 or xout > x1 !"
@@ -160,153 +179,156 @@ contains
 
     subroutine interp1D_bins(y,x,y0,x0)
 
-        implicit none 
-        
+        implicit none
+
         real(wp), intent(OUT) :: y(:)
         real(wp), intent(IN)  :: x(:)
         real(wp), intent(IN)  :: y0(:)
         real(wp), intent(IN)  :: x0(:)
-        
+
         ! Local variables
         integer :: k, k0, k1
         integer :: nx, nx0
         real(wp) :: dx, dx0, xl0, xr0, xl, xr
         real(wp) :: dx_now, wt_now
-        
+
         real(wp), allocatable :: wts(:)
-        
+
         nx  = size(x,1)
         nx0 = size(x0,1)
-        
-        ! Consistency check 
-        if (x(1) .ne. x0(1) .or. x(nx) .ne. x0(nx0)) then 
+
+        ! Consistency check
+        if (x(1) .ne. x0(1) .or. x(nx) .ne. x0(nx0)) then
             write(*,*) "interp1D_bins:: Error: for this routine, boundary values of axes must be the same."
             stop
-        end if 
+        end if
 
         allocate(wts(nx))
-        
+
         ! Initially set target vector and weights to zero
         y   = 0.0_wp
         wts = 0.0_wp
-        
+
         ! Store boundary values, which
         ! do not require interpolation
         y(1)  = y0(1)
         y(nx) = y0(nx0)
-        
+
         wts(1)  = 1.0_wp
         wts(nx) = 1.0_wp
-        
-        ! Loop over internal values of 
+
+        ! Loop over internal values of
         ! original vector and
         ! distribute contributions to each
         ! bin in target vector
         do k0 = 2, nx0-1
-            
-            ! Define left and right boundaries 
+
+            ! Define left and right boundaries
             ! of current original cells
             if (k0 .eq. 2) then
                 xl0 = x0(1)
             else
                 xl0 = 0.5_wp*(x0(k0-1)+x0(k0))
             end if
-            
+
             if (k0 .eq. nx0-1) then
                 xr0 = x0(nx0)
-            else 
+            else
                 xr0 = 0.5_wp*(x0(k0)+x0(k0+1))
             end if
-            
+
             ! Add contribution if any from
             ! current original cell to any
-            ! target cells. 
-            
+            ! target cells.
+
             do k = 2, nx-1
-                
-                ! Define left and right boundaries 
+
+                ! Define left and right boundaries
                 ! of target cell
                 if (k .eq. 2) then
                     xl = x(1)
                 else
                     xl = 0.5_wp*(x(k-1)+x(k))
                 end if
-                
+
                 if (k .eq. nx-1) then
                     xr = x(nx)
-                else 
+                else
                     xr = 0.5_wp*(x(k)+x(k+1))
                 end if
-                
+
                 ! Total target cell width
                 dx = xr-xl
-                
-                if (xl0 .ge. xr .or. xr0 .le. xl) then 
+
+                if (xl0 .ge. xr .or. xr0 .le. xl) then
                     ! No part of original cell appears in target cell, set
-                    ! weight to zero 
-                    dx_now = 0.0_wp 
-                else    
+                    ! weight to zero
+                    dx_now = 0.0_wp
+                else
                     ! Determine width of original cell that appears in target cell
                     dx_now = min(xr,xr0) - max(xl,xl0)
-                end if 
+                end if
 
-                wt_now = dx_now / dx 
+                wt_now = dx_now / dx
 
                 y(k)   = y(k) + wt_now*y0(k0)
-                
+
                 wts(k) = wts(k) + wt_now
-                
-            end do 
-            
-        end do 
-        
-!         do k = 1, nx
-!             write(*,*) k, wts(k)
-!         end do
-            
+
+            end do
+
+        end do
+
         return
-        
+
     end subroutine interp1D_bins
 
-    function interp_spline(x,y,xout) result(yout)
+    function interp_spline_sp(x,y,xout) result(yout)
+        ! sp wrapper around interp_spline_dp
+        implicit none
+        real(sp), dimension(:), intent(IN) :: x, y
+        real(sp), dimension(:), intent(IN) :: xout
+        real(sp), dimension(size(xout)) :: yout
+        yout = real(interp_spline_dp(real(x,dp),real(y,dp),real(xout,dp)), sp)
+    end function interp_spline_sp
 
-        implicit none 
- 
-        real(wp), dimension(:), intent(IN) :: x, y
-        real(wp), dimension(:), intent(IN) :: xout
-        real(wp), dimension(size(xout)) :: yout 
-        real(wp), dimension(:), allocatable :: b, c, d 
-        real(wp) :: uh, dx, yh  
-        integer :: i, n, nout 
+    function interp_spline_dp(x,y,xout) result(yout)
 
-        n    = size(x) 
+        implicit none
+
+        real(dp), dimension(:), intent(IN) :: x, y
+        real(dp), dimension(:), intent(IN) :: xout
+        real(dp), dimension(size(xout)) :: yout
+        real(dp), dimension(:), allocatable :: b, c, d
+        real(dp) :: uh, dx, yh
+        integer :: i, n, nout
+
+        n    = size(x)
         nout = size(xout)
 
         ! Get spline coefficients b, c, d
         allocate(b(n),c(n),d(n))
         call spline (x, y, b, c, d, n)
 
-        do i = 1, nout 
+        do i = 1, nout
             if (xout(i) .lt. x(1)) then
                 dx = x(1)-xout(i)
                 uh = x(1)+dx
                 yh = ispline(uh,x,y,b,c,d,n)
                 yout(i) = y(1) + (y(1)-yh)
-                !write(*,*) x(1), xout(i), dx, uh, y(1), yh, yout(i)
             else if (xout(i) .gt. x(n)) then
                 dx = xout(i)-x(n)
                 uh = x(n)-dx
                 yh = ispline(uh,x,y,b,c,d,n)
                 yout(i) = y(n) + (y(n)-yh)
-                !write(*,*) x(n), xout(i), dx, uh, y(n), yh, yout(i)
             else
                 yout(i) = ispline(xout(i), x, y, b, c, d, n)
-            end if 
-        end do 
+            end if
+        end do
 
         return
 
-    end function interp_spline
+    end function interp_spline_dp
 
 subroutine spline (x, y, b, c, d, n)
 !======================================================================
@@ -329,10 +351,9 @@ subroutine spline (x, y, b, c, d, n)
 !======================================================================
 implicit none
 integer n
-real(wp), dimension(:) :: x, y, b, c, d 
-!real(wp) x(n), y(n), b(n), c(n), d(n)
+real(dp), dimension(:) :: x, y, b, c, d
 integer i, j, gap
-real(wp) h
+real(dp) h
 
 gap = n-1
 ! check input
@@ -358,7 +379,7 @@ do i = 2, gap
   c(i) = c(i+1) - c(i)
 end do
 !
-! step 2: end conditions 
+! step 2: end conditions
 !
 b(1) = -d(1)
 b(n) = -d(n-1)
@@ -371,7 +392,7 @@ if(n /= 3) then
   c(n) = -c(n)*d(n-1)**2/(x(n)-x(n-3))
 end if
 !
-! step 3: forward elimination 
+! step 3: forward elimination
 !
 do i = 2, n
   h = d(i-1)/b(i-1)
@@ -415,13 +436,12 @@ function ispline(u, x, y, b, c, d, n)
 ! ispline = interpolated value at point u
 !=======================================================================
 implicit none
-real(wp) ispline
+real(dp) ispline
 integer n
-! real(wp)  u, x(n), y(n), b(n), c(n), d(n)
-real(wp) :: u 
-real(wp), dimension(:) :: x, y, b, c, d 
+real(dp) :: u
+real(dp), dimension(:) :: x, y, b, c, d
 integer i, j, k
-real(wp) dx
+real(dp) dx
 
 ! if u is ouside the x() interval take a boundary value (left or right)
 if(u <= x(1)) then
