@@ -29,7 +29,7 @@ program test_conservative
     end do
 
     call map_init_conservative(map, gs, gt)
-    call map_field(map, "v", vs, vt, method="mean", mask2=m2)
+    call map_field(map, "v", vs, vt, stat="mean", mask2=m2)
 
     fails = 0
     if (.not. all(m2)) then

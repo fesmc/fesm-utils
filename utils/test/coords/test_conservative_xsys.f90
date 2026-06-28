@@ -32,7 +32,7 @@ program test_conservative_xsys
 
     ! (1) constant field
     vs = 7.0_dp
-    call map_field(map, "const", vs, vt, method="mean", mask2=m2)
+    call map_field(map, "const", vs, vt, stat="mean", mask2=m2)
     emax_const = maxval(abs(vt - 7.0_dp), mask=m2)
     write(*,*) "covered cells:", count(m2), " of", size(m2)
     write(*,*) "constant-field max error =", emax_const

@@ -54,7 +54,7 @@ program test_varslice_map
     map%G%ny    = 1
 
     v2_new = 0.0_dp
-    call map_field(map, "v", var1d, v2_new, method="mean", mask2=m2)
+    call map_field(map, "v", var1d, v2_new, stat="mean", mask2=m2)
 
     v2_leg = 0.0_dp
     call map_scrip_field(mps, "v", var1d, v2_leg, method="mean")
@@ -75,7 +75,7 @@ program test_varslice_map
     var1s = real(var1d, wp)
     allocate(vs_src%var(2,2,1,1)); vs_src%var(:,:,1,1) = var1s
 
-    call varslice_map_to_grid(vs_tgt, vs_src, map, method="mean")
+    call varslice_map_to_grid(vs_tgt, vs_src, map, stat="mean")
 
     call check("varslice vs expected", &
                maxval(abs(real(vs_tgt%var(:,:,1,1),dp) - expected)), rtol, nfail)

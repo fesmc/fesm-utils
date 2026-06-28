@@ -6,7 +6,7 @@ module ncio_interp
     ! applier; it now lives here and applies with the unified map_field.
     !
     ! nc_read_interp(filename, vnm, var, [var_in], [ncid], [start], [count],
-    !                [map], [method], [fill_method], [filt_method], [filt_par])
+    !                [map], [stat], [fill_method], [filt_method], [filt_par])
     !
     !   - var_in present : take the source field from the argument (used by the 3D
     !                      variants to feed one level at a time) instead of reading.
@@ -41,7 +41,7 @@ module ncio_interp
 
 contains
 
-    subroutine nc_read_interp_dp_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,method, &
+    subroutine nc_read_interp_dp_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,stat, &
                                         fill_method,filt_method,filt_par)
         ! Read in a 2D field and remap it onto var2D if needed.
 
@@ -55,7 +55,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method     ! Method to fill in remaining missing values
         character(len=*), intent(IN),  optional :: filt_method     ! Method to use for filtering
         real(dp),         intent(IN),  optional :: filt_par(:)     ! gaussian=[sigma,dx]; poisson=[tol]
@@ -87,7 +87,7 @@ contains
         else
             ! Map local source array onto our target array
             mapping_method = "mean"
-            if (present(method)) mapping_method = trim(method)
+            if (present(stat)) mapping_method = trim(stat)
 
             ! Safety check
             if (.not. present(map)) then
@@ -104,7 +104,7 @@ contains
 
             ! Perform interpolation
             var2D = real(MV,dp)
-            call map_field(map,vnm,var2D_src,var2D,method=mapping_method,missing_value=real(MV,dp), &
+            call map_field(map,vnm,var2D_src,var2D,stat=mapping_method,missing_value=real(MV,dp), &
                         fill_method=fill_method,filt_method=filt_method,filt_par=filt_par)
         end if
 
@@ -112,7 +112,7 @@ contains
 
     end subroutine nc_read_interp_dp_2D
 
-    subroutine nc_read_interp_dp_3D(filename,vnm,var3D,ncid,start,count,map,method, &
+    subroutine nc_read_interp_dp_3D(filename,vnm,var3D,ncid,start,count,map,stat, &
                                         fill_method,filt_method,filt_par)
         ! Read in a 3D field and remap each level onto var3D if needed.
 
@@ -125,7 +125,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method
         character(len=*), intent(IN),  optional :: filt_method
         real(dp),         intent(IN),  optional :: filt_par(:)
@@ -159,14 +159,14 @@ contains
 
         do k = 1, nz
             call nc_read_interp_dp_2D(filename,vnm,var3D(:,:,k),var3D_src(:,:,k),ncid,start,count, &
-                                map,method,fill_method=fill_method,filt_method=filt_method,filt_par=filt_par)
+                                map,stat,fill_method=fill_method,filt_method=filt_method,filt_par=filt_par)
         end do
 
         return
 
     end subroutine nc_read_interp_dp_3D
 
-    subroutine nc_read_interp_sp_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,method, &
+    subroutine nc_read_interp_sp_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,stat, &
                                         fill_method,filt_method,filt_par)
         ! Read in a 2D field and remap it onto var2D if needed.
 
@@ -180,7 +180,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method
         character(len=*), intent(IN),  optional :: filt_method
         real(sp),         intent(IN),  optional :: filt_par(:)
@@ -208,7 +208,7 @@ contains
             var2D = var2D_src
         else
             mapping_method = "mean"
-            if (present(method)) mapping_method = trim(method)
+            if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
                 write(error_unit,*) ""
@@ -223,7 +223,7 @@ contains
             end if
 
             var2D = real(MV,sp)
-            call map_field(map,vnm,var2D_src,var2D,method=mapping_method,missing_value=real(MV,sp), &
+            call map_field(map,vnm,var2D_src,var2D,stat=mapping_method,missing_value=real(MV,sp), &
                             fill_method=fill_method,filt_method=filt_method,filt_par=filt_par)
         end if
 
@@ -231,7 +231,7 @@ contains
 
     end subroutine nc_read_interp_sp_2D
 
-    subroutine nc_read_interp_sp_3D(filename,vnm,var3D,ncid,start,count,map,method, &
+    subroutine nc_read_interp_sp_3D(filename,vnm,var3D,ncid,start,count,map,stat, &
                                         fill_method,filt_method,filt_par)
         ! Read in a 3D field and remap each level onto var3D if needed.
 
@@ -244,7 +244,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method
         character(len=*), intent(IN),  optional :: filt_method
         real(sp),         intent(IN),  optional :: filt_par(:)
@@ -276,7 +276,7 @@ contains
         call nc_read(filename,vnm,var3D_src,ncid=ncid,start=start,count=[nx,ny,nz,1],missing_value=real(MV,sp))
 
         do k = 1, nz
-            call nc_read_interp_sp_2D(filename,vnm,var3D(:,:,k),var3D_src(:,:,k),ncid,start,count,map,method, &
+            call nc_read_interp_sp_2D(filename,vnm,var3D(:,:,k),var3D_src(:,:,k),ncid,start,count,map,stat, &
                                 fill_method=fill_method,filt_method=filt_method,filt_par=filt_par)
         end do
 
@@ -284,7 +284,7 @@ contains
 
     end subroutine nc_read_interp_sp_3D
 
-    subroutine nc_read_interp_int_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,method, &
+    subroutine nc_read_interp_int_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,stat, &
                                         fill_method)
         ! Read in a 2D integer field and remap it onto var2D if needed.
 
@@ -298,7 +298,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method
 
         ! Local variables
@@ -324,7 +324,7 @@ contains
             var2D = var2D_src
         else
             mapping_method = "mean"
-            if (present(method)) mapping_method = trim(method)
+            if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
                 write(error_unit,*) ""
@@ -339,7 +339,7 @@ contains
             end if
 
             var2D = int(MV)
-            call map_field(map,vnm,var2D_src,var2D,method=mapping_method, &
+            call map_field(map,vnm,var2D_src,var2D,stat=mapping_method, &
                                     missing_value=int(MV),fill_method=fill_method)
         end if
 
@@ -347,7 +347,7 @@ contains
 
     end subroutine nc_read_interp_int_2D
 
-    subroutine nc_read_interp_int_3D(filename,vnm,var3D,ncid,start,count,map,method,fill_method)
+    subroutine nc_read_interp_int_3D(filename,vnm,var3D,ncid,start,count,map,stat,fill_method)
         ! Read in a 3D integer field and remap each level onto var3D if needed.
 
         implicit none
@@ -359,7 +359,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
         character(len=*), intent(IN),  optional :: fill_method
 
         ! Local variables
@@ -389,7 +389,7 @@ contains
         call nc_read(filename,vnm,var3D_src,ncid=ncid,start=start,count=[nx,ny,nz,1],missing_value=int(MV))
 
         do k = 1, nz
-            call nc_read_interp_int_2D(filename,vnm,var3D(:,:,k),var3D_src(:,:,k),ncid,start,count,map,method, &
+            call nc_read_interp_int_2D(filename,vnm,var3D(:,:,k),var3D_src(:,:,k),ncid,start,count,map,stat, &
                                 fill_method=fill_method)
         end do
 
@@ -397,7 +397,7 @@ contains
 
     end subroutine nc_read_interp_int_3D
 
-    subroutine nc_read_interp_logical_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,method)
+    subroutine nc_read_interp_logical_2D(filename,vnm,var2D,var2D_in,ncid,start,count,map,stat)
         ! Read in a 2D logical field and remap it onto var2D if needed. The remap
         ! is done on a 0/1 integer image (default method "count") and thresholded.
 
@@ -411,7 +411,7 @@ contains
         integer, optional,  intent(IN)  :: start(:)
         integer, optional,  intent(IN)  :: count(:)
         type(map_class),  intent(IN),  optional :: map
-        character(len=*), intent(IN),  optional :: method
+        character(len=*), intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
 
         ! Local variables
         integer :: nx, ny
@@ -439,7 +439,7 @@ contains
             where(var2D_src .eq. 1) var2D = .TRUE.
         else
             mapping_method = "count"
-            if (present(method)) mapping_method = trim(method)
+            if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
                 write(error_unit,*) ""
@@ -455,7 +455,7 @@ contains
 
             allocate(var2D_int(size(var2D,1),size(var2D,2)))
             var2D_int = int(MV)
-            call map_field(map,vnm,var2D_src,var2D_int,method=mapping_method, &
+            call map_field(map,vnm,var2D_src,var2D_int,stat=mapping_method, &
                                                 missing_value=int(MV),fill_method="nn")
 
             var2D = .FALSE.

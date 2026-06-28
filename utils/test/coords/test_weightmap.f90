@@ -20,12 +20,12 @@ program test_weightmap
     wm%dst = [1,1,2]; wm%src = [1,2,3]; wm%w = [1.0_dp,3.0_dp,1.0_dp]
     call weight_map_index(wm)
 
-    call weight_map_apply(wm, var1, var2w, "mean", missing_value=miss, mask2=m2)
+    call weight_map_apply(wm, var1, var2w, stat="mean", missing_value=miss, mask2=m2)
     call check("WEIGHT mean dst1", var2w(1), 17.5_dp)      ! (10+60)/4
     call check("WEIGHT mean dst2", var2w(2), 30.0_dp)
     if (.not. (m2(1) .and. m2(2))) then; write(*,*) "FAIL: mask2"; fails=fails+1; end if
 
-    call weight_map_apply(wm, var1, var2w, "count", missing_value=miss)
+    call weight_map_apply(wm, var1, var2w, stat="count", missing_value=miss)
     call check("WEIGHT count dst1 (mode=20)", var2w(1), 20.0_dp)
     call weight_map_free(wm)
 

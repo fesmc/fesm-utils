@@ -100,18 +100,28 @@ contains
         end do
     end subroutine weight_map_index
 
-    subroutine weight_map_apply(wm, var1, var2, method, missing_value, radius, mask2)
-        ! Apply the map: var2(n_dst) = combination of var1(n_src) over each
-        ! target's links, per `method`. Currently-missing sources are skipped
-        ! (and, for MAP_DISTANCE, weights are recomputed over the survivors).
+    subroutine weight_map_apply(wm, var1, var2, kernel, stat, missing_value, radius, mask2)
+        ! Apply the map: var2(n_dst) = aggregation of var1(n_src) over each
+        ! target's links. Two roles, deliberately separate:
+        !   kernel - the interpolation kernel ("nn"/"shepard"/"quadrant"), used
+        !            only for MAP_DISTANCE to build per-link weights from the
+        !            stored neighbor distances/quadrants. Ignored for MAP_WEIGHT
+        !            (those weights are already baked, e.g. conservative/cdo).
+        !   stat   - the aggregation/reduction over the weighted links
+        !            ("mean" [default]/"count"/"stdev"). Same meaning for both
+        !            map kinds, so a given `stat` is always valid.
+        ! Currently-missing sources are skipped (and, for MAP_DISTANCE, weights
+        ! are recomputed over the survivors).
         type(weight_map_t), intent(in)  :: wm
         real(dp),           intent(in)  :: var1(:)
         real(dp),           intent(out) :: var2(:)
-        character(len=*),   intent(in)  :: method
+        character(len=*), optional, intent(in)  :: kernel
+        character(len=*), optional, intent(in)  :: stat
         real(dp), optional, intent(in)  :: missing_value
         real(dp), optional, intent(in)  :: radius
         logical,  optional, intent(out) :: mask2(:)
 
+        character(len=32) :: knl, sta
         real(dp) :: miss, rad
         integer  :: k, j, j1, j2, nlink
         real(dp), allocatable :: vloc(:), wloc(:), dloc(:)
@@ -119,6 +129,10 @@ contains
         real(dp) :: val
         logical  :: ok
 
+        knl = "nn"
+        if (present(kernel)) knl = trim(kernel)
+        sta = "mean"
+        if (present(stat)) sta = trim(stat)
         miss = mv_dp
         if (present(missing_value)) miss = missing_value
         rad = huge(1.0_dp)
@@ -140,14 +154,14 @@ contains
             if (wm%kind == MAP_WEIGHT) then
                 allocate(wloc(nlink))
                 wloc = wm%w(j1:j2)
-                call reduce(method, vloc, wloc, miss, val, ok)
+                call reduce(sta, vloc, wloc, miss, val, ok)
                 deallocate(wloc)
             else
                 allocate(wloc(nlink), dloc(nlink), qloc(nlink))
                 dloc = wm%dist(j1:j2)
                 qloc = wm%quadrant(j1:j2)
-                call distance_weights(method, vloc, dloc, qloc, miss, rad, wloc)
-                call reduce("mean", vloc, wloc, miss, val, ok)
+                call distance_weights(knl, vloc, dloc, qloc, miss, rad, wloc)
+                call reduce(sta, vloc, wloc, miss, val, ok)
                 deallocate(wloc, dloc, qloc)
             end if
 

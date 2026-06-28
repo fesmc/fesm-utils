@@ -33,14 +33,14 @@ program test_conservative_sphere
     fails = 0
 
     ! (1) constant field is preserved exactly (validates the partition normalizes)
-    call map_field(map, "c", vs*0.0_dp + 3.0_dp, vt, method="mean", mask2=m2)
+    call map_field(map, "c", vs*0.0_dp + 3.0_dp, vt, stat="mean", mask2=m2)
     emax_const = maxval(abs(vt - 3.0_dp), mask=m2)
     write(*,*) "covered:", count(m2), " of", size(m2), " const err =", emax_const
     if (count(m2) < size(m2)) then; write(*,*) "FAIL: not all covered"; fails=fails+1; end if
     if (emax_const > 1.0e-12_dp) then; write(*,*) "FAIL: constant not preserved"; fails=fails+1; end if
 
     ! (2) value transfer is accurate to the subsampling approximation
-    call map_field(map, "v", vs, vt, method="mean", mask2=m2)
+    call map_field(map, "v", vs, vt, stat="mean", mask2=m2)
     emax = 0.0_dp
     do j = 1, 6
         do i = 1, 8

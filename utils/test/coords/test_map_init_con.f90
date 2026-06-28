@@ -29,11 +29,11 @@ program test_map_init_con
 
     ! New generic seam (gen defaults to "coords")
     call map_init(map_seam, gs, gt, method="con")
-    call map_field(map_seam, "v", vs, vt, method="mean")
+    call map_field(map_seam, "v", vs, vt, stat="mean")
 
     ! Direct analytic call for comparison
     call map_init_conservative(map_direct, gs, gt)
-    call map_field(map_direct, "v", vs, vt2, method="mean")
+    call map_field(map_direct, "v", vs, vt2, stat="mean")
 
     fails = 0
 
@@ -58,7 +58,7 @@ program test_map_init_con
 
     ! Explicit gen="coords" must match the default
     call map_init(map_seam, gs, gt, method="con", gen="coords")
-    call map_field(map_seam, "v", vs, vt2, method="mean")
+    call map_field(map_seam, "v", vs, vt2, stat="mean")
     if (maxval(abs(vt - vt2)) > 0.0_dp) then
         write(*,*) "FAIL: gen='coords' differs from the default"
         fails = fails + 1

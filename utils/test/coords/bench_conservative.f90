@@ -105,10 +105,10 @@ contains
         t_co = real(c1-c0,dp)/real(cr,dp)/real(NREP,dp)
 
         ! coords accuracy
-        call map_field(map_co, "c", ones_s, c_co, method="mean", mask2=m_co)
+        call map_field(map_co, "c", ones_s, c_co, stat="mean", mask2=m_co)
         cons_co = 0.0_dp
         if (any(m_co)) cons_co = maxval(abs(c_co - 1.0_dp), mask=m_co)
-        call map_field(map_co, "f", fs, ft_co, method="mean", mask2=m_co)
+        call map_field(map_co, "f", fs, ft_co, stat="mean", mask2=m_co)
 
         t_cdo    = -1.0_dp
         cons_cdo = -1.0_dp
@@ -137,10 +137,10 @@ contains
             ! bridge cdo weights -> weight_map and apply
             call map_scrip_to_weight_map(mps, map_cdo%wm)
             allocate(ft_cdo(gt%G%nx,gt%G%ny), c_cdo(gt%G%nx,gt%G%ny), m_cdo(gt%G%nx,gt%G%ny))
-            call map_field(map_cdo, "c", ones_s, c_cdo, method="mean", mask2=m_cdo)
+            call map_field(map_cdo, "c", ones_s, c_cdo, stat="mean", mask2=m_cdo)
             cons_cdo = 0.0_dp
             if (any(m_cdo)) cons_cdo = maxval(abs(c_cdo - 1.0_dp), mask=m_cdo)
-            call map_field(map_cdo, "f", fs, ft_cdo, method="mean", mask2=m_cdo)
+            call map_field(map_cdo, "f", fs, ft_cdo, stat="mean", mask2=m_cdo)
 
             if (any(m_co .and. m_cdo)) then
                 maxdiff = maxval(abs(ft_co - ft_cdo), mask=(m_co .and. m_cdo))
@@ -256,7 +256,7 @@ contains
 
         call map_scrip_to_weight_map(mps, map_cdo%wm)
         allocate(ft_cdo(gt%G%nx,gt%G%ny), m_cdo(gt%G%nx,gt%G%ny))
-        call map_field(map_cdo, "f", fs, ft_cdo, method="mean", mask2=m_cdo)
+        call map_field(map_cdo, "f", fs, ft_cdo, stat="mean", mask2=m_cdo)
         maxdiff = -1.0_dp
         if (any(m_co .and. m_cdo)) maxdiff = maxval(abs(ft_co - ft_cdo), mask=(m_co .and. m_cdo))
         call map_scrip_end(mps)

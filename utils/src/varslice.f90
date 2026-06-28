@@ -74,7 +74,7 @@ module varslice
     
 contains
 
-    subroutine varslice_map_to_grid(vs_tgt,vs_src,map,mask_out,method,reset,missing_value, &
+    subroutine varslice_map_to_grid(vs_tgt,vs_src,map,mask_out,stat,method,reset,missing_value, &
                                     mask_pack,fill_method,filt_method,filt_par,verbose)
         ! Given a input vs object on a source grid src,
         ! map the variable to a target grid tgt and store
@@ -86,7 +86,8 @@ contains
         type(varslice_class),  intent(IN)    :: vs_src
         type(map_class),       intent(IN)    :: map
         integer,                intent(OUT), optional :: mask_out(:,:)   ! Mask showing where interpolation was done
-        character(len=*),       intent(IN),  optional :: method
+        character(len=*),       intent(IN),  optional :: stat            ! Aggregation: mean (default), count, stdev
+        character(len=*),       intent(IN),  optional :: method          ! Interpolation-kernel override (distance maps)
         logical,                intent(IN),  optional :: reset           ! Reset var_tgt initially to missing_value?
         real(wp),               intent(IN),  optional :: missing_value   ! Points not included in mapping
         logical,                intent(IN),  optional :: mask_pack(:,:)  ! Mask for where to interpolate
@@ -143,7 +144,7 @@ contains
         do t = 1, nt
         do k = 1, nz
             call map_field(map,trim(vs_tgt%par%name),vs_src%var(:,:,k,t),vs_tgt%var(:,:,k,t), &
-                            method=method,missing_value=miss,reset=reset,mask_pack=mask_pack, &
+                            stat=stat,method=method,missing_value=miss,reset=reset,mask_pack=mask_pack, &
                             fill_method=fill_method,filt_method=filt_method,filt_par=filt_par, &
                             verbose=verbose,mask2=mask_int)
         end do

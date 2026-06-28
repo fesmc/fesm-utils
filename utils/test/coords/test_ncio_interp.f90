@@ -55,19 +55,19 @@ program test_ncio_interp
 
     ! --- remap path, dp -------------------------------------------------------
     tgt_dp = 0.0_dp
-    call nc_read_interp("none", "v", tgt_dp, src_dp, map=map, method="mean")
+    call nc_read_interp("none", "v", tgt_dp, src_dp, map=map, stat="mean")
     call check("dp remap     ", maxval(abs(tgt_dp - exp_dp)), rtol, nfail)
 
     ! --- remap path, sp -------------------------------------------------------
     src_sp = real(src_dp, sp)
     tgt_sp = 0.0_sp
-    call nc_read_interp("none", "v", tgt_sp, src_sp, map=map, method="mean")
+    call nc_read_interp("none", "v", tgt_sp, src_sp, map=map, stat="mean")
     call check("sp remap     ", maxval(abs(real(tgt_sp,dp) - exp_dp)), rtol, nfail)
 
     ! --- remap path, integer --------------------------------------------------
     src_in = nint(src_dp)
     tgt_in = 0
-    call nc_read_interp("none", "v", tgt_in, src_in, map=map, method="mean")
+    call nc_read_interp("none", "v", tgt_in, src_in, map=map, stat="mean")
     call check("int remap    ", maxval(abs(real(tgt_in,dp) - exp_dp)), rtol, nfail)
 
     ! --- remap path, logical (count + nn fill) --------------------------------
