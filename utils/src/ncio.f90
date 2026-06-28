@@ -443,6 +443,38 @@ contains
 
     end subroutine nc4_write_internal
 
+    ! ====================================================================
+    ! flatten_to_dble: copy a contiguous array of any rank into a
+    ! preallocated 1-D double buffer, converting type element-wise.
+    !
+    ! The source is received as an assumed-size dummy (src(*)), so a
+    ! contiguous multi-rank actual is sequence-associated with NO full-size
+    ! temporary. This replaces `dat1D = pack(dble(dat),.TRUE.)`, whose
+    ! intermediate temporaries were placed on the stack by Intel Fortran and
+    ! overflowed it on large 3-D writes (segfault in nf90_put_var). Callers
+    ! pass `dat` declared `contiguous`, so no copy-in is generated either.
+    ! ====================================================================
+    subroutine flatten_to_dble_double(n, src, dst)
+        integer,          intent(in)  :: n
+        double precision, intent(in)  :: src(*)
+        double precision, intent(out) :: dst(n)
+        dst(1:n) = src(1:n)
+    end subroutine flatten_to_dble_double
+
+    subroutine flatten_to_dble_float(n, src, dst)
+        integer,          intent(in)  :: n
+        real(4),          intent(in)  :: src(*)
+        double precision, intent(out) :: dst(n)
+        dst(1:n) = src(1:n)        ! element-wise real(4) -> double
+    end subroutine flatten_to_dble_float
+
+    subroutine flatten_to_dble_int(n, src, dst)
+        integer,          intent(in)  :: n
+        integer,          intent(in)  :: src(*)
+        double precision, intent(out) :: dst(n)
+        dst(1:n) = src(1:n)        ! element-wise integer -> double
+    end subroutine flatten_to_dble_int
+
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Subroutine :  n c _ r e a d
     ! Author     :  Alex Robinson
@@ -2453,7 +2485,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:)
+        integer, contiguous :: dat(:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2463,7 +2495,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2481,7 +2513,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:,:)
+        integer, contiguous :: dat(:,:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2491,7 +2523,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2509,7 +2541,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:,:,:)
+        integer, contiguous :: dat(:,:,:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2520,7 +2552,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2538,7 +2570,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:,:,:,:)
+        integer, contiguous :: dat(:,:,:,:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2548,7 +2580,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2566,7 +2598,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:,:,:,:,:)
+        integer, contiguous :: dat(:,:,:,:,:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2576,7 +2608,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2594,7 +2626,7 @@ contains
         implicit none
 
         ! Arguments
-        integer :: dat(:,:,:,:,:,:)
+        integer, contiguous :: dat(:,:,:,:,:,:)
         integer, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2604,7 +2636,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_int(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_INT",shape(dat), &
@@ -2653,7 +2685,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:)
+        double precision, contiguous :: dat(:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2663,7 +2695,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2681,7 +2713,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:,:)
+        double precision, contiguous :: dat(:,:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2691,7 +2723,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2709,7 +2741,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:,:,:)
+        double precision, contiguous :: dat(:,:,:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2720,7 +2752,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2738,7 +2770,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:,:,:,:)
+        double precision, contiguous :: dat(:,:,:,:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2748,7 +2780,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2766,7 +2798,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:,:,:,:,:)
+        double precision, contiguous :: dat(:,:,:,:,:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2776,7 +2808,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2794,7 +2826,7 @@ contains
         implicit none
 
         ! Arguments
-        double precision :: dat(:,:,:,:,:,:)
+        double precision, contiguous :: dat(:,:,:,:,:,:)
         double precision, optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2804,7 +2836,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
@@ -2853,7 +2885,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:)
+        real(4), contiguous :: dat(:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2863,7 +2895,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
@@ -2881,7 +2913,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:,:)
+        real(4), contiguous :: dat(:,:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2891,7 +2923,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
@@ -2909,7 +2941,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:,:,:)
+        real(4), contiguous :: dat(:,:,:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2920,7 +2952,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
@@ -2938,7 +2970,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:,:,:,:)
+        real(4), contiguous :: dat(:,:,:,:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2948,7 +2980,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
@@ -2966,7 +2998,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:,:,:,:,:)
+        real(4), contiguous :: dat(:,:,:,:,:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -2976,7 +3008,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
@@ -2994,7 +3026,7 @@ contains
         implicit none
 
         ! Arguments
-        real(4) :: dat(:,:,:,:,:,:)
+        real(4), contiguous :: dat(:,:,:,:,:,:)
         real(4), optional :: missing_value
 
         character (len=*) :: filename, name
@@ -3004,7 +3036,7 @@ contains
         double precision, allocatable :: dat1D(:)
 
         allocate(dat1D(size(dat)))
-        dat1D = pack(dble(dat),.TRUE.)    ! Pack here to avoid segmentation faults!
+        call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
         ! Finally call the internal writing routine
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
