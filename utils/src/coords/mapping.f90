@@ -15,7 +15,7 @@ module mapping
     use precision,       only: dp, sp
     use constants, only: degrees_to_radians, mv_dp, ERR_DIST
     use coordinates,     only: points_class, grid_class, grid_axis_class, coord_system, &
-                               grid_to_points, compare_coord
+                               grid_to_points, compare_coord, grid_write
     use planet,          only: planet_distance, cartesian_distance, &
                                quadrant_latlon, quadrant_cartesian
     use kdtree
@@ -27,6 +27,7 @@ module mapping
     use gaussian_filter, only: filter_gaussian, filter_gaussian_fast
     use map_io,          only: weight_map_write, weight_map_read
     use ncio,            only: nc_exists_var
+    use grid_to_cdo,     only: grid_cdo_write_desc_short, call_system_cdo
 
     implicit none
     private
@@ -139,12 +140,9 @@ contains
                 ! Cache the freshly generated map
                 call map_save_wm(map, mfldr, filename)
             case ("cdo")
-                ! cdo-generated SCRIP files are loaded by the generic loader
-                ! above when present. Online generation is not available here.
-                write(*,*) "mapping:: map_init gen='cdo': no SCRIP file found at"
-                write(*,*) "  "//trim(filename)
-                write(*,*) "  pregenerate it with cdo, or use gen='coords'."
-                stop
+                ! Generate the SCRIP map with an external cdo call (it writes
+                ! `filename` itself, so no separate save step is needed).
+                call map_init_cdo(map, grid1, grid2, mtd, mfldr, filename, clean)
             case default
                 write(*,*) "mapping:: map_init: unknown gen '"//trim(g)//"'"
                 write(*,*) "  expected 'coords' (in-package) or 'cdo' (external cdo call)."
@@ -211,6 +209,64 @@ contains
         call execute_command_line("mkdir -p '"//trim(fldr)//"'")
         call weight_map_write(map%wm, trim(filename))
     end subroutine map_save_wm
+
+    subroutine map_init_cdo(map, grid1, grid2, method, fldr, filename, clean)
+        ! Generate a grid -> grid SCRIP map via an external cdo call and load it.
+        ! This reproduces the climber-x flow: write short grid descriptions for
+        ! both grids, write a source-grid NetCDF for cdo input, then
+        !   cdo gen<method>,<dst.txt> -setgrid,<src.txt> <src.nc> <filename>
+        ! and load the resulting SCRIP file. cdo writes `filename` directly, so
+        ! the map is its own cache.
+        type(map_class),  intent(inout) :: map
+        type(grid_class), intent(in)    :: grid1, grid2
+        character(len=*), intent(in)    :: method, fldr, filename
+        logical, optional, intent(in)   :: clean
+
+        type(map_scrip_class) :: mps
+        character(len=512)     :: src_nc, desc1, desc2, cmd
+        character(len=12)      :: xnm, ynm
+        logical                :: do_clean
+
+        do_clean = .false.
+        if (present(clean)) do_clean = clean
+
+        ! Target metadata (grid2); the kernel is baked into the cdo weights
+        call map_set_target_from_grid(map, grid1, grid2)
+        map%method = trim(method)
+
+        call execute_command_line("mkdir -p '"//trim(fldr)//"'")
+
+        ! Short grid descriptions for source and target
+        call grid_cdo_write_desc_short(grid1, trim(fldr))
+        call grid_cdo_write_desc_short(grid2, trim(fldr))
+
+        ! Source-grid NetCDF for cdo input (xc/yc for projected/cartesian grids,
+        ! lon/lat otherwise); -setgrid below reattaches the source description.
+        src_nc = trim(fldr)//"/grid_"//trim(grid1%name)//".nc"
+        if ((.not. grid1%cs%is_projection) .and. (.not. grid1%cs%is_cartesian)) then
+            xnm = "lon"; ynm = "lat"
+        else
+            xnm = "xc";  ynm = "yc"
+        end if
+        call grid_write(grid1, trim(src_nc), trim(xnm), trim(ynm), .true.)
+
+        ! Build and run the cdo command
+        desc1 = trim(fldr)//"/grid_"//trim(grid1%name)//".txt"
+        desc2 = trim(fldr)//"/grid_"//trim(grid2%name)//".txt"
+        cmd = "cdo gen"//trim(method)//","//trim(desc2)//" -setgrid,"//trim(desc1)// &
+              " "//trim(src_nc)//" "//trim(filename)
+        call call_system_cdo(cmd)
+
+        ! Load the generated SCRIP map into the weight store
+        call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(fldr), trim(method))
+        call map_scrip_to_weight_map(mps, map%wm)
+
+        ! Optionally remove the intermediate grid files
+        if (do_clean) then
+            call execute_command_line("rm -f '"//trim(src_nc)//"' '"// &
+                                      trim(desc1)//"' '"//trim(desc2)//"'")
+        end if
+    end subroutine map_init_cdo
 
     subroutine map_init_grid_points(map, grid1, pts2, max_neighbors, dist_max, method)
         type(map_class), intent(inout)  :: map

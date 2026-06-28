@@ -56,7 +56,7 @@ $(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
 $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/grid_to_cdo.o: $(srcdir)/coords/grid_to_cdo.f90
+$(objdir)/grid_to_cdo.o: $(srcdir)/coords/grid_to_cdo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/coordinates.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/gaussian_filter.o: $(srcdir)/coords/gaussian_filter.f90
@@ -252,6 +252,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_init_con.x $(testdir)/coords/test_map_init_con.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_cache.x $(testdir)/coords/test_map_cache.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_cdo.x $(testdir)/coords/test_map_cdo.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_varslice_map.x $(testdir)/coords/test_varslice_map.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)

@@ -4,3 +4,4 @@ logs/
 test_wm_*.nc
 maps/
 maps_cache_test/
+maps_cdo_test/

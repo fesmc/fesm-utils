@@ -2,17 +2,151 @@ module grid_to_cdo
     
     use precision, only: dp, sp
     use constants, only: pi
-    implicit none 
+    use coordinates, only: grid_class
+    implicit none
 
-    private 
-    !public :: grid_cdo_write_desc_short        ! ajr: this routine depends on coordinates:grid object, so was deleted here for now.
+    private
+    public :: grid_cdo_write_desc_short
     public :: grid_cdo_write_desc_explicit_proj
     public :: grid_cdo_write_desc_explicit_latlon
     public :: grid_cdo_write_desc_via_cdo
     public :: call_system_cdo
 
-contains 
-    
+contains
+
+    subroutine grid_cdo_write_desc_short(grid,fldr)
+        ! Write a cdo-compliant (short) grid description file from a grid_class.
+        ! Ported from the coordinates library: this is the griddes form climber-x
+        ! used for online `cdo gen*` map generation. It works well for latlon and
+        ! polar_stereographic grids (the explicit-corner writers tripped cdo's
+        ! "Target grid cell corner coordinates missing!" on projection grids).
+        implicit none
+
+        type(grid_class), intent(IN) :: grid    ! Grid definition
+        character(len=*), intent(IN) :: fldr    ! File destination
+
+        ! Local variables
+        character(len=512) :: filename
+        integer :: fnum
+        character(len=256) :: grid_type
+        character(len=32)  :: xnm, ynm
+        character(len=32)  :: xunits, yunits
+        real(dp) :: phi_proj_orig
+
+        ! Determine grid type to write
+        select case(trim(grid%cs%mtype))
+
+            case("latitude_longitude","latlon","gaussian")
+                grid_type = "lonlat"
+                xnm    = "lon";           ynm    = "lat"
+                xunits = "degrees_east";  yunits = "degrees_north"
+
+            case("polar_stereographic","stereographic")
+                grid_type = "projection"
+                xnm    = "xc";            ynm    = "yc"
+                xunits = trim(grid%cs%units); yunits = trim(grid%cs%units)
+
+            case("cartesian")
+                grid_type = "cartesian"
+                xnm    = "xc";            ynm    = "yc"
+                xunits = trim(grid%cs%units); yunits = trim(grid%cs%units)
+
+            case DEFAULT
+                grid_type = "generic"
+                xnm    = "xc";            ynm    = "yc"
+                xunits = trim(grid%cs%units); yunits = trim(grid%cs%units)
+        end select
+
+        if (trim(xunits) .eq. "kilometers") xunits = "km"
+        if (trim(yunits) .eq. "kilometers") yunits = "km"
+
+        filename = trim(fldr)//"/"//"grid_"//trim(grid%name)//".txt"
+
+        fnum = 98
+        open(fnum,file=filename,status='unknown',action='write')
+
+        write(fnum,"(a)")       "gridtype = "//trim(grid_type)
+        write(fnum,"(a,i10)")   "gridsize = ", grid%G%nx*grid%G%ny
+        write(fnum,"(a,i10)")   "xsize    = ", grid%G%nx
+        write(fnum,"(a,i10)")   "ysize    = ", grid%G%ny
+        write(fnum,"(a)")       "xname    = "//trim(xnm)
+        write(fnum,"(a)")       "xunits   = "//trim(xunits)
+        write(fnum,"(a)")       "yname    = "//trim(ynm)
+        write(fnum,"(a)")       "yunits   = "//trim(yunits)
+        write(fnum,"(a,f15.6)") "xfirst   = ", grid%G%x(1)
+        write(fnum,"(a,f15.6)") "xinc     = ", grid%G%dx
+
+        if (trim(grid%cs%mtype) .eq. "gaussian") then
+            ! Write the y-values directly
+            write(fnum,"(a)") "yvals = "
+            write(fnum,"(50000f10.3)") grid%G%y
+        else
+            write(fnum,"(a,f15.6)") "yfirst   = ", grid%G%y(1)
+            write(fnum,"(a,f15.6)") "yinc     = ", grid%G%dy
+        end if
+
+        write(fnum,"(a,a)") "grid_mapping = ","crs"
+
+        ! Add grid attributes depending on grid_mapping type
+        select case(trim(grid%cs%mtype))
+
+            case("stereographic")
+                write(fnum,"(a,a)")     "grid_mapping_name = ",trim(grid%cs%mtype)
+                write(fnum,"(a,f12.3)") "longitude_of_projection_origin = ", grid%cs%proj%lambda
+                write(fnum,"(a,f12.3)") "latitude_of_projection_origin = ",  grid%cs%proj%phi
+                write(fnum,"(a,f12.3)") "angle_of_oblique_tangent = ",       grid%cs%proj%alpha
+                write(fnum,"(a,f12.3)") "scale_factor_at_projection_origin = ", 1.0d0
+                write(fnum,"(a,f12.3)") "false_easting = ",  0.0d0
+                write(fnum,"(a,f12.3)") "false_northing = ", 0.0d0
+                if (grid%cs%planet%is_sphere) then
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
+                else
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
+                end if
+
+            case("polar_stereographic")
+                ! latitude_of_projection_origin must be +/-90 for polar_stereographic
+                if (grid%cs%proj%phi .gt. 0.0d0) then
+                    phi_proj_orig = 90.0d0
+                else
+                    phi_proj_orig = -90.0d0
+                end if
+                write(fnum,"(a,a)")     "grid_mapping_name = ",trim(grid%cs%mtype)
+                write(fnum,"(a,f12.3)") "straight_vertical_longitude_from_pole = ", grid%cs%proj%lambda
+                write(fnum,"(a,f12.3)") "latitude_of_projection_origin = ", phi_proj_orig
+                write(fnum,"(a,f12.3)") "standard_parallel = ", grid%cs%proj%phi
+                write(fnum,"(a,f12.3)") "false_easting = ",  0.0d0
+                write(fnum,"(a,f12.3)") "false_northing = ", 0.0d0
+                if (grid%cs%planet%is_sphere) then
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
+                else
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
+                end if
+
+            case("latitude_longitude","latlon","gaussian")
+                write(fnum,"(a,a)") "grid_mapping_name = ", "latitude_longitude"
+                if (grid%cs%planet%is_sphere) then
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
+                else
+                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
+                end if
+
+            case DEFAULT
+                ! Do nothing
+        end select
+
+        close(fnum)
+
+        return
+
+    end subroutine grid_cdo_write_desc_short
+
     subroutine grid_cdo_write_desc_explicit_proj(lon2D,lat2D,grid_name,fldr,grid_type)
 
         implicit none 
