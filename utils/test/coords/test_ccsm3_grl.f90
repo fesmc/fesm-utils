@@ -28,7 +28,7 @@ program test_ccsm3_grl
     allocate(lat_src(180,91), lat_out(76,151), m2(76,151))
     lat_src = gCCSM3%lat
 
-    call map_init(map, gCCSM3, gGRL, max_neighbors=10)
+    call map_init(map, gCCSM3, gGRL, max_neighbors=10, load=.false.)
 
     fails = 0
 

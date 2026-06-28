@@ -146,7 +146,7 @@ program test_parity
     call points_init(psB, name="psrcB", mtype="latlon", units="degrees", x=slonB, y=slatB)
     call grid_init(gtB, name="tgtB", mtype="latlon", units="degrees", &
                    x0=-12.0_dp, dx=2.0_dp, nx=nxtb, y0=40.0_dp, dy=2.0_dp, ny=nytb)
-    call map_init(mGB, gsB, gtB, max_neighbors=8)
+    call map_init(mGB, gsB, gtB, max_neighbors=8, load=.false.)
     call map_init(mPB, psB, gtB, max_neighbors=8)
 
     ! Smoothing: gaussian-smoothed grid->grid vs points->grid must be identical.

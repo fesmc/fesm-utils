@@ -32,7 +32,7 @@ program test_bilinear
         end do
     end do
 
-    call map_init(map, gsrc, gtgt, max_neighbors=8)
+    call map_init(map, gsrc, gtgt, max_neighbors=8, load=.false.)
     call map_field(map, "lin", vsrc, vtgt, method="bilinear", mask2=m2)
 
     emax = maxval(abs(vtgt - vexp))

@@ -2,3 +2,5 @@
 bench_tmp/
 logs/
 test_wm_*.nc
+maps/
+maps_cache_test/

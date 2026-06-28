@@ -20,10 +20,13 @@ module mapping
                                quadrant_latlon, quadrant_cartesian
     use kdtree
     use weight_map
-    use mapping_scrip,   only: map_scrip_class, map_scrip_load, map_scrip_to_weight_map
+    use mapping_scrip,   only: map_scrip_class, map_scrip_load, map_scrip_to_weight_map, &
+                               gen_map_filename
     use conservative,    only: conservative_weights
     use interp2D,        only: fill_weighted, fill_nearest, filter_poisson
     use gaussian_filter, only: filter_gaussian, filter_gaussian_fast
+    use map_io,          only: weight_map_write, weight_map_read
+    use ncio,            only: nc_exists_var
 
     implicit none
     private
@@ -71,61 +74,91 @@ contains
         map%is_grid = .false.
     end subroutine map_init_points_points
 
-    subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr)
-        ! Build a grid -> grid map. With method="con" (conservative) the weights
-        ! are area-overlap weights and `gen` selects how they are generated
-        ! (default "coords", in-package analytic; "cdo" loads a SCRIP file); the
-        ! distance-based default (nn/quadrant/shepard/bilinear) builds a k-d-tree
-        ! MAP_DISTANCE store with `max_neighbors` neighbors per target.
+    subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr, load, clean)
+        ! Build (or load) a grid -> grid map and cache it as a SCRIP(-superset)
+        ! file under `fldr` (default "maps").
+        !   method - interpolation kernel: "con" (conservative) or a distance
+        !            kernel nn/shepard/quadrant/bilinear (default "nn").
+        !   gen    - generator used when the weights must be made: "coords"
+        !            (in-package, default) or "cdo" (external cdo system call).
+        !   load   - if .true. (default) and a cache file already exists, it is
+        !            loaded instead of regenerated; freshly generated maps are
+        !            always saved to the cache. load=.false. forces regeneration.
+        ! The loader auto-detects the file format, so a cdo-generated SCRIP file
+        ! and an in-package (coords) cache interoperate at the same filename.
         type(map_class), intent(inout) :: map
         type(grid_class), intent(in)   :: grid1, grid2
         integer,  optional, intent(in) :: max_neighbors
         real(dp), optional, intent(in) :: dist_max
-        character(len=*), optional, intent(in) :: method   ! "con" or distance-based (default)
-        character(len=*), optional, intent(in) :: gen      ! conservative generator: "coords"|"cdo"
-        character(len=*), optional, intent(in) :: fldr     ! folder for "cdo" SCRIP files (default "maps")
-        type(points_class) :: pts1, pts2
-        integer :: nmax
-
-        if (present(method)) then
-            if (trim(method) == "con") then
-                call map_init_conservative(map, grid1, grid2, gen, fldr)
-                return
-            end if
-        end if
-
-        nmax = 10
-        if (present(max_neighbors)) nmax = max_neighbors
-        call grid_to_points(grid1, pts1, define=.true.)
-        call grid_to_points(grid2, pts2, define=.true.)
-        call map_init_internal(map, pts1, pts2, nmax, dist_max, method)
-        map%is_grid = .true.
-        map%G = grid2%G
-    end subroutine map_init_grid_grid
-
-    subroutine map_init_conservative(map, grid1, grid2, gen, fldr)
-        ! Build a conservative (area-weighted) grid -> grid map as a MAP_WEIGHT.
-        ! Target metadata is assembled here (shared by both generators); the
-        ! weight store is filled either by the in-package analytic polygon clip
-        ! (gen="coords", default) or by loading a pre-generated SCRIP file
-        ! (gen="cdo"). The "cdo" path loads a map cached under `fldr` (default
-        ! "maps"); generation of new SCRIP files is done offline with cdo.
-        type(map_class),  intent(inout) :: map
-        type(grid_class), intent(in)    :: grid1, grid2
+        character(len=*), optional, intent(in) :: method
         character(len=*), optional, intent(in) :: gen
         character(len=*), optional, intent(in) :: fldr
+        logical,  optional, intent(in) :: load
+        logical,  optional, intent(in) :: clean
 
-        character(len=32)     :: g
-        character(len=256)    :: mfldr
-        integer               :: n2
-        type(map_scrip_class) :: mps
+        type(points_class) :: pts1, pts2
+        character(len=32)  :: mtd, g
+        character(len=256) :: mfldr, filename
+        logical :: load_file, file_exists
+        integer :: nmax
 
+        mtd = "nn"
+        if (present(method)) mtd = trim(method)
         g = "coords"
         if (present(gen)) g = trim(gen)
         mfldr = "maps"
         if (present(fldr)) mfldr = trim(fldr)
+        load_file = .true.
+        if (present(load)) load_file = load
 
-        ! Target metadata (shared by both generators)
+        filename = gen_map_filename(grid1%name, grid2%name, mfldr, mtd)
+        inquire(file=trim(filename), exist=file_exists)
+
+        ! Load a cached map if one exists and loading is allowed
+        if (load_file .and. file_exists) then
+            call map_set_target_from_grid(map, grid1, grid2)
+            map%method = trim(mtd)
+            call map_load_wm(map, grid1, grid2, mtd, mfldr, filename)
+            return
+        end if
+
+        ! Otherwise generate the weights
+        select case (trim(g))
+            case ("coords")
+                if (trim(mtd) == "con") then
+                    call map_init_conservative(map, grid1, grid2)
+                else
+                    nmax = 10
+                    if (present(max_neighbors)) nmax = max_neighbors
+                    call grid_to_points(grid1, pts1, define=.true.)
+                    call grid_to_points(grid2, pts2, define=.true.)
+                    call map_init_internal(map, pts1, pts2, nmax, dist_max, mtd)
+                    map%is_grid = .true.
+                    map%G = grid2%G
+                end if
+                ! Cache the freshly generated map
+                call map_save_wm(map, mfldr, filename)
+            case ("cdo")
+                ! cdo-generated SCRIP files are loaded by the generic loader
+                ! above when present. Online generation is not available here.
+                write(*,*) "mapping:: map_init gen='cdo': no SCRIP file found at"
+                write(*,*) "  "//trim(filename)
+                write(*,*) "  pregenerate it with cdo, or use gen='coords'."
+                stop
+            case default
+                write(*,*) "mapping:: map_init: unknown gen '"//trim(g)//"'"
+                write(*,*) "  expected 'coords' (in-package) or 'cdo' (external cdo call)."
+                stop
+        end select
+    end subroutine map_init_grid_grid
+
+    subroutine map_set_target_from_grid(map, grid1, grid2)
+        ! Assemble the target (grid2) metadata on a grid -> grid map_class.
+        ! Shared by the conservative generator and the cache loader.
+        type(map_class),  intent(inout) :: map
+        type(grid_class), intent(in)    :: grid1, grid2
+        integer :: n2
+
         n2 = grid2%G%nx * grid2%G%ny
         map%name1 = grid1%name
         map%name2 = grid2%name
@@ -134,7 +167,6 @@ contains
         map%G     = grid2%G
         map%npts  = n2
         map%nmax  = 0
-        map%method = "con"
         map%is_same_map = compare_coord(grid1, grid2)
         if (allocated(map%x)) deallocate(map%x, map%y, map%lon, map%lat)
         allocate(map%x(n2), map%y(n2), map%lon(n2), map%lat(n2))
@@ -142,19 +174,43 @@ contains
         map%y   = reshape(grid2%y,   [n2])
         map%lon = reshape(grid2%lon, [n2])
         map%lat = reshape(grid2%lat, [n2])
+    end subroutine map_set_target_from_grid
 
-        select case (trim(g))
-            case ("coords")
-                call conservative_weights(map%wm, grid1, grid2)
-            case ("cdo")
-                call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(mfldr), "con")
-                call map_scrip_to_weight_map(mps, map%wm)
-            case default
-                write(*,*) "mapping:: map_init_conservative: unknown gen '"//trim(g)//"'"
-                write(*,*) "  expected 'coords' (in-package analytic) or 'cdo' (load SCRIP file)."
-                stop
-        end select
+    subroutine map_init_conservative(map, grid1, grid2)
+        ! Build a conservative (area-weighted) grid -> grid map as a MAP_WEIGHT
+        ! using the in-package analytic polygon clip.
+        type(map_class),  intent(inout) :: map
+        type(grid_class), intent(in)    :: grid1, grid2
+
+        call map_set_target_from_grid(map, grid1, grid2)
+        map%method = "con"
+        call conservative_weights(map%wm, grid1, grid2)
     end subroutine map_init_conservative
+
+    subroutine map_load_wm(map, grid1, grid2, method, fldr, filename)
+        ! Load a cached weight_map into map%wm, auto-detecting the file format:
+        ! an in-package cache (weight_map_write, carries a "meta" variable) vs a
+        ! standard/cdo SCRIP file (read via the mapping_scrip bridge).
+        type(map_class),  intent(inout) :: map
+        type(grid_class), intent(in)    :: grid1, grid2
+        character(len=*), intent(in)    :: method, fldr, filename
+        type(map_scrip_class) :: mps
+
+        if (nc_exists_var(trim(filename), "meta")) then
+            call weight_map_read(map%wm, trim(filename))
+        else
+            call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(fldr), trim(method))
+            call map_scrip_to_weight_map(mps, map%wm)
+        end if
+    end subroutine map_load_wm
+
+    subroutine map_save_wm(map, fldr, filename)
+        ! Write map%wm to its cache file, creating the folder if needed.
+        type(map_class),  intent(in) :: map
+        character(len=*), intent(in) :: fldr, filename
+        call execute_command_line("mkdir -p '"//trim(fldr)//"'")
+        call weight_map_write(map%wm, trim(filename))
+    end subroutine map_save_wm
 
     subroutine map_init_grid_points(map, grid1, pts2, max_neighbors, dist_max, method)
         type(map_class), intent(inout)  :: map

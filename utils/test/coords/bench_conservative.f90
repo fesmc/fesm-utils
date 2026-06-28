@@ -237,7 +237,7 @@ contains
 
         call system_clock(c0, cr)
         do r = 1, NREP
-            call map_init(map_co, gs, gt, max_neighbors=10)
+            call map_init(map_co, gs, gt, max_neighbors=10, load=.false.)
         end do
         call system_clock(c1)
         t_co = real(c1-c0,dp)/real(cr,dp)/real(NREP,dp)
