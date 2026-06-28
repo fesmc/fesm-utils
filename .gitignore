@@ -1,8 +1,10 @@
-fftw*
-lis*
+# Anchored to repo root so they match only the top-level build dirs and not
+# nested paths (e.g. the vendored shtns-3.7.5/fftw3/ headers).
+/fftw*
+/lis*
 # SHTns: ignore the build-output prefixes, keep the vendored source (shtns-3.7.5)
-shtns-serial
-shtns-omp
+/shtns-serial
+/shtns-omp
 Makefile
 *.dSYM
 *.mod
