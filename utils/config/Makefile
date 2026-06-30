@@ -125,7 +125,8 @@ $(objdir)/conservative.o: $(srcdir)/coords/conservative.f90 $(objdir)/precision.
 $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/geodesic.o \
 								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
 								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
-								$(objdir)/mapping.o $(objdir)/map_io.o $(objdir)/ncio_interp.o $(objdir)/conservative.o
+								$(objdir)/mapping.o $(objdir)/map_io.o $(objdir)/ncio_interp.o $(objdir)/conservative.o \
+								$(objdir)/grid_cdo.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
@@ -260,6 +261,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_ncio_interp.x $(testdir)/coords/test_ncio_interp.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_parity.x $(testdir)/coords/test_parity.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_grid_cdo_rw.x $(testdir)/coords/test_grid_cdo_rw.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."

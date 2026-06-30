@@ -13,6 +13,7 @@ module coords
     use polygons
     use weight_map
     use coordinates
+    use grid_cdo
     use mapping
     use map_io
     use ncio_interp

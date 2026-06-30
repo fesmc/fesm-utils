@@ -2,7 +2,7 @@ module grid_cdo
 
     use precision, only: dp, sp
     use constants, only: pi
-    use coordinates, only: grid_class
+    use coordinates, only: grid_class, grid_init
     implicit none
 
     private
@@ -10,6 +10,7 @@ module grid_cdo
     public :: grid_cdo_write_desc_explicit_proj
     public :: grid_cdo_write_desc_explicit_latlon
     public :: grid_cdo_write_desc_via_cdo
+    public :: grid_cdo_read_desc
     public :: call_system_cdo
 
 contains
@@ -65,6 +66,20 @@ contains
         fnum = 98
         open(fnum,file=filename,status='unknown',action='write')
 
+        ! fesm-utils header: the complete coordinate-system definition, carried
+        ! as '#' comment lines (cdo ignores them). This lets grid_cdo_read_desc
+        ! reconstruct the grid exactly -- the cdo body below holds only the axes.
+        write(fnum,"(a)")    "# fesmutils grid description"
+        write(fnum,"(a)")    "# mtype  = "//trim(grid%cs%mtype)
+        write(fnum,"(a)")    "# units  = "//trim(grid%cs%units)
+        write(fnum,"(a)")    "# planet = "//trim(grid%cs%planet%name)
+        write(fnum,"(a,l1)") "# lon180 = ", grid%cs%is_lon180
+        write(fnum,"(a,g0)") "# lambda = ", grid%cs%proj%lambda
+        write(fnum,"(a,g0)") "# phi    = ", grid%cs%proj%phi
+        write(fnum,"(a,g0)") "# alpha  = ", grid%cs%proj%alpha
+        write(fnum,"(a,g0)") "# x_e    = ", grid%cs%proj%x_e
+        write(fnum,"(a,g0)") "# y_n    = ", grid%cs%proj%y_n
+
         write(fnum,"(a)")       "gridtype = "//trim(grid_type)
         write(fnum,"(a,i10)")   "gridsize = ", grid%G%nx*grid%G%ny
         write(fnum,"(a,i10)")   "xsize    = ", grid%G%nx
@@ -73,16 +88,19 @@ contains
         write(fnum,"(a)")       "xunits   = "//trim(xunits)
         write(fnum,"(a)")       "yname    = "//trim(ynm)
         write(fnum,"(a)")       "yunits   = "//trim(yunits)
-        write(fnum,"(a,f15.6)") "xfirst   = ", grid%G%x(1)
-        write(fnum,"(a,f15.6)") "xinc     = ", grid%G%dx
+        ! Axis values are written at high precision (f0.12 / f20.12) so the grid
+        ! round-trips losslessly through grid_cdo_read_desc; cdo parses the wider
+        ! decimal fields without issue.
+        write(fnum,"(a,f0.12)") "xfirst   = ", grid%G%x(1)
+        write(fnum,"(a,f0.12)") "xinc     = ", grid%G%dx
 
         if (trim(grid%cs%mtype) .eq. "gaussian") then
             ! Write the y-values directly
             write(fnum,"(a)") "yvals = "
-            write(fnum,"(50000f10.3)") grid%G%y
+            write(fnum,"(50000f20.12)") grid%G%y
         else
-            write(fnum,"(a,f15.6)") "yfirst   = ", grid%G%y(1)
-            write(fnum,"(a,f15.6)") "yinc     = ", grid%G%dy
+            write(fnum,"(a,f0.12)") "yfirst   = ", grid%G%y(1)
+            write(fnum,"(a,f0.12)") "yinc     = ", grid%G%dy
         end if
 
         write(fnum,"(a,a)") "grid_mapping = ","crs"
@@ -146,6 +164,146 @@ contains
         return
 
     end subroutine grid_cdo_write_desc_short
+
+    subroutine grid_cdo_read_desc(grid, name, fldr)
+        ! Reconstruct a grid_class from a cdo grid description file written by
+        ! grid_cdo_write_desc_short (<fldr>/grid_<name>.txt). The complete
+        ! coordinate-system definition is read from the '#' comment header; the
+        ! axes are read from the cdo body (xsize/ysize/xfirst/xinc and either
+        ! yfirst/yinc or an explicit yvals list for gaussian grids).
+        implicit none
+
+        type(grid_class), intent(out) :: grid
+        character(len=*), intent(in)  :: name
+        character(len=*), intent(in)  :: fldr
+
+        ! Local variables
+        character(len=512)  :: filename
+        character(len=1024) :: line
+        character(len=256)  :: key, val
+        integer :: fnum, ios
+        logical :: file_exists
+
+        ! Coordinate-system definition (comment header)
+        character(len=256) :: mtype, units, planet
+        logical  :: lon180
+        real(dp) :: lambda, phi, alpha, x_e, y_n
+
+        ! Axis definition (cdo body)
+        integer  :: nx, ny
+        real(dp) :: x0, dx, y0, dy
+        real(dp), allocatable :: yvals(:)
+        logical  :: is_gaussian
+
+        filename = trim(fldr)//"/"//"grid_"//trim(name)//".txt"
+        inquire(file=trim(filename), exist=file_exists)
+        if (.not. file_exists) then
+            write(*,*) "grid_cdo_read_desc:: error: grid description file not found:"
+            write(*,*) "    "//trim(filename)
+            stop
+        end if
+
+        ! Defaults (overwritten by whatever the file provides)
+        mtype  = "latlon"
+        units  = "degrees"
+        planet = "WGS84"
+        lon180 = .false.
+        lambda = 0.0_dp; phi = 0.0_dp; alpha = 0.0_dp; x_e = 0.0_dp; y_n = 0.0_dp
+        nx = 0; ny = 0
+        x0 = 0.0_dp; dx = 0.0_dp; y0 = 0.0_dp; dy = 0.0_dp
+        is_gaussian = .false.
+
+        fnum = 98
+        open(fnum,file=trim(filename),status='old',action='read')
+
+        do
+            read(fnum,"(a)",iostat=ios) line
+            if (ios /= 0) exit
+
+            call parse_key_value(line, key, val)
+            if (len_trim(key) == 0) cycle
+
+            select case (trim(key))
+                ! --- comment header: coordinate-system definition ---
+                case ("mtype");  mtype  = trim(val)
+                case ("units");  units  = trim(val)
+                case ("planet"); planet = trim(val)
+                case ("lon180"); lon180 = (val(1:1) == "T" .or. val(1:1) == "t")
+                case ("lambda"); read(val,*) lambda
+                case ("phi");    read(val,*) phi
+                case ("alpha");  read(val,*) alpha
+                case ("x_e");    read(val,*) x_e
+                case ("y_n");    read(val,*) y_n
+
+                ! --- cdo body: grid axes ---
+                case ("xsize");  read(val,*) nx
+                case ("ysize");  read(val,*) ny
+                case ("xfirst"); read(val,*) x0
+                case ("xinc");   read(val,*) dx
+                case ("yfirst"); read(val,*) y0
+                case ("yinc");   read(val,*) dy
+                case ("yvals")
+                    ! gaussian grid: ny explicit y-values follow on the next
+                    ! record(s); read them list-directed straight off the unit.
+                    if (ny <= 0) then
+                        write(*,*) "grid_cdo_read_desc:: error: 'yvals' before 'ysize' in "//trim(filename)
+                        stop
+                    end if
+                    is_gaussian = .true.
+                    allocate(yvals(ny))
+                    read(fnum,*) yvals
+            end select
+        end do
+
+        close(fnum)
+
+        ! Reconstruct the grid (axes + coordinate system) in one call
+        if (is_gaussian) then
+            call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
+                           planet=planet, lon180=lon180, &
+                           x0=x0, dx=dx, nx=nx, y=yvals, &
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n)
+        else
+            call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
+                           planet=planet, lon180=lon180, &
+                           x0=x0, dx=dx, nx=nx, y0=y0, dy=dy, ny=ny, &
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n)
+        end if
+
+        if (allocated(yvals)) deallocate(yvals)
+
+        return
+
+    end subroutine grid_cdo_read_desc
+
+    subroutine parse_key_value(line, key, val)
+        ! Split a description line "key = value" into trimmed key/value,
+        ! stripping a leading '#' comment marker. Empty key => blank or
+        ! '='-less line (caller should skip).
+        implicit none
+        character(len=*), intent(in)  :: line
+        character(len=*), intent(out) :: key, val
+        character(len=len(line)) :: s
+        integer :: ieq
+
+        key = ""
+        val = ""
+
+        s = adjustl(line)
+        if (len_trim(s) == 0) return
+        if (s(1:1) == "#") then
+            s = adjustl(s(2:))
+            if (len_trim(s) == 0) return
+        end if
+
+        ieq = index(s, "=")
+        if (ieq == 0) return
+
+        key = adjustl(s(1:ieq-1))
+        val = adjustl(s(ieq+1:))
+
+        return
+    end subroutine parse_key_value
 
     subroutine grid_cdo_write_desc_explicit_proj(lon2D,lat2D,grid_name,fldr,grid_type)
 
