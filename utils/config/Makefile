@@ -56,7 +56,7 @@ $(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
 $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/grid_to_cdo.o: $(srcdir)/coords/grid_to_cdo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/coordinates.o
+$(objdir)/grid_cdo.o: $(srcdir)/coords/grid_cdo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/coordinates.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/gaussian_filter.o: $(srcdir)/coords/gaussian_filter.f90
@@ -75,7 +75,7 @@ $(objdir)/interp2D.o: $(srcdir)/coords/interp2D.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/mapping_scrip.o: $(srcdir)/coords/mapping_scrip.f90 $(objdir)/ncio.o $(objdir)/interp2D.o \
-								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_to_cdo.o \
+								$(objdir)/gaussian_filter.o $(objdir)/index.o $(objdir)/grid_cdo.o \
 								$(objdir)/weight_map.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -107,7 +107,7 @@ $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(
 $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
 								$(objdir)/mapping_scrip.o $(objdir)/conservative.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o \
-								$(objdir)/map_io.o $(objdir)/grid_to_cdo.o $(objdir)/ncio.o
+								$(objdir)/map_io.o $(objdir)/grid_cdo.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
@@ -183,7 +183,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/distances.o \
 					$(objdir)/gaussian_filter.o \
 					$(objdir)/gaussian_quadrature.o \
-					$(objdir)/grid_to_cdo.o \
+					$(objdir)/grid_cdo.o \
 					$(objdir)/index.o \
 					$(objdir)/interp1D.o \
 					$(objdir)/interp2D.o \

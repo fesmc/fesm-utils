@@ -1,5 +1,5 @@
-module grid_to_cdo
-    
+module grid_cdo
+
     use precision, only: dp, sp
     use constants, only: pi
     use coordinates, only: grid_class
@@ -552,4 +552,4 @@ end if
 
     end subroutine gen_latlon2D
 
-end module grid_to_cdo
+end module grid_cdo

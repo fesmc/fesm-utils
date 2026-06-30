@@ -18,7 +18,7 @@ program bench_conservative
     use coords
     use mapping_scrip, only : map_scrip_class, map_scrip_init_from_griddesc, &
                               map_scrip_to_weight_map, map_scrip_end
-    use grid_to_cdo,   only : grid_cdo_write_desc_explicit_latlon, &
+    use grid_cdo,      only : grid_cdo_write_desc_explicit_latlon, &
                               grid_cdo_write_desc_explicit_proj
 
     implicit none

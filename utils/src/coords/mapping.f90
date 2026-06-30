@@ -27,7 +27,7 @@ module mapping
     use gaussian_filter, only: filter_gaussian, filter_gaussian_fast
     use map_io,          only: weight_map_write, weight_map_read
     use ncio,            only: nc_exists_var
-    use grid_to_cdo,     only: grid_cdo_write_desc_short, call_system_cdo
+    use grid_cdo,        only: grid_cdo_write_desc_short, call_system_cdo
 
     implicit none
     private

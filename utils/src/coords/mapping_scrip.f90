@@ -9,7 +9,7 @@ module mapping_scrip
     use index 
     use interp2D
     use gaussian_filter, only : filter_gaussian, filter_gaussian_fast
-    use grid_to_cdo, only : call_system_cdo
+    use grid_cdo, only : call_system_cdo
     use weight_map, only : weight_map_t, weight_map_alloc, weight_map_index, MAP_WEIGHT
 
     use, intrinsic :: iso_fortran_env, only: error_unit
