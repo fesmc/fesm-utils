@@ -27,7 +27,7 @@ module mapping
     use gaussian_filter, only: filter_gaussian, filter_gaussian_fast
     use map_io,          only: weight_map_write, weight_map_read
     use ncio,            only: nc_exists_var
-    use grid_cdo,        only: grid_cdo_write_desc_short, call_system_cdo
+    use grid_cdo,        only: grid_cdo_write_desc_short, grid_cdo_read_desc, call_system_cdo
 
     implicit none
     private
@@ -48,6 +48,7 @@ module mapping
     interface map_init
         module procedure map_init_grid_grid, map_init_grid_points
         module procedure map_init_points_grid, map_init_points_points
+        module procedure map_init_grid_names
     end interface
 
     interface map_field
@@ -149,6 +150,38 @@ contains
                 stop
         end select
     end subroutine map_init_grid_grid
+
+    subroutine map_init_grid_names(map, name1, name2, max_neighbors, dist_max, method, gen, fldr, load, clean)
+        ! Build (or load) a grid -> grid map from grid *names* alone. The source
+        ! and target grid definitions are read from cdo description files
+        ! (grid_<name>.txt) found in `fldr`, the grids are reconstructed
+        ! internally, and the map is then generated or loaded exactly as
+        ! map_init(map, grid1, grid2, ...). The caller obtains only the map
+        ! object -- the grids are not exposed. `fldr` holds both the grid
+        ! description files and the map cache (default "maps").
+        type(map_class),  intent(inout) :: map
+        character(len=*), intent(in)    :: name1, name2
+        integer,  optional, intent(in)  :: max_neighbors
+        real(dp), optional, intent(in)  :: dist_max
+        character(len=*), optional, intent(in) :: method
+        character(len=*), optional, intent(in) :: gen
+        character(len=*), optional, intent(in) :: fldr
+        logical,  optional, intent(in)  :: load
+        logical,  optional, intent(in)  :: clean
+
+        type(grid_class)   :: grid1, grid2
+        character(len=256) :: mfldr
+
+        mfldr = "maps"
+        if (present(fldr)) mfldr = trim(fldr)
+
+        call grid_cdo_read_desc(grid1, trim(name1), mfldr)
+        call grid_cdo_read_desc(grid2, trim(name2), mfldr)
+
+        call map_init_grid_grid(map, grid1, grid2, max_neighbors=max_neighbors, &
+                                dist_max=dist_max, method=method, gen=gen, &
+                                fldr=mfldr, load=load, clean=clean)
+    end subroutine map_init_grid_names
 
     subroutine map_set_target_from_grid(map, grid1, grid2)
         ! Assemble the target (grid2) metadata on a grid -> grid map_class.
