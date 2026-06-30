@@ -8,7 +8,12 @@ module nml
     logical :: VERBOSE = .TRUE.            !!  should freshly read namelist be printed to screen?
     logical :: ERROR_NO_PARAM = .TRUE.      !! Should error be thrown if parameter isn't found? 
 
-    integer, parameter :: io_unit_err = error_unit 
+    integer, parameter :: io_unit_err = error_unit
+
+    ! Maximum number of vector elements to echo in nml_print_*_vector.
+    ! Longer vectors are truncated with a "... (n total)" note to avoid
+    ! building huge strings that overflow the fixed-length print line.
+    integer, parameter :: nml_print_vector_max = 50
 
     interface nml_read 
         module procedure nml_read_string, nml_read_double, nml_read_float 
@@ -1045,25 +1050,46 @@ contains
     
     !! Vectors
 
+    ! Note appended to a truncated vector print, e.g. " ... (100000 total)".
+    ! Returns "" when the vector is short enough to print in full.
+    function nml_print_vector_note(n) result(note)
+
+        implicit none
+        integer, intent(in) :: n
+        character(len=:), allocatable :: note
+        character(len=32) :: tmp
+
+        if (n .gt. nml_print_vector_max) then
+            write(tmp,"(i0)") n
+            note = " ... ("//trim(adjustl(tmp))//" total)"
+        else
+            note = ""
+        end if
+
+        return
+
+    end function nml_print_vector_note
+
     subroutine nml_print_string_vector(name,value,comment,io)
 
-        implicit none 
+        implicit none
         character(len=*) :: value(:)
-        character(len=*) :: name 
+        character(len=*) :: name
         character(len=*), optional :: comment
-        integer, optional :: io 
+        integer, optional :: io
         character(len=:), allocatable :: value_str
         character(len=16) :: tmp
-        integer :: q 
+        integer :: q
 
         value_str = '"'//trim(value(1))//'"'
-        do q = 2, size(value)
+        do q = 2, min(size(value),nml_print_vector_max)
             value_str = value_str // " " // trim(adjustl(value(q)))
-        end do 
+        end do
+        value_str = value_str // nml_print_vector_note(size(value))
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
-        return 
+        return
 
     end subroutine nml_print_string_vector
     
@@ -1079,14 +1105,15 @@ contains
         integer :: q 
 
         value_str = ""
-        do q = 1, size(value)
+        do q = 1, min(size(value),nml_print_vector_max)
             write(tmp,"(g12.3)") value(q)
             value_str = value_str // " " // trim(adjustl(tmp))
-        end do 
+        end do
+        value_str = value_str // nml_print_vector_note(size(value))
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
-        return 
+        return
 
     end subroutine nml_print_double_vector
     
@@ -1102,14 +1129,15 @@ contains
         integer :: q 
 
         value_str = ""
-        do q = 1, size(value)
+        do q = 1, min(size(value),nml_print_vector_max)
             write(tmp,"(g12.3)") value(q)
             value_str = value_str // " " // trim(adjustl(tmp))
-        end do 
+        end do
+        value_str = value_str // nml_print_vector_note(size(value))
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
-        return 
+        return
 
     end subroutine nml_print_float_vector
     
@@ -1125,10 +1153,11 @@ contains
         integer :: q
 
         value_str = ""
-        do q = 1, size(value)
+        do q = 1, min(size(value),nml_print_vector_max)
             write(tmp,"(i12)") value(q)
             value_str = value_str // " " // trim(adjustl(tmp))
         end do
+        value_str = value_str // nml_print_vector_note(size(value))
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
@@ -1148,13 +1177,14 @@ contains
         integer :: q 
 
         value_str = ""
-        do q = 1, size(value)
-            if (value(q)) then 
+        do q = 1, min(size(value),nml_print_vector_max)
+            if (value(q)) then
                 value_str = value_str // " " // "T"
             else
                 value_str = value_str // " " // "F"
-            end if 
-        end do 
+            end if
+        end do
+        value_str = value_str // nml_print_vector_note(size(value))
 
         if (VERBOSE) call nml_print_string(name,value_str,comment,io,no_quotes=.true.)
 
