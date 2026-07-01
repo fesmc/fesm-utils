@@ -355,14 +355,14 @@ contains
 
         type(kdtree_t) :: tree
         logical  :: use_cart
-        integer  :: n1, n2, ndim, i, c, j, nf, nl, nlmax
-        integer  :: nq, nsel, s, best, tmpi
-        real(dp) :: xyc, a, f, dmax, dist, q(3), tmpd
+        integer  :: n1, n2, ndim, i, j, nf, nl, nlmax
+        integer  :: nq, nsel, s, base, cnt
+        integer  :: nprog, prog_step, mycount   ! coarse progress reporting
+        real(dp) :: xyc, a, f, dmax, dist, q(3)
         real(dp), allocatable :: emb(:,:)
         integer,  allocatable :: knn_idx(:)
         real(dp), allocatable :: knn_d2(:)
-        integer,  allocatable :: cand_idx(:)    ! candidate set, re-ranked by exact distance
-        real(dp), allocatable :: cand_dist(:)
+        integer,  allocatable :: ncnt(:)        ! links stored per target point
         ! temporary link store
         integer,  allocatable :: tsrc(:), tdst(:), tquad(:)
         real(dp), allocatable :: tdist(:), txn(:), tyn(:)
@@ -403,18 +403,32 @@ contains
         end if
         call kdtree_build(tree, emb)
 
-        ! Over-fetch candidates by chord distance, then re-rank by the exact
-        ! metric and keep the true max_neighbors nearest. This is needed because
-        ! the spherical-chord embedding is not perfectly monotonic in the
-        ! ellipsoidal geodesic distance, so the chord-kNN order/boundary can
-        ! differ slightly from the exact result near ties.
-        nq = min(n1, 2*max_neighbors + 8)
-        allocate(knn_idx(nq), knn_d2(nq), cand_idx(nq), cand_dist(nq))
-        nlmax = n2 * max_neighbors
-        allocate(tsrc(nlmax), tdst(nlmax), tquad(nlmax), tdist(nlmax), txn(nlmax), tyn(nlmax))
+        ! Neighbour selection uses the cheap chord metric only: kdtree_knn returns
+        ! the max_neighbors nearest already sorted by ascending chord distance, so
+        ! no re-ranking is needed. The exact ellipsoidal geodesic (or cartesian)
+        ! distance is still evaluated for each *selected* neighbour and stored in
+        ! the link distance below, which is what the interpolation weights use.
+        nq = min(n1, max_neighbors)
 
-        nl = 0
+        ! Give every target point a fixed max_neighbors-wide slot in the link
+        ! store so the search can run as an OpenMP parallel loop with no shared
+        ! append counter; the sparse slots are compacted afterwards.
+        nlmax = n2 * max_neighbors
+        allocate(ncnt(n2))
+        allocate(tsrc(nlmax), tdst(nlmax), tquad(nlmax), tdist(nlmax), txn(nlmax), tyn(nlmax))
+        ncnt = 0
+
+        write(*,'(a)') "  map(coords): "//trim(pts1%name)//" => "//trim(pts2%name)// &
+                       " ["//trim(map%method)//"]"
+        nprog = 0
+        prog_step = max(1, n2/10)
+
+        !$omp parallel default(shared) &
+        !$omp   private(i, j, s, nf, nsel, q, dist, base, cnt, knn_idx, knn_d2, mycount)
+        allocate(knn_idx(nq), knn_d2(nq))
+        !$omp do schedule(guided)
         do i = 1, n2
+            base = (i-1)*max_neighbors
             if (use_cart) then
                 q(1:2) = [pts2%x(i)*xyc, pts2%y(i)*xyc]
                 call kdtree_knn(tree, q(1:2), nq, knn_idx, knn_d2, nf)
@@ -423,54 +437,69 @@ contains
                 call kdtree_knn(tree, q, nq, knn_idx, knn_d2, nf)
             end if
 
-            ! exact distance for each candidate
-            do c = 1, nf
-                j = knn_idx(c)
-                cand_idx(c) = j
-                if (use_cart) then
-                    cand_dist(c) = cartesian_distance(pts2%x(i)*xyc, pts2%y(i)*xyc, &
-                                                      pts1%x(j)*xyc, pts1%y(j)*xyc)
-                else
-                    cand_dist(c) = planet_distance(a, f, pts2%lon(i), pts2%lat(i), &
-                                                   pts1%lon(j), pts1%lat(j))
-                end if
-            end do
-
-            ! selection-sort the first nsel candidates by exact distance
+            ! Keep the nearest nsel candidates (already chord-sorted). Store the
+            ! exact distance for each and drop any beyond dmax.
             nsel = min(nf, max_neighbors)
+            cnt = 0
             do s = 1, nsel
-                best = s
-                do c = s+1, nf
-                    if (cand_dist(c) < cand_dist(best)) best = c
-                end do
-                tmpd = cand_dist(s); cand_dist(s) = cand_dist(best); cand_dist(best) = tmpd
-                tmpi = cand_idx(s);  cand_idx(s)  = cand_idx(best);  cand_idx(best)  = tmpi
-            end do
-
-            do s = 1, nsel
-                j    = cand_idx(s)
-                dist = cand_dist(s)
+                j = knn_idx(s)
+                if (use_cart) then
+                    dist = cartesian_distance(pts2%x(i)*xyc, pts2%y(i)*xyc, &
+                                              pts1%x(j)*xyc, pts1%y(j)*xyc)
+                else
+                    dist = planet_distance(a, f, pts2%lon(i), pts2%lat(i), &
+                                           pts1%lon(j), pts1%lat(j))
+                end if
                 if (dist > dmax) cycle
+                cnt = cnt + 1
+                tsrc(base+cnt)  = j
+                tdst(base+cnt)  = i
+                tdist(base+cnt) = dist
+                if (use_cart) then
+                    tquad(base+cnt) = quadrant_cartesian(pts2%x(i)*xyc, pts2%y(i)*xyc, &
+                                                         pts1%x(j)*xyc, pts1%y(j)*xyc)
+                    ! Store neighbor position in the map's metric space (for bilinear):
+                    ! projected meters when Cartesian, otherwise lon/lat degrees.
+                    txn(base+cnt) = pts1%x(j)*xyc
+                    tyn(base+cnt) = pts1%y(j)*xyc
+                else
+                    tquad(base+cnt) = quadrant_latlon(pts2%lon(i), pts2%lat(i), &
+                                                      pts1%lon(j), pts1%lat(j))
+                    txn(base+cnt) = pts1%lon(j)
+                    tyn(base+cnt) = pts1%lat(j)
+                end if
+            end do
+            ncnt(i) = cnt
+
+            ! Coarse progress (~10% steps) so a long, silent generation is visible.
+            !$omp atomic capture
+            nprog = nprog + 1
+            mycount = nprog
+            !$omp end atomic
+            if (mod(mycount, prog_step) == 0) then
+                !$omp critical (coords_map_progress)
+                write(*,'(a,i4,a)') "    ... ", nint(100.0_dp*mycount/real(n2,dp)), "%"
+                !$omp end critical (coords_map_progress)
+            end if
+        end do
+        !$omp end do
+        deallocate(knn_idx, knn_d2)
+        !$omp end parallel
+
+        ! Compact the fixed slots into a contiguous, target-ordered link list.
+        ! Safe in place: the write index never overtakes the read index because
+        ! each target owns a full max_neighbors-wide slot but fills <= that many.
+        nl = 0
+        do i = 1, n2
+            base = (i-1)*max_neighbors
+            do s = 1, ncnt(i)
                 nl = nl + 1
-                tsrc(nl)  = j
-                tdst(nl)  = i
-                tdist(nl) = dist
-                if (use_cart) then
-                    tquad(nl) = quadrant_cartesian(pts2%x(i)*xyc, pts2%y(i)*xyc, &
-                                                   pts1%x(j)*xyc, pts1%y(j)*xyc)
-                else
-                    tquad(nl) = quadrant_latlon(pts2%lon(i), pts2%lat(i), &
-                                                pts1%lon(j), pts1%lat(j))
-                end if
-                ! Store neighbor position in the map's metric space (for bilinear):
-                ! projected meters when Cartesian, otherwise lon/lat degrees.
-                if (use_cart) then
-                    txn(nl) = pts1%x(j)*xyc
-                    tyn(nl) = pts1%y(j)*xyc
-                else
-                    txn(nl) = pts1%lon(j)
-                    tyn(nl) = pts1%lat(j)
-                end if
+                tsrc(nl)  = tsrc(base+s)
+                tdst(nl)  = tdst(base+s)
+                tdist(nl) = tdist(base+s)
+                tquad(nl) = tquad(base+s)
+                txn(nl)   = txn(base+s)
+                tyn(nl)   = tyn(base+s)
             end do
         end do
 
@@ -485,7 +514,7 @@ contains
         call weight_map_index(map%wm)
 
         call kdtree_free(tree)
-        deallocate(emb, knn_idx, knn_d2, cand_idx, cand_dist, tsrc, tdst, tquad, tdist, txn, tyn)
+        deallocate(emb, ncnt, tsrc, tdst, tquad, tdist, txn, tyn)
     end subroutine map_init_internal
 
     subroutine sphere_embed(lon, lat, emb)
