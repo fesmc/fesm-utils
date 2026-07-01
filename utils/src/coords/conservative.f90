@@ -20,15 +20,80 @@ module conservative
     use kdtree
     use weight_map
     use polygons
+    !$ use omp_lib
 
     implicit none
     private
 
     integer, parameter :: NSUB = 8   ! great-circle segments per parallel edge (stage C)
 
+    ! Per-thread link accumulator: each thread appends its target cells' links
+    ! here (no shared counter), then bufs_to_wm merges them into the CSR weight
+    ! store in destination order.
+    type :: link_buf
+        integer,  allocatable :: src(:), dst(:)
+        real(dp), allocatable :: w(:)
+        integer :: n = 0
+    end type link_buf
+
     public :: conservative_weights
 
 contains
+
+    subroutine buf_push(b, s, d, wv)
+        ! Append one link to a per-thread buffer, doubling capacity as needed.
+        type(link_buf), intent(inout) :: b
+        integer,        intent(in)    :: s, d
+        real(dp),       intent(in)    :: wv
+        integer,  allocatable :: ti(:)
+        real(dp), allocatable :: tr(:)
+        integer :: cap
+        if (.not. allocated(b%src)) allocate(b%src(1024), b%dst(1024), b%w(1024))
+        cap = size(b%src)
+        if (b%n >= cap) then
+            allocate(ti(2*cap)); ti(1:b%n) = b%src(1:b%n); call move_alloc(ti, b%src)
+            allocate(ti(2*cap)); ti(1:b%n) = b%dst(1:b%n); call move_alloc(ti, b%dst)
+            allocate(tr(2*cap)); tr(1:b%n) = b%w(1:b%n);   call move_alloc(tr, b%w)
+        end if
+        b%n = b%n + 1
+        b%src(b%n) = s; b%dst(b%n) = d; b%w(b%n) = wv
+    end subroutine buf_push
+
+    subroutine bufs_to_wm(wm, bufs, n1, n2)
+        ! Merge per-thread link buffers into the weight store, ordered by
+        ! destination (a counting sort over dst), as weight_map_index expects.
+        type(weight_map_t), intent(inout) :: wm
+        type(link_buf),     intent(in)    :: bufs(0:)
+        integer,            intent(in)    :: n1, n2
+        integer :: t, c, d, p, nl, nt
+        integer, allocatable :: off(:), pos(:)
+        nt = size(bufs)
+        nl = 0
+        do t = 0, nt-1
+            nl = nl + bufs(t)%n
+        end do
+        call weight_map_alloc(wm, MAP_WEIGHT, n1, n2, nl)
+        allocate(off(n2+1)); off = 0
+        do t = 0, nt-1
+            do c = 1, bufs(t)%n
+                d = bufs(t)%dst(c); off(d+1) = off(d+1) + 1
+            end do
+        end do
+        off(1) = 1
+        do d = 1, n2
+            off(d+1) = off(d+1) + off(d)
+        end do
+        allocate(pos(n2)); pos(1:n2) = off(1:n2)
+        do t = 0, nt-1
+            do c = 1, bufs(t)%n
+                d = bufs(t)%dst(c)
+                p = pos(d); pos(d) = p + 1
+                wm%src(p) = bufs(t)%src(c); wm%dst(p) = d; wm%w(p) = bufs(t)%w(c)
+            end do
+        end do
+        deallocate(off, pos)
+        call weight_map_index(wm)
+    end subroutine bufs_to_wm
 
     subroutine conservative_weights(wm, grid1, grid2)
         ! Build the conservative MAP_WEIGHT weight store for grid1 -> grid2 via
@@ -53,7 +118,7 @@ contains
         type(kdtree_t) :: tree
         logical  :: same_sys, do_project
         integer  :: n1, n2, nx1, ny1, nx2, ny2
-        integer  :: i, j, ic, jc, c, cs, cc, k, nf, nl, nlmax, no
+        integer  :: i, j, ic, jc, c, cs, cc, k, nf, no, nthreads, tid
         real(dp) :: rad, diag2, area, maxsrcdiag, d, xyc, px, py
         real(dp) :: cx, cy, cz, srcdeg, tgtdeg
         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
@@ -61,8 +126,7 @@ contains
         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source corners in target plane
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
-        integer,  allocatable :: tsrc(:), tdst(:)
-        real(dp), allocatable :: tw(:)
+        type(link_buf), allocatable :: bufs(:)
 
         same_sys   = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian
         do_project = (.not. same_sys) .and. grid2%cs%is_projection .and. (.not. grid1%cs%is_cartesian)
@@ -136,11 +200,16 @@ contains
             rad    = chord(srcdeg + 1.5_dp*tgtdeg)
         end if
 
-        allocate(cidx(n1), cd2(n1))
-        nlmax = max(n2*16, n1)
-        allocate(tsrc(nlmax), tdst(nlmax), tw(nlmax))
+        nthreads = 1
+        !$ nthreads = omp_get_max_threads()
+        allocate(bufs(0:nthreads-1))
 
-        nl = 0
+        !$omp parallel default(shared) &
+        !$omp   private(i, j, c, cc, cs, nf, no, tcx, tcy, qpt, cx, cy, cz, area, cidx, cd2, ox, oy, tid)
+        tid = 0
+        !$ tid = omp_get_thread_num()
+        allocate(cidx(n1), cd2(n1))
+        !$omp do schedule(guided) collapse(2)
         do j = 1, ny2
             do i = 1, nx2
                 c = (j-1)*nx2 + i                 ! target cell (column-major)
@@ -157,27 +226,20 @@ contains
                     call polygon_clip(scornx(:,cs), scorny(:,cs), tcx, tcy, ox, oy, no)
                     if (no >= 3) then
                         area = polygon_area(ox(1:no), oy(1:no))
-                        if (area > 0.0_dp) then
-                            if (nl >= nlmax) call grow_links(tsrc, tdst, tw, nlmax)
-                            nl = nl + 1
-                            tsrc(nl) = cs
-                            tdst(nl) = c
-                            tw(nl)   = area
-                        end if
+                        if (area > 0.0_dp) call buf_push(bufs(tid), cs, c, area)
                     end if
                 end do
             end do
         end do
+        !$omp end do
+        deallocate(cidx, cd2)
+        if (allocated(ox)) deallocate(ox, oy)
+        !$omp end parallel
 
-        call weight_map_alloc(wm, MAP_WEIGHT, n1, n2, nl)
-        wm%src(1:nl) = tsrc(1:nl)
-        wm%dst(1:nl) = tdst(1:nl)
-        wm%w(1:nl)   = tw(1:nl)
-        call weight_map_index(wm)
+        call bufs_to_wm(wm, bufs, n1, n2)
 
         call kdtree_free(tree)
-        deallocate(emb, scornx, scorny, cidx, cd2, tsrc, tdst, tw)
-        if (allocated(ox)) deallocate(ox, oy)
+        deallocate(emb, scornx, scorny, bufs)
     end subroutine conservative_planar
 
     subroutine conservative_spherical(wm, grid1, grid2)
@@ -189,18 +251,16 @@ contains
 
         type(kdtree_t) :: tree
         integer  :: n1, n2, nx1, ny1, nx2, ny2
-        integer  :: i, j, ic, jc, c, cs, cc, nf, nl, nlmax, no, nv
+        integer  :: i, j, ic, jc, c, cs, cc, nf, no, nv, nthreads, tid
         real(dp) :: rad, area, a, f
         real(dp), allocatable :: emb(:,:)
         real(dp), allocatable :: slon(:,:), slat(:,:)     ! source cell corners (lon/lat)
         real(dp) :: tlon(4), tlat(4)
-        real(dp), allocatable :: cidx_r(:)
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
         real(dp), allocatable :: sv(:,:), cv(:,:), ov(:,:)
         real(dp) :: olon(64), olat(64)
-        integer,  allocatable :: tsrc(:), tdst(:)
-        real(dp), allocatable :: tw(:)
+        type(link_buf), allocatable :: bufs(:)
         real(dp) :: cx, cy, cz
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
@@ -223,11 +283,17 @@ contains
         rad = chord(max(grid1%G%dx, grid1%G%dy) + max(grid2%G%dx, grid2%G%dy) + &
                     0.5_dp*max(grid2%G%dx, grid2%G%dy))
 
-        allocate(cidx(n1), cd2(n1), cidx_r(3))
-        nlmax = max(n2*16, n1)
-        allocate(tsrc(nlmax), tdst(nlmax), tw(nlmax))
+        nthreads = 1
+        !$ nthreads = omp_get_max_threads()
+        allocate(bufs(0:nthreads-1))
 
-        nl = 0
+        !$omp parallel default(shared) &
+        !$omp   private(i, j, c, cc, cs, ic, jc, nf, no, nv, tlon, tlat, cx, cy, cz, area, &
+        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid)
+        tid = 0
+        !$ tid = omp_get_thread_num()
+        allocate(cidx(n1), cd2(n1))
+        !$omp do schedule(guided) collapse(2)
         do j = 1, ny2
             do i = 1, nx2
                 c = (j-1)*nx2 + i
@@ -241,32 +307,27 @@ contains
                     call build_sphere_poly(slon(:,cs), slat(:,cs), &
                                            grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
                     call polygon_clip_sphere(sv, cv, ov, no)
-                    if (no >= 3) then
-                        if (no <= 64) then
-                            do nv = 1, no
-                                call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
-                            end do
-                            area = planet_area(a, f, olon(1:no), olat(1:no))
-                            if (area > 0.0_dp) then
-                                if (nl >= nlmax) call grow_links(tsrc, tdst, tw, nlmax)
-                                nl = nl + 1
-                                tsrc(nl) = cs; tdst(nl) = c; tw(nl) = area
-                            end if
-                        end if
+                    if (no >= 3 .and. no <= 64) then
+                        do nv = 1, no
+                            call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
+                        end do
+                        area = planet_area(a, f, olon(1:no), olat(1:no))
+                        if (area > 0.0_dp) call buf_push(bufs(tid), cs, c, area)
                     end if
                 end do
             end do
         end do
-
-        call weight_map_alloc(wm, MAP_WEIGHT, n1, n2, nl)
-        wm%src(1:nl) = tsrc(1:nl); wm%dst(1:nl) = tdst(1:nl); wm%w(1:nl) = tw(1:nl)
-        call weight_map_index(wm)
-
-        call kdtree_free(tree)
-        deallocate(emb, slon, slat, cidx, cd2, cidx_r, tsrc, tdst, tw)
+        !$omp end do
+        deallocate(cidx, cd2)
         if (allocated(sv)) deallocate(sv)
         if (allocated(cv)) deallocate(cv)
         if (allocated(ov)) deallocate(ov)
+        !$omp end parallel
+
+        call bufs_to_wm(wm, bufs, n1, n2)
+
+        call kdtree_free(tree)
+        deallocate(emb, slon, slat, bufs)
     end subroutine conservative_spherical
 
     real(dp) function chord(deg) result(c)
@@ -350,21 +411,6 @@ contains
         lon = atan2(y, x) / degrees_to_radians
         lat = asin(max(-1.0_dp, min(1.0_dp, z))) / degrees_to_radians
     end subroutine xyz_to_lonlat
-
-    subroutine grow_links(tsrc, tdst, tw, cap)
-        ! Double the temporary link buffers (safety for dense overlaps).
-        integer,  allocatable, intent(inout) :: tsrc(:), tdst(:)
-        real(dp), allocatable, intent(inout) :: tw(:)
-        integer,               intent(inout) :: cap
-        integer,  allocatable :: itmp(:)
-        real(dp), allocatable :: rtmp(:)
-        integer :: newcap
-        newcap = cap*2
-        allocate(itmp(newcap)); itmp(1:cap) = tsrc; call move_alloc(itmp, tsrc)
-        allocate(itmp(newcap)); itmp(1:cap) = tdst; call move_alloc(itmp, tdst)
-        allocate(rtmp(newcap)); rtmp(1:cap) = tw;   call move_alloc(rtmp, tw)
-        cap = newcap
-    end subroutine grow_links
 
     subroutine cell_corners_grid(grid, i, j, cx, cy)
         ! Four corners (CCW) of cell (i,j) in axis units, from adjacent-axis
