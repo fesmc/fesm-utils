@@ -19,7 +19,8 @@ module coupler
     ! (mean / count / stdev) is applied when the field is mapped and is NOT part
     ! of the key -- it is forwarded to map_field per call.
 
-    use coords, only : dp, sp, grid_class, map_class, map_init, map_field
+    use coords, only : dp, sp, grid_class, map_class, map_init, map_field, &
+                       grid_cdo_read_desc
 
     implicit none
     private
@@ -79,6 +80,9 @@ contains
         cpl%ngrids = cpl%ngrids + 1
         cpl%grids(cpl%ngrids)%name = trim(name)
         cpl%grids(cpl%ngrids)%grid = grid
+        ! Align the grid's own name with the registry name so the map cache keys
+        ! (map%name1/name2, taken from grid%name) match the names callers pass.
+        cpl%grids(cpl%ngrids)%grid%name = trim(name)
     end subroutine coupler_add_grid
 
     subroutine coupler_prime(cpl, src, dst, method)
@@ -111,24 +115,21 @@ contains
 
     function get_map(cpl, src, dst, method) result(im)
         ! Find the cached (src->dst, method) map, or build+cache it on miss.
+        ! Grids are resolved by name: an in-memory registered grid takes
+        ! precedence; otherwise the definition is read from grid_<name>.txt in
+        ! the map folder (grid_cdo_read_desc).
         type(coupler_class), intent(inout) :: cpl
         character(len=*),    intent(in)    :: src, dst, method
         integer :: im
 
-        integer :: is, it, i
-        character(len=256) :: nsrc, ndst
+        integer :: i
+        type(grid_class) :: grid_src, grid_dst
 
-        is = find_grid(cpl, src)
-        it = find_grid(cpl, dst)
-        if (is < 0) call coupler_err("remap: source grid '"//trim(src)//"' not registered.")
-        if (it < 0) call coupler_err("remap: target grid '"//trim(dst)//"' not registered.")
-
-        nsrc = cpl%grids(is)%grid%name
-        ndst = cpl%grids(it)%grid%name
-
+        ! Cache hit: registered/disk grids both carry grid%name == the name the
+        ! caller passes, so map%name1/name2 can be matched against src/dst directly.
         do i = 1, cpl%nmaps
-            if (trim(cpl%maps(i)%name1)  == trim(nsrc)   .and. &
-                trim(cpl%maps(i)%name2)  == trim(ndst)   .and. &
+            if (trim(cpl%maps(i)%name1)  == trim(src)    .and. &
+                trim(cpl%maps(i)%name2)  == trim(dst)    .and. &
                 trim(cpl%maps(i)%method) == trim(method)) then
                 im = i
                 return
@@ -138,11 +139,30 @@ contains
         if (cpl%nmaps >= MAP_MAX) &
             call coupler_err("remap: MAP_MAX exceeded (raise it in coupler.f90).")
 
+        call resolve_grid(cpl, src, grid_src)
+        call resolve_grid(cpl, dst, grid_dst)
+
         cpl%nmaps = cpl%nmaps + 1
         im = cpl%nmaps
-        call map_init(cpl%maps(im), cpl%grids(is)%grid, cpl%grids(it)%grid, &
+        call map_init(cpl%maps(im), grid_src, grid_dst, &
                       method=trim(method), fldr=trim(cpl%map_fldr), load=.true.)
     end function get_map
+
+    subroutine resolve_grid(cpl, name, grid)
+        ! Resolve a grid name to a grid_class: use the in-memory registry if the
+        ! name is registered, else read grid_<name>.txt from the map folder.
+        type(coupler_class), intent(in)  :: cpl
+        character(len=*),    intent(in)  :: name
+        type(grid_class),    intent(out) :: grid
+        integer :: ig
+
+        ig = find_grid(cpl, name)
+        if (ig > 0) then
+            grid = cpl%grids(ig)%grid
+        else
+            call grid_cdo_read_desc(grid, trim(name), trim(cpl%map_fldr))
+        end if
+    end subroutine resolve_grid
 
     function method_or_default(method) result(mtd)
         character(len=*), intent(in), optional :: method

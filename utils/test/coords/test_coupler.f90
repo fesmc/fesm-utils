@@ -118,6 +118,59 @@ program test_coupler
         end if
     end if
 
+    ! --- Test 6: disk-driven grids resolved from grid_<name>.txt (no register) --
+    block
+        type(coupler_class)   :: cpl2
+        type(grid_class)      :: gsd, gtd
+        real(wp), allocatable :: fsd(:,:), ftd(:,:)
+        character(len=*), parameter :: dfldr = "maps_coupler_disk_test"
+        integer  :: i2, j2
+        real(wp) :: emax2
+
+        call execute_command_line("rm -rf "//dfldr//" ; mkdir -p "//dfldr)
+
+        ! ANT-like polar_stereographic grids so the description carries a
+        ! grid_mapping_name (the CF key the reader falls back on).
+        call grid_init(gsd, name="disk-src", mtype="polar_stereographic", units="kilometers", &
+                       lon180=.false., x0=-500.0_dp, dx=100.0_dp, nx=11, &
+                       y0=-500.0_dp, dy=100.0_dp, ny=11, lambda=0.0_dp, phi=-71.0_dp)
+        call grid_init(gtd, name="disk-tgt", mtype="polar_stereographic", units="kilometers", &
+                       lon180=.false., x0=-500.0_dp, dx=50.0_dp,  nx=21, &
+                       y0=-500.0_dp, dy=50.0_dp,  ny=21, lambda=0.0_dp, phi=-71.0_dp)
+
+        ! Write descriptions, then strip the # header to emulate cdo-native files.
+        call grid_cdo_write_desc_short(gsd, dfldr)
+        call grid_cdo_write_desc_short(gtd, dfldr)
+        call execute_command_line("for f in "//dfldr//"/grid_disk-*.txt; do " // &
+                                  "grep -v '^#' $f > $f.tmp && mv $f.tmp $f; done")
+
+        allocate(fsd(11,11))
+        do j2 = 1, 11
+            do i2 = 1, 11
+                fsd(i2,j2) = flin(gsd%x(i2,j2), gsd%y(i2,j2))
+            end do
+        end do
+
+        call coupler_init(cpl2, map_fldr=dfldr)      ! no coupler_add_grid
+        call remap(cpl2, fsd, "disk-src", ftd, "disk-tgt", method="bilin")
+
+        if (.not. allocated(ftd) .or. size(ftd,1) /= 21 .or. size(ftd,2) /= 21) then
+            write(*,*) "FAIL: disk-driven remap wrong shape"; fails = fails + 1
+        else
+            emax2 = 0.0_dp
+            do j2 = 2, 20
+                do i2 = 2, 20
+                    emax2 = max(emax2, abs(ftd(i2,j2) - flin(gtd%x(i2,j2), gtd%y(i2,j2))))
+                end do
+            end do
+            write(*,*) "disk-driven bilin interior err  =", emax2
+            if (emax2 > 1.0e-6_dp) then
+                write(*,*) "FAIL: disk-driven remap inaccurate"; fails = fails + 1
+            end if
+        end if
+        call execute_command_line("rm -rf "//dfldr)
+    end block
+
     call execute_command_line("rm -rf "//fldr)
 
     if (fails > 0) stop 1
