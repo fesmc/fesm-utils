@@ -1163,7 +1163,7 @@ contains
                                   missing_value=missing_value, radius=radius, mask2=mask2)
         else
             ! Distance store: kernel selects how per-link weights are formed.
-            if (trim(kernel) == "bilinear" .or. trim(kernel) == "bilin") then
+            if (trim(kernel) == "bilinear" .or. trim(kernel) == "bilin" .or. trim(kernel) == "bil") then
                 call bilinear_apply(map, var1, var2, missing_value, mask2)
             else
                 call weight_map_apply(map%wm, var1, var2, kernel=kernel, stat=stat, &
@@ -1199,7 +1199,7 @@ contains
         else
             ! Distance store: only the distance kernels are available.
             select case (trim(method))
-                case ("nn", "nearest", "shepard", "radius", "quadrant", "bilinear", "bilin")
+                case ("nn", "nearest", "shepard", "radius", "quadrant", "bilinear", "bilin", "bil")
                     kernel = trim(method)
                 case default
                     write(*,*) "mapping:: map_field: kernel '"//trim(method)//"' is not available on a distance map."
