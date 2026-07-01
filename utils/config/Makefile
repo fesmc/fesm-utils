@@ -129,6 +129,10 @@ $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/
 								$(objdir)/grid_cdo.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/coupler.o: $(srcdir)/coords/coupler.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
+								$(objdir)/mapping.o $(objdir)/coords.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
@@ -180,6 +184,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/ncio_interp.o \
 					$(objdir)/conservative.o \
 					$(objdir)/coords.o \
+					$(objdir)/coupler.o \
 					$(objdir)/derivatives.o \
 					$(objdir)/distances.o \
 					$(objdir)/gaussian_filter.o \
@@ -265,6 +270,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_grid_cdo_rw.x $(testdir)/coords/test_grid_cdo_rw.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_init_names.x $(testdir)/coords/test_map_init_names.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_coupler.x $(testdir)/coords/test_coupler.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
