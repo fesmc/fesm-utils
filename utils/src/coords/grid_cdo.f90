@@ -195,6 +195,12 @@ contains
         real(dp), allocatable :: yvals(:)
         logical  :: is_gaussian
 
+        ! Track which coordinate-system fields the fesm-utils '#' header set, so
+        ! that CF/CDO-native keys (grid_mapping_name, standard_parallel, ...) are
+        ! only used as a fallback for files lacking that header. The header is
+        ! written before the cdo body, so its keys are always seen first.
+        logical  :: has_mtype, has_units, has_lambda, has_phi, has_alpha
+
         filename = trim(fldr)//"/"//"grid_"//trim(name)//".txt"
         inquire(file=trim(filename), exist=file_exists)
         if (.not. file_exists) then
@@ -212,6 +218,8 @@ contains
         nx = 0; ny = 0
         x0 = 0.0_dp; dx = 0.0_dp; y0 = 0.0_dp; dy = 0.0_dp
         is_gaussian = .false.
+        has_mtype = .false.; has_units = .false.
+        has_lambda = .false.; has_phi = .false.; has_alpha = .false.
 
         fnum = 98
         open(fnum,file=trim(filename),status='old',action='read')
@@ -224,16 +232,43 @@ contains
             if (len_trim(key) == 0) cycle
 
             select case (trim(key))
-                ! --- comment header: coordinate-system definition ---
-                case ("mtype");  mtype  = trim(val)
-                case ("units");  units  = trim(val)
+                ! --- fesm-utils comment header: coordinate-system definition ---
+                case ("mtype");  mtype  = trim(val); has_mtype  = .true.
+                case ("units");  units  = trim(val); has_units  = .true.
                 case ("planet"); planet = trim(val)
                 case ("lon180"); lon180 = (val(1:1) == "T" .or. val(1:1) == "t")
-                case ("lambda"); read(val,*) lambda
-                case ("phi");    read(val,*) phi
-                case ("alpha");  read(val,*) alpha
+                case ("lambda"); read(val,*) lambda; has_lambda = .true.
+                case ("phi");    read(val,*) phi;    has_phi    = .true.
+                case ("alpha");  read(val,*) alpha;  has_alpha  = .true.
                 case ("x_e");    read(val,*) x_e
                 case ("y_n");    read(val,*) y_n
+
+                ! --- CF/CDO-native coordinate-system keys (fallback when the
+                !     fesm-utils '#' header is absent, e.g. cdo-generated files) ---
+                case ("grid_mapping_name")
+                    if (.not. has_mtype) then
+                        mtype = trim(val)
+                        if (trim(mtype) == "latitude_longitude") mtype = "latlon"
+                    end if
+                case ("xunits")
+                    if (.not. has_units) then
+                        select case (trim(val))
+                            case ("km");                                     units = "kilometers"
+                            case ("m");                                      units = "meters"
+                            case ("degrees_east","degrees_north","degrees"); units = "degrees"
+                            case default;                                    units = trim(val)
+                        end select
+                    end if
+                case ("straight_vertical_longitude_from_pole")   ! polar_stereographic
+                    if (.not. has_lambda) read(val,*) lambda
+                case ("longitude_of_projection_origin")          ! stereographic
+                    if (.not. has_lambda) read(val,*) lambda
+                case ("standard_parallel")                       ! polar_stereographic
+                    if (.not. has_phi) read(val,*) phi
+                case ("latitude_of_projection_origin")           ! stereographic (polar: pole marker, ignore)
+                    if (.not. has_phi .and. trim(mtype) == "stereographic") read(val,*) phi
+                case ("angle_of_oblique_tangent")                ! stereographic
+                    if (.not. has_alpha) read(val,*) alpha
 
                 ! --- cdo body: grid axes ---
                 case ("xsize");  read(val,*) nx
