@@ -76,7 +76,8 @@ contains
         map%is_grid = .false.
     end subroutine map_init_points_points
 
-    subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr, load, clean)
+    subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr, load, clean, &
+                                  precompute_weights)
         ! Build (or load) a grid -> grid map and cache it as a SCRIP(-superset)
         ! file under `fldr` (default "maps").
         !   method - interpolation kernel: "con" (conservative) or a distance
@@ -86,6 +87,13 @@ contains
         !   load   - if .true. (default) and a cache file already exists, it is
         !            loaded instead of regenerated; freshly generated maps are
         !            always saved to the cache. load=.false. forces regeneration.
+        !   precompute_weights - if .true. (default), collapse a distance store
+        !            into baked weights at init for the shepard/bilinear kernels
+        !            (see map_precompute_weights), so apply is a plain weighted
+        !            reduce instead of rebuilding weights every call. Set .false.
+        !            to keep the distance store (e.g. to inspect neighbor geometry
+        !            or force the full runtime kernel). The on-disk cache is
+        !            unaffected -- it always stays distance-format.
         ! The loader auto-detects the file format, so a cdo-generated SCRIP file
         ! and an in-package (coords) cache interoperate at the same filename.
         type(map_class), intent(inout) :: map
@@ -97,11 +105,12 @@ contains
         character(len=*), optional, intent(in) :: fldr
         logical,  optional, intent(in) :: load
         logical,  optional, intent(in) :: clean
+        logical,  optional, intent(in) :: precompute_weights
 
         type(points_class) :: pts1, pts2
         character(len=32)  :: mtd, g
         character(len=256) :: mfldr, filename
-        logical :: load_file, file_exists
+        logical :: load_file, file_exists, precompute
         integer :: nmax
 
         mtd = "nn"
@@ -112,43 +121,50 @@ contains
         if (present(fldr)) mfldr = trim(fldr)
         load_file = .true.
         if (present(load)) load_file = load
+        precompute = .true.
+        if (present(precompute_weights)) precompute = precompute_weights
 
         filename = gen_map_filename(grid1%name, grid2%name, mfldr, mtd)
         inquire(file=trim(filename), exist=file_exists)
 
-        ! Load a cached map if one exists and loading is allowed
         if (load_file .and. file_exists) then
+            ! Load a cached map
             call map_set_target_from_grid(map, grid1, grid2)
             map%method = trim(mtd)
             call map_load_wm(map, grid1, grid2, mtd, mfldr, filename)
-            return
+        else
+            ! Otherwise generate the weights
+            select case (trim(g))
+                case ("coords")
+                    if (trim(mtd) == "con") then
+                        call map_init_conservative(map, grid1, grid2)
+                    else
+                        nmax = 10
+                        if (present(max_neighbors)) nmax = max_neighbors
+                        call grid_to_points(grid1, pts1, define=.true.)
+                        call grid_to_points(grid2, pts2, define=.true.)
+                        call map_init_internal(map, pts1, pts2, nmax, dist_max, mtd)
+                        map%is_grid = .true.
+                        map%G = grid2%G
+                    end if
+                    ! Cache the freshly generated map
+                    call map_save_wm(map, mfldr, filename)
+                case ("cdo")
+                    ! Generate the SCRIP map with an external cdo call (it writes
+                    ! `filename` itself, so no separate save step is needed).
+                    call map_init_cdo(map, grid1, grid2, mtd, mfldr, filename, clean)
+                case default
+                    write(*,*) "mapping:: map_init: unknown gen '"//trim(g)//"'"
+                    write(*,*) "  expected 'coords' (in-package) or 'cdo' (external cdo call)."
+                    stop
+            end select
         end if
 
-        ! Otherwise generate the weights
-        select case (trim(g))
-            case ("coords")
-                if (trim(mtd) == "con") then
-                    call map_init_conservative(map, grid1, grid2)
-                else
-                    nmax = 10
-                    if (present(max_neighbors)) nmax = max_neighbors
-                    call grid_to_points(grid1, pts1, define=.true.)
-                    call grid_to_points(grid2, pts2, define=.true.)
-                    call map_init_internal(map, pts1, pts2, nmax, dist_max, mtd)
-                    map%is_grid = .true.
-                    map%G = grid2%G
-                end if
-                ! Cache the freshly generated map
-                call map_save_wm(map, mfldr, filename)
-            case ("cdo")
-                ! Generate the SCRIP map with an external cdo call (it writes
-                ! `filename` itself, so no separate save step is needed).
-                call map_init_cdo(map, grid1, grid2, mtd, mfldr, filename, clean)
-            case default
-                write(*,*) "mapping:: map_init: unknown gen '"//trim(g)//"'"
-                write(*,*) "  expected 'coords' (in-package) or 'cdo' (external cdo call)."
-                stop
-        end select
+        ! Collapse the distance store into baked weights where it is safe
+        ! (shepard/bilinear), moving per-apply weight construction to this
+        ! one-time init step. The on-disk cache stays distance-format, so this
+        ! derives the fast form per run and works with existing caches too.
+        if (precompute .and. map%wm%kind == MAP_DISTANCE) call map_precompute_weights(map)
     end subroutine map_init_grid_grid
 
     subroutine map_init_grid_names(map, name1, name2, max_neighbors, dist_max, method, gen, fldr, load, clean)
@@ -1320,5 +1336,104 @@ contains
         alpha2 = 0.0_dp; if (dx2t > 0.0_dp) alpha2 = dx2/dx2t
         alpha3 = 0.0_dp; if (dy1t > 0.0_dp) alpha3 = dy1/dy1t
     end subroutine bilinear_alphas
+
+    subroutine map_precompute_weights(map)
+        ! Collapse a MAP_DISTANCE store into baked MAP_WEIGHT weights for the
+        ! kernels whose weights are data-independent under apply-time
+        ! renormalization: shepard/radius (inverse-distance over all neighbors)
+        ! and bilinear (fixed per-corner weights). This moves the per-apply
+        ! weight construction to a one-time init step; apply then just reduces
+        ! the stored weights, skipping distance_weights/bilinear_apply.
+        !
+        ! nn and quadrant are deliberately left as MAP_DISTANCE: they pick the
+        ! nearest *valid* source at apply time, so baking would drop their
+        ! fallback under a transiently-missing source. A no-op for any other
+        ! kernel (e.g. an already-baked conservative map never reaches here).
+        type(map_class), intent(inout) :: map
+
+        integer  :: i, k, j, j1, j2, q, nl
+        integer  :: iq(4)
+        real(dp) :: dq(4), w4(4), alpha1, alpha2, alpha3
+        integer,  allocatable :: tsrc(:), tdst(:)
+        real(dp), allocatable :: tw(:)
+        type(weight_map_t) :: wm
+
+        select case (trim(map%method))
+
+            case ("shepard", "radius")
+                ! inverse-distance-squared over the stored neighbor links; apply
+                ! renormalizes over the valid survivors, so the result is
+                ! identical to recomputing the weights each call.
+                if (.not. allocated(map%wm%w)) allocate(map%wm%w(map%wm%n_links))
+                do i = 1, map%wm%n_links
+                    map%wm%w(i) = 1.0_dp / max(map%wm%dist(i), 1.0e-12_dp)**2
+                end do
+                map%wm%kind = MAP_WEIGHT
+                if (allocated(map%wm%dist))     deallocate(map%wm%dist)
+                if (allocated(map%wm%xn))       deallocate(map%wm%xn)
+                if (allocated(map%wm%yn))       deallocate(map%wm%yn)
+                if (allocated(map%wm%quadrant)) deallocate(map%wm%quadrant)
+
+            case ("bilinear", "bilin", "bil")
+                ! bake the <=4 quadrant-corner weights per target (validity-
+                ! agnostic corner choice: geometry only). All four present ->
+                ! weights sum to 1 (exact bilinear); fewer -> quadrant IDW.
+                allocate(tsrc(4*map%wm%n_dst), tdst(4*map%wm%n_dst), tw(4*map%wm%n_dst))
+                nl = 0
+                do k = 1, map%wm%n_dst
+                    j1 = map%wm%dst_off(k); j2 = map%wm%dst_off(k+1) - 1
+                    if (j2 < j1) cycle
+
+                    iq = 0; dq = huge(1.0_dp)
+                    do j = j1, j2
+                        q = map%wm%quadrant(j)
+                        if (q >= 1 .and. q <= 4) then
+                            if (map%wm%dist(j) < dq(q)) then
+                                dq(q) = map%wm%dist(j); iq(q) = j
+                            end if
+                        end if
+                    end do
+
+                    if (all(iq > 0)) then
+                        call bilinear_alphas(map, k, iq, alpha1, alpha2, alpha3)
+                        ! var2 = p0 + alpha3*(p1-p0) expanded to fixed weights:
+                        w4(1) = alpha3*alpha1
+                        w4(2) = alpha3*(1.0_dp - alpha1)
+                        w4(3) = (1.0_dp - alpha3)*(1.0_dp - alpha2)
+                        w4(4) = (1.0_dp - alpha3)*alpha2
+                    else
+                        w4 = 0.0_dp
+                        do q = 1, 4
+                            if (iq(q) > 0) w4(q) = 1.0_dp / max(dq(q), 1.0e-12_dp)**2
+                        end do
+                    end if
+
+                    do q = 1, 4
+                        if (iq(q) > 0) then
+                            nl = nl + 1
+                            tsrc(nl) = map%wm%src(iq(q))
+                            tdst(nl) = k
+                            tw(nl)   = w4(q)
+                        end if
+                    end do
+                end do
+
+                ! rebuild map%wm as a baked MAP_WEIGHT store (links already
+                ! grouped by ascending target)
+                call weight_map_alloc(wm, MAP_WEIGHT, map%wm%n_src, map%wm%n_dst, nl)
+                wm%src(1:nl) = tsrc(1:nl)
+                wm%dst(1:nl) = tdst(1:nl)
+                wm%w(1:nl)   = tw(1:nl)
+                call weight_map_index(wm)
+                call weight_map_free(map%wm)
+                map%wm = wm
+                call weight_map_free(wm)
+                deallocate(tsrc, tdst, tw)
+
+            case default
+                return   ! nn, quadrant, ... keep the distance store
+
+        end select
+    end subroutine map_precompute_weights
 
 end module mapping
