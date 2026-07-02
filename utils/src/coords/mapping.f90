@@ -1219,22 +1219,16 @@ contains
         real(dp), optional, intent(in)  :: missing_value
         logical,  optional, intent(out) :: mask2(:)
 
-        real(dp) :: miss, a, f, xyc
-        logical  :: use_cart
+        real(dp) :: miss
         integer  :: k, j, j1, j2, q
         integer  :: iq(4)                  ! link position of nearest valid neighbor per quadrant
         real(dp) :: dq(4)
-        real(dp) :: z1, z2, z3, z4, tx, ty
-        real(dp) :: alpha1, alpha2, alpha3, ymid1, ymid0
-        real(dp) :: dx1, dx1t, dx2, dx2t, dy1, dy1t, p1, p0
+        real(dp) :: z1, z2, z3, z4
+        real(dp) :: alpha1, alpha2, alpha3, p1, p0
         real(dp) :: wsum, vsum, w
 
         miss = mv_dp
         if (present(missing_value)) miss = missing_value
-        use_cart = map%is_same_map .and. map%cs%is_cartesian
-        xyc = map%cs%xy_conv
-        a   = map%cs%planet%a
-        f   = map%cs%planet%f
 
         var2 = miss
         if (present(mask2)) mask2 = .false.
@@ -1260,31 +1254,7 @@ contains
                 z2 = var1(map%wm%src(iq(2)))
                 z3 = var1(map%wm%src(iq(3)))
                 z4 = var1(map%wm%src(iq(4)))
-                if (use_cart) then
-                    tx = map%x(k)*xyc; ty = map%y(k)*xyc
-                else
-                    tx = map%lon(k);   ty = map%lat(k)
-                end if
-                ymid1 = 0.5_dp*(map%wm%yn(iq(2)) + map%wm%yn(iq(1)))
-                ymid0 = 0.5_dp*(map%wm%yn(iq(3)) + map%wm%yn(iq(4)))
-                if (use_cart) then
-                    dx1  = cartesian_distance(tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
-                    dx1t = cartesian_distance(map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
-                    dx2  = cartesian_distance(tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
-                    dx2t = cartesian_distance(map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
-                    dy1  = cartesian_distance(tx, ty, tx, ymid0)
-                    dy1t = cartesian_distance(tx, ymid1, tx, ymid0)
-                else
-                    dx1  = planet_distance(a, f, tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
-                    dx1t = planet_distance(a, f, map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
-                    dx2  = planet_distance(a, f, tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
-                    dx2t = planet_distance(a, f, map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
-                    dy1  = planet_distance(a, f, tx, ty, tx, ymid0)
-                    dy1t = planet_distance(a, f, tx, ymid1, tx, ymid0)
-                end if
-                alpha1 = 0.0_dp; if (dx1t > 0.0_dp) alpha1 = dx1/dx1t
-                alpha2 = 0.0_dp; if (dx2t > 0.0_dp) alpha2 = dx2/dx2t
-                alpha3 = 0.0_dp; if (dy1t > 0.0_dp) alpha3 = dy1/dy1t
+                call bilinear_alphas(map, k, iq, alpha1, alpha2, alpha3)
                 p1 = z2 + alpha1*(z1 - z2)
                 p0 = z3 + alpha2*(z4 - z3)
                 var2(k) = p0 + alpha3*(p1 - p0)
@@ -1306,5 +1276,49 @@ contains
             end if
         end do
     end subroutine bilinear_apply
+
+    subroutine bilinear_alphas(map, k, iq, alpha1, alpha2, alpha3)
+        ! Bilinear blend fractions for target k from its four quadrant-corner
+        ! links iq(4). Pure geometry (target position + corner positions),
+        ! independent of the source data -- shared by bilinear_apply (blend the
+        ! data) and map_precompute_weights (bake to fixed per-corner weights).
+        type(map_class), intent(in)  :: map
+        integer,         intent(in)  :: k, iq(4)
+        real(dp),        intent(out) :: alpha1, alpha2, alpha3
+
+        logical  :: use_cart
+        real(dp) :: a, f, xyc, tx, ty, ymid1, ymid0
+        real(dp) :: dx1, dx1t, dx2, dx2t, dy1, dy1t
+
+        use_cart = map%is_same_map .and. map%cs%is_cartesian
+        xyc = map%cs%xy_conv
+        a   = map%cs%planet%a
+        f   = map%cs%planet%f
+        if (use_cart) then
+            tx = map%x(k)*xyc; ty = map%y(k)*xyc
+        else
+            tx = map%lon(k);   ty = map%lat(k)
+        end if
+        ymid1 = 0.5_dp*(map%wm%yn(iq(2)) + map%wm%yn(iq(1)))
+        ymid0 = 0.5_dp*(map%wm%yn(iq(3)) + map%wm%yn(iq(4)))
+        if (use_cart) then
+            dx1  = cartesian_distance(tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+            dx1t = cartesian_distance(map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+            dx2  = cartesian_distance(tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+            dx2t = cartesian_distance(map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+            dy1  = cartesian_distance(tx, ty, tx, ymid0)
+            dy1t = cartesian_distance(tx, ymid1, tx, ymid0)
+        else
+            dx1  = planet_distance(a, f, tx, ymid1, map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+            dx1t = planet_distance(a, f, map%wm%xn(iq(1)), map%wm%yn(iq(1)), map%wm%xn(iq(2)), map%wm%yn(iq(2)))
+            dx2  = planet_distance(a, f, tx, ymid0, map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+            dx2t = planet_distance(a, f, map%wm%xn(iq(4)), map%wm%yn(iq(4)), map%wm%xn(iq(3)), map%wm%yn(iq(3)))
+            dy1  = planet_distance(a, f, tx, ty, tx, ymid0)
+            dy1t = planet_distance(a, f, tx, ymid1, tx, ymid0)
+        end if
+        alpha1 = 0.0_dp; if (dx1t > 0.0_dp) alpha1 = dx1/dx1t
+        alpha2 = 0.0_dp; if (dx2t > 0.0_dp) alpha2 = dx2/dx2t
+        alpha3 = 0.0_dp; if (dy1t > 0.0_dp) alpha3 = dy1/dy1t
+    end subroutine bilinear_alphas
 
 end module mapping
