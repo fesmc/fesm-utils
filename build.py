@@ -240,13 +240,20 @@ def run(cmd, cwd, login=False):
 
 
 def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt,
-                    extra_vars=None):
+                    extra_vars=None, post_resolve=None):
     """Configure + make + install an autotools package into <name>-{omp,serial}.
 
     `extra_vars` is an optional dict of KEY=value configure variables merged on
     top of the machine compiler table (after the macOS/Intel CC fixups). It is
     how a builder injects dependencies resolved at build time -- e.g. SHTns
     pointing CPPFLAGS/LDFLAGS at the fftw-{omp,serial} prefix built here.
+
+    `post_resolve` is an optional `(table, opts) -> None` callback run after the
+    table is fully resolved (macOS/Intel CC fixups + extra_vars) but before the
+    Intel runtime preamble. It may mutate both the configure-variable `table`
+    and the configure-option list `opts` -- used for package-specific quirks
+    that depend on the resolved compiler (e.g. SHTns' kernel compiler and its
+    AC_PROG_FC Fortran variable).
     """
     suffix = "omp" if omp else "serial"
     prefix = ROOT / f"{component}-{suffix}"
@@ -258,6 +265,8 @@ def build_autotools(machine, component, compiler, omp, src, base_opts, omp_opt,
     disable_autoconf_c_std_upgrade(table)
     if extra_vars:
         table.update(extra_vars)
+    if post_resolve:
+        post_resolve(table, opts)
     preamble, extra_var = intel_runtime_preamble(table)
     vargs = " ".join(filter(None, [var_args(table), extra_var]))
     mods = modules_for(machine, component)
@@ -298,9 +307,29 @@ def build_shtns(machine, compiler, omp):
         "CPPFLAGS": f"-I{fftw_prefix}/include",
         "LDFLAGS": f"-L{fftw_prefix}/lib",
     }
+
+    def post_resolve(table, opts):
+        # SHTns compiles its CPU kernels with a *separate* "kernel compiler"
+        # (CC2 -> `shtcc` in Makefile.in), which --enable-kernel-compiler
+        # defaults to gcc regardless of CC. The user's CFLAGS then reach gcc,
+        # so an Intel-only flag like -traceback (valid for icx) breaks the gcc
+        # kernel build. Point the kernel compiler at the resolved C compiler so
+        # the kernels use the same toolchain as everything else. When CC is
+        # unset (e.g. generic linux gfortran) we leave SHTns' gcc default.
+        cc = table.get("CC")
+        if cc:
+            opts.append(f"--enable-kernel-compiler={shlex.quote(cc)}")
+        # SHTns' Fortran wrapper is detected via AC_PROG_FC, which reads $FC;
+        # fftw/lis use AC_PROG_F77 ($F77). Translate F77 -> FC so ifx/ifort are
+        # picked up for the SHTns build.
+        f77 = table.pop("F77", None)
+        if f77 is not None:
+            table.setdefault("FC", f77)
+
     build_autotools(
         machine, "shtns", compiler, omp, SHTNS_SRC,
         base_opts=[], omp_opt="--enable-openmp", extra_vars=extra_vars,
+        post_resolve=post_resolve,
     )
 
 
