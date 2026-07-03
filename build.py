@@ -292,6 +292,32 @@ def build_lis(machine, compiler, omp):
     )
 
 
+# SHTns owns its own optimization scheme: its configure selects -O2/-O3, adds
+# -ffast-math for the CPU kernels, and deliberately keeps -fp-model=precise for
+# the library (configure.ac warns "Do NOT set -ffast-math"); its --enable-march
+# defaults to `native`. Feeding it the machine's aggressive CFLAGS
+# (-Ofast -march=<cpu>) just fights that scheme -- icx emits -Woverriding-option
+# on every file, our -Ofast can override SHTns' precise fp-model, and `native`
+# (resolved on whatever node runs the build) silently wins over the machine's
+# intended -march. So for SHTns we drop the opt/arch flags and instead pin
+# --enable-march to the machine's own -march, letting SHTns own the rest.
+_OPT_FLAG_RE = re.compile(r"\s*-(?:Ofast|O[0-3]|march=\S+|mtune=\S+)(?=\s|$)")
+
+
+def march_of(flags):
+    """The ``-march=<arch>`` value in a flag string, or None."""
+    m = re.search(r"-march=(\S+)", flags or "")
+    return m.group(1) if m else None
+
+
+def strip_opt_flags(flags):
+    """Remove optimization/arch flags (-Ofast, -O0..3, -march=, -mtune=) from a
+    flag string, returning the remainder (None if nothing is left)."""
+    if not flags:
+        return flags
+    return _OPT_FLAG_RE.sub("", flags).strip() or None
+
+
 def build_shtns(machine, compiler, omp):
     """Build SHTns (spherical-harmonic transforms) against the local FFTW.
 
@@ -319,6 +345,21 @@ def build_shtns(machine, compiler, omp):
         cc = table.get("CC")
         if cc:
             opts.append(f"--enable-kernel-compiler={shlex.quote(cc)}")
+        # Pin SHTns' target arch to the machine's own -march instead of its
+        # `native` default, then strip the opt/arch flags so we don't fight
+        # SHTns' -O/-fp-model scheme (see the note on strip_opt_flags). Read the
+        # -march before stripping. No -march (e.g. generic linux) -> leave
+        # SHTns' native default untouched.
+        march = march_of(table.get("CFLAGS")) or march_of(table.get("FFLAGS"))
+        if march:
+            opts.append(f"--enable-march={shlex.quote(march)}")
+        for var in ("CFLAGS", "FFLAGS"):
+            if var in table:
+                stripped = strip_opt_flags(table[var])
+                if stripped:
+                    table[var] = stripped
+                else:
+                    del table[var]
         # SHTns' Fortran wrapper is detected via AC_PROG_FC, which reads $FC;
         # fftw/lis use AC_PROG_F77 ($F77). Translate F77 -> FC so ifx/ifort are
         # picked up for the SHTns build.
