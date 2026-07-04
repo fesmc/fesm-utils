@@ -286,6 +286,16 @@ bench-coords : fesmutils-static
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
 		@echo " "
 
+# map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
+bench-apply : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/bench_apply.x $(testdir)/coords/bench_apply.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/bench_alloc.x $(testdir)/coords/bench_alloc.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    apply benchmarks ready: $(bindir)/bench_apply.x, $(bindir)/bench_alloc.x"
+		@echo " "
+
 .PHONY : usage
 usage:
 	@echo ""

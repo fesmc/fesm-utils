@@ -123,10 +123,10 @@ contains
 
         character(len=32) :: knl, sta
         real(dp) :: miss, rad
-        integer  :: k, j, j1, j2, nlink
+        integer  :: k, j, j1, j2, nlink, nmax
         real(dp), allocatable :: vloc(:), wloc(:), dloc(:)
         integer,  allocatable :: qloc(:)
-        real(dp) :: val
+        real(dp) :: val, wsum, vsum, w
         logical  :: ok
 
         knl = "nn"
@@ -141,36 +141,75 @@ contains
         var2 = miss
         if (present(mask2)) mask2 = .false.
 
+        ! Fast path: baked weights + mean (the per-timestep coupling case, e.g.
+        ! conservative/cdo maps applied every model step). Reduce the stored
+        ! weights in place with zero per-target heap traffic -- gathering the
+        ! source values into a scratch array first buys nothing for a plain
+        ! weighted mean and dominates the cost at high target-point counts.
+        if (wm%kind == MAP_WEIGHT .and. trim(sta) == "mean") then
+            do k = 1, wm%n_dst
+                j1 = wm%dst_off(k); j2 = wm%dst_off(k+1) - 1
+                if (j2 < j1) cycle
+                wsum = 0.0_dp; vsum = 0.0_dp
+                do j = j1, j2
+                    w = wm%w(j)
+                    if (w > 0.0_dp) then
+                        val = var1(wm%src(j))
+                        if (val /= miss) then
+                            wsum = wsum + w
+                            vsum = vsum + w*val
+                        end if
+                    end if
+                end do
+                if (wsum > 0.0_dp) then
+                    var2(k) = vsum/wsum
+                    if (present(mask2)) mask2(k) = .true.
+                end if
+            end do
+            return
+        end if
+
+        ! General path (count/stdev, or distance maps whose weights are built
+        ! per apply from the chosen kernel). The per-target scratch is sized to
+        ! the largest link block and allocated ONCE, then reused across targets
+        ! via (1:nlink) sections -- never allocated inside the target loop.
+        nmax = 0
+        do k = 1, wm%n_dst
+            nmax = max(nmax, wm%dst_off(k+1) - wm%dst_off(k))
+        end do
+        if (nmax < 1) return
+
+        allocate(vloc(nmax), wloc(nmax))
+        if (wm%kind /= MAP_WEIGHT) allocate(dloc(nmax), qloc(nmax))
+
         do k = 1, wm%n_dst
             j1 = wm%dst_off(k); j2 = wm%dst_off(k+1) - 1
             nlink = j2 - j1 + 1
             if (nlink < 1) cycle
 
-            allocate(vloc(nlink))
             do j = 1, nlink
                 vloc(j) = var1(wm%src(j1+j-1))
             end do
 
             if (wm%kind == MAP_WEIGHT) then
-                allocate(wloc(nlink))
-                wloc = wm%w(j1:j2)
-                call reduce(sta, vloc, wloc, miss, val, ok)
-                deallocate(wloc)
+                wloc(1:nlink) = wm%w(j1:j2)
+                call reduce(sta, vloc(1:nlink), wloc(1:nlink), miss, val, ok)
             else
-                allocate(wloc(nlink), dloc(nlink), qloc(nlink))
-                dloc = wm%dist(j1:j2)
-                qloc = wm%quadrant(j1:j2)
-                call distance_weights(knl, vloc, dloc, qloc, miss, rad, wloc)
-                call reduce(sta, vloc, wloc, miss, val, ok)
-                deallocate(wloc, dloc, qloc)
+                dloc(1:nlink) = wm%dist(j1:j2)
+                qloc(1:nlink) = wm%quadrant(j1:j2)
+                call distance_weights(knl, vloc(1:nlink), dloc(1:nlink), qloc(1:nlink), &
+                                      miss, rad, wloc(1:nlink))
+                call reduce(sta, vloc(1:nlink), wloc(1:nlink), miss, val, ok)
             end if
 
             if (ok) then
                 var2(k) = val
                 if (present(mask2)) mask2(k) = .true.
             end if
-            deallocate(vloc)
         end do
+
+        deallocate(vloc, wloc)
+        if (allocated(dloc)) deallocate(dloc, qloc)
     end subroutine weight_map_apply
 
     subroutine distance_weights(method, v, dist, quad, miss, rad, w)
