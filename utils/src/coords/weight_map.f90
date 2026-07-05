@@ -147,6 +147,10 @@ contains
         ! source values into a scratch array first buys nothing for a plain
         ! weighted mean and dominates the cost at high target-point counts.
         if (wm%kind == MAP_WEIGHT .and. trim(sta) == "mean") then
+            ! Disjoint var2(k)/mask2(k) writes and thread-local accumulators, so
+            ! the target loop parallelizes directly with no shared scratch.
+            !$omp parallel do default(shared) schedule(guided) &
+            !$omp   private(k, j, j1, j2, wsum, vsum, w, val)
             do k = 1, wm%n_dst
                 j1 = wm%dst_off(k); j2 = wm%dst_off(k+1) - 1
                 if (j2 < j1) cycle
@@ -166,6 +170,7 @@ contains
                     if (present(mask2)) mask2(k) = .true.
                 end if
             end do
+            !$omp end parallel do
             return
         end if
 
@@ -179,9 +184,14 @@ contains
         end do
         if (nmax < 1) return
 
+        ! Each thread allocates its own scratch once (private allocatables,
+        ! sized to nmax) and reuses it across its share of the target loop;
+        ! reduce/distance_weights are pure and var2(k)/mask2(k) writes disjoint.
+        !$omp parallel default(shared) &
+        !$omp   private(k, j, j1, j2, nlink, vloc, wloc, dloc, qloc, val, ok)
         allocate(vloc(nmax), wloc(nmax))
         if (wm%kind /= MAP_WEIGHT) allocate(dloc(nmax), qloc(nmax))
-
+        !$omp do schedule(guided)
         do k = 1, wm%n_dst
             j1 = wm%dst_off(k); j2 = wm%dst_off(k+1) - 1
             nlink = j2 - j1 + 1
@@ -207,9 +217,10 @@ contains
                 if (present(mask2)) mask2(k) = .true.
             end if
         end do
-
-        deallocate(vloc, wloc)
+        !$omp end do
         if (allocated(dloc)) deallocate(dloc, qloc)
+        deallocate(vloc, wloc)
+        !$omp end parallel
     end subroutine weight_map_apply
 
     subroutine distance_weights(method, v, dist, quad, miss, rad, w)
