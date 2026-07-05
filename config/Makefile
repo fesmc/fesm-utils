@@ -33,6 +33,14 @@ endif
 
 include config/common.mk
 
+## EXTERNAL LIBRARY BUILD CONFIG ##
+# Machine/compiler specifics for the autotools builds of FFTW, LIS and SHTns
+# (the `fftw`, `lis`, `shtns` targets below). Reads $(MACHINE)/$(COMPILER) set
+# in the compiler block above. Kept separate from common.mk so the utils build
+# does not carry the C-library quirks.
+
+include config/libs.mk
+
 # Determine whether to use normal flags or debugging flags
 DFLAGS   = $(DFLAGS_NODEBUG)
 ifeq ($(debug), 1)
@@ -212,11 +220,6 @@ fesmutils_libs = 	$(objdir)/constants.o \
 ##
 ###############################################
 
-libs : $(fesmutils_libs)
-		@echo " "
-		@echo "    fesm-utils is ready."
-		@echo " "
-
 # Static library compilation
 fesmutils-static: $(fesmutils_libs)
 	ar rc $(objdir)/libfesmutils.a $(fesmutils_libs)
@@ -296,13 +299,69 @@ bench-apply : fesmutils-static
 		@echo "    apply benchmarks ready: $(bindir)/bench_apply.x, $(bindir)/bench_alloc.x"
 		@echo " "
 
+###############################################
+##
+## External libraries: FFTW, LIS, SHTns
+##
+## Each target runs the vendored package's own autotools build
+## (configure/make/make install) into <lib>/<lib>-{serial,omp}. The
+## machine/compiler configure flags come from config/libs.mk. Pick the variant
+## with openmp=0 (serial, default) or openmp=1:
+##   make fftw openmp=0      make lis openmp=1      make shtns openmp=0
+##   make libs openmp=1      # fftw + lis + shtns, one variant
+##
+## Build serially (a one-time autotools build; do not pass -j to `make libs`).
+## SHTns links the FFTW built here, so fftw must be installed before shtns.
+###############################################
+
+FFTW_SRC     = fftw/fftw-3.3.10
+LIS_SRC      = lis/lis-2.1.11
+SHTNS_SRC    = SHTns/shtns-3.7.5
+FFTW_PREFIX  = $(CURDIR)/fftw/fftw-$(LIB_VARIANT)
+LIS_PREFIX   = $(CURDIR)/lis/lis-$(LIB_VARIANT)
+SHTNS_PREFIX = $(CURDIR)/SHTns/shtns-$(LIB_VARIANT)
+
+.PHONY : fftw lis shtns libs
+
+fftw:
+	@echo "=== fftw ($(LIB_VARIANT)) [machine=$(MACHINE) compiler=$(COMPILER)] ==="
+	cd $(FFTW_SRC) && ./configure --prefix=$(FFTW_PREFIX) --disable-doc $(FFTW_OMP_OPT) \
+		$(FFTW_CONF_VARS) && $(MAKE) clean && $(MAKE) && $(MAKE) install
+	@echo "    installed: $(FFTW_PREFIX)"
+
+lis:
+	@echo "=== lis ($(LIB_VARIANT)) [machine=$(MACHINE) compiler=$(COMPILER)] ==="
+	cd $(LIS_SRC) && ./configure --prefix=$(LIS_PREFIX) --enable-f90 --enable-saamg $(LIS_OMP_OPT) \
+		$(LIS_CONF_VARS) && $(MAKE) clean && $(MAKE) && $(MAKE) install
+	@echo "    installed: $(LIS_PREFIX)"
+
+shtns:
+	@echo "=== shtns ($(LIB_VARIANT)) [machine=$(MACHINE) compiler=$(COMPILER)] ==="
+	cd $(SHTNS_SRC) && ./configure --prefix=$(SHTNS_PREFIX) $(SHTNS_OMP_OPT) \
+		CPPFLAGS='-I$(FFTW_PREFIX)/include' LDFLAGS='-L$(FFTW_PREFIX)/lib' \
+		$(SHTNS_CONF_VARS) && $(MAKE) clean && $(MAKE) && $(MAKE) install
+	@echo "    installed: $(SHTNS_PREFIX)"
+
+libs: fftw lis shtns
+	@echo ""
+	@echo "    fftw, lis, shtns ($(LIB_VARIANT)) built and installed."
+	@echo ""
+
+# Everything for one variant: the external libraries + the utils static library.
+# This is what `configme install` runs (once per variant, openmp=0 then =1).
+.PHONY : all
+all: libs fesmutils-static
+
 .PHONY : usage
 usage:
 	@echo ""
 	@echo "    * USAGE * "
 	@echo ""
-	@echo " make test-coords : compiles the coords test programs"
-	@echo " make clean       : cleans object files"
+	@echo " make fesmutils-static : builds libfesmutils.a (openmp=0|1)"
+	@echo " make fftw|lis|shtns   : builds one external library (openmp=0|1)"
+	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
+	@echo " make test-coords      : compiles the coords test programs"
+	@echo " make clean            : cleans object files"
 	@echo ""
 
 clean:
