@@ -1,5 +1,5 @@
 # configme manifest for fesm-utils.
+# A single self-contained package (utils library + vendored fftw/lis/shtns);
+# it depends on no other configme package.
 package = "fesm-utils"
-deps = [
-    "fesm-utils/utils",
-]
+deps = []
