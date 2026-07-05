@@ -358,7 +358,9 @@ contains
         integer  :: n1, n2, ndim, i, j, nf, nl, nlmax
         integer  :: nq, nsel, s, base, cnt
         integer  :: nprog, prog_step, mycount   ! coarse progress reporting
+        integer  :: p, r, skey, dstk, qk        ! per-target link sort scratch
         real(dp) :: xyc, a, f, dmax, dist, q(3)
+        real(dp) :: dkey, xk, yk
         real(dp), allocatable :: emb(:,:)
         integer,  allocatable :: knn_idx(:)
         real(dp), allocatable :: knn_d2(:)
@@ -424,7 +426,8 @@ contains
         prog_step = max(1, n2/10)
 
         !$omp parallel default(shared) &
-        !$omp   private(i, j, s, nf, nsel, q, dist, base, cnt, knn_idx, knn_d2, mycount)
+        !$omp   private(i, j, s, nf, nsel, q, dist, base, cnt, knn_idx, knn_d2, mycount) &
+        !$omp   private(p, r, skey, dstk, qk, dkey, xk, yk)
         allocate(knn_idx(nq), knn_d2(nq))
         !$omp do schedule(guided)
         do i = 1, n2
@@ -470,6 +473,26 @@ contains
                 end if
             end do
             ncnt(i) = cnt
+
+            ! Selection is by chord order, but the stored distance is the exact
+            ! metric; near ties the two can disagree, so insertion-sort this
+            ! target's links ascending by stored distance (cnt <= max_neighbors,
+            ! so this is cheap) to keep per-target links monotonic.
+            do s = 2, cnt
+                p = base + s
+                dkey = tdist(p); skey = tsrc(p); dstk = tdst(p)
+                qk = tquad(p); xk = txn(p); yk = tyn(p)
+                r = s - 1
+                do while (r >= 1)
+                    if (tdist(base+r) <= dkey) exit
+                    tdist(base+r+1) = tdist(base+r); tsrc(base+r+1)  = tsrc(base+r)
+                    tdst(base+r+1)  = tdst(base+r);  tquad(base+r+1) = tquad(base+r)
+                    txn(base+r+1)   = txn(base+r);   tyn(base+r+1)   = tyn(base+r)
+                    r = r - 1
+                end do
+                tdist(base+r+1) = dkey; tsrc(base+r+1)  = skey; tdst(base+r+1)  = dstk
+                tquad(base+r+1) = qk;   txn(base+r+1)   = xk;   tyn(base+r+1)    = yk
+            end do
 
             ! Coarse progress (~10% steps) so a long, silent generation is visible.
             !$omp atomic capture
