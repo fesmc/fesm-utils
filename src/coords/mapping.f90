@@ -18,6 +18,7 @@ module mapping
                                grid_to_points, compare_coord, grid_write
     use planet,          only: planet_distance, cartesian_distance, &
                                quadrant_latlon, quadrant_cartesian
+    use oblimap_projection_module, only: oblimap_projection
     use kdtree
     use weight_map
     use mapping_scrip,   only: map_scrip_class, map_scrip_load, map_scrip_to_weight_map, &
@@ -138,6 +139,16 @@ contains
                 case ("coords")
                     if (trim(mtd) == "con") then
                         call map_init_conservative(map, grid1, grid2)
+                    else if (structured_locatable(grid1, grid2) .and. is_nn_or_bilinear(mtd) &
+                             .and. (precompute .or. trim(mtd) == "nn" .or. trim(mtd) == "nearest")) then
+                        ! Structured fast path: nn / bilinear locate the target
+                        ! directly in the regular source grid (no k-d tree), giving
+                        ! exact index-space bilinear (matching cdo genbil) and exact
+                        ! nearest-cell nn. See map_init_structured. Bilinear bakes to
+                        ! MAP_WEIGHT, so it is only taken when precompute is on (the
+                        ! default); precompute_weights=.false. keeps the mask-adaptive
+                        ! distance path.
+                        call map_init_structured(map, grid1, grid2, mtd)
                     else
                         nmax = 10
                         if (present(max_neighbors)) nmax = max_neighbors
@@ -539,6 +550,216 @@ contains
         call kdtree_free(tree)
         deallocate(emb, ncnt, tsrc, tdst, tquad, tdist, txn, tyn)
     end subroutine map_init_internal
+
+    ! ----- structured (grid-locate) fast path for nn / bilinear ---------------
+
+    logical function structured_locatable(grid1, grid2)
+        ! True when a target point can be located directly in the regular source
+        ! grid without a k-d tree: source is lat-lon/Gaussian (locate via target
+        ! lon/lat), projected (project target lon/lat into the source plane), or
+        ! Cartesian in the same system as the target (locate via target x/y).
+        type(grid_class), intent(in) :: grid1, grid2
+        logical :: src_ll, src_proj, src_cart_same
+        src_ll   = (.not. grid1%cs%is_cartesian) .and. (.not. grid1%cs%is_projection)
+        src_proj = grid1%cs%is_projection
+        src_cart_same = grid1%cs%is_cartesian .and. (.not. grid1%cs%is_projection) &
+                        .and. compare_coord(grid1, grid2)
+        structured_locatable = src_ll .or. src_proj .or. src_cart_same
+    end function structured_locatable
+
+    logical function is_nn_or_bilinear(method)
+        character(len=*), intent(in) :: method
+        select case (trim(method))
+            case ("nn", "nearest", "bil", "bilin", "bilinear")
+                is_nn_or_bilinear = .true.
+            case default
+                is_nn_or_bilinear = .false.
+        end select
+    end function is_nn_or_bilinear
+
+    subroutine bisect_axis(c, val, lo)
+        ! Return lo in [1, n-1] such that val lies between c(lo) and c(lo+1),
+        ! for a monotonic (ascending or descending) center array c. Caller
+        ! guarantees val is within [min(c), max(c)].
+        real(dp), intent(in)  :: c(:)
+        real(dp), intent(in)  :: val
+        integer,  intent(out) :: lo
+        integer :: n, l, h, m
+        logical :: asc
+        n = size(c); asc = c(n) >= c(1)
+        l = 1; h = n
+        do while (h - l > 1)
+            m = (l + h)/2
+            if (asc) then
+                if (val >= c(m)) then; l = m; else; h = m; end if
+            else
+                if (val <= c(m)) then; l = m; else; h = m; end if
+            end if
+        end do
+        lo = l
+    end subroutine bisect_axis
+
+    subroutine locate_cell(c, val0, periodic, ilo, ihi, t, ok)
+        ! Locate value val0 within the source center array c (size n). Returns the
+        ! bracketing indices ilo/ihi and the fractional position t in [0,1] from
+        ! c(ilo) to c(ihi). For periodic (longitude) axes, val0 is wrapped by 360
+        ! and the seam cell between c(n) and c(1)+360 is bracketed as ilo=n,ihi=1.
+        ! ok=.false. means val0 is outside the (non-periodic) axis span -> the
+        ! target is not interpolated (no extrapolation, matching cdo genbil).
+        real(dp), intent(in)  :: c(:)
+        real(dp), intent(in)  :: val0
+        logical,  intent(in)  :: periodic
+        integer,  intent(out) :: ilo, ihi
+        real(dp), intent(out) :: t
+        logical,  intent(out) :: ok
+        integer  :: n, lo
+        real(dp) :: val, span
+        n = size(c)
+        ok = .false.; ilo = 0; ihi = 0; t = 0.0_dp
+        if (n < 2) return
+        val = val0
+        if (periodic) then
+            do while (val <  c(1));            val = val + 360.0_dp; end do
+            do while (val >= c(1) + 360.0_dp); val = val - 360.0_dp; end do
+            if (val <= c(n)) then
+                call bisect_axis(c, val, lo)
+                ilo = lo; ihi = lo + 1
+                t = (val - c(lo)) / (c(lo+1) - c(lo)); ok = .true.
+            else
+                ! seam: between the last center and the first (+360)
+                ilo = n; ihi = 1
+                span = (c(1) + 360.0_dp) - c(n)
+                if (span /= 0.0_dp) t = (val - c(n)) / span
+                ok = .true.
+            end if
+        else
+            if (val < min(c(1), c(n)) .or. val > max(c(1), c(n))) return
+            call bisect_axis(c, val, lo)
+            ilo = lo; ihi = lo + 1
+            t = (val - c(lo)) / (c(lo+1) - c(lo)); ok = .true.
+        end if
+    end subroutine locate_cell
+
+    subroutine map_init_structured(map, grid1, grid2, method)
+        ! Build a nn or bilinear map by locating every target point directly in
+        ! the regular source grid (no k-d tree). The target's source-plane
+        ! coordinates are: its lon/lat (lat-lon source), its lon/lat projected
+        ! into the source plane (projected source), or its x/y (Cartesian source
+        ! sharing the target's system). Bilinear bakes the four surrounding source
+        ! nodes with exact index-space weights (1-u)(1-v)... uv into a MAP_WEIGHT
+        ! (matches cdo genbil, and is correct for projected sources where the
+        ! lon/lat-quadrant bilinear is not). nn stores the four cell corners as a
+        ! MAP_DISTANCE so apply picks the nearest valid corner (nearest source
+        ! node on a regular grid), with fallback to the others under a mask.
+        ! Targets outside the source span are left unmapped (no extrapolation).
+        type(map_class),  intent(inout) :: map
+        type(grid_class), intent(in)    :: grid1, grid2
+        character(len=*), intent(in)    :: method
+
+        integer  :: nx1, ny1, nx2, ny2, n1, n2
+        integer  :: i2, j2, k, ilo, ihi, jlo, jhi, cc, nl
+        integer  :: cci(4), ccj(4), src
+        real(dp) :: u, v, xyc, a, f, tlon, tlat, tx, ty, sx, sy, px, py, wq(4)
+        logical  :: ok_i, ok_j, src_ll, src_proj, use_cart, is_bil
+        integer,  allocatable :: lsrc(:), ldst(:), lquad(:)
+        real(dp), allocatable :: lw(:), ldist(:), lxn(:), lyn(:)
+
+        nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
+        nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
+
+        src_ll   = (.not. grid1%cs%is_cartesian) .and. (.not. grid1%cs%is_projection)
+        src_proj = grid1%cs%is_projection
+        is_bil   = .not. (trim(method) == "nn" .or. trim(method) == "nearest")
+
+        call map_set_target_from_grid(map, grid1, grid2)
+        map%method = trim(method)
+        map%nmax   = 4
+
+        use_cart = map%is_same_map .and. grid2%cs%is_cartesian
+        xyc = grid2%cs%xy_conv
+        a   = grid2%cs%planet%a
+        f   = grid2%cs%planet%f
+
+        allocate(lsrc(4*n2), ldst(4*n2))
+        if (is_bil) then
+            allocate(lw(4*n2))
+        else
+            allocate(ldist(4*n2), lquad(4*n2), lxn(4*n2), lyn(4*n2))
+        end if
+        nl = 0
+
+        do j2 = 1, ny2
+            do i2 = 1, nx2
+                k = (j2-1)*nx2 + i2
+                tlon = grid2%lon(i2,j2); tlat = grid2%lat(i2,j2)
+
+                ! target coordinates in the source plane
+                if (src_ll) then
+                    sx = tlon; sy = tlat
+                else if (src_proj) then
+                    call oblimap_projection(tlon, tlat, px, py, grid1%cs%proj)
+                    sx = px/grid1%cs%xy_conv; sy = py/grid1%cs%xy_conv
+                else
+                    sx = grid2%x(i2,j2); sy = grid2%y(i2,j2)   ! Cartesian, same system
+                end if
+
+                call locate_cell(grid1%G%x, sx, src_ll, ilo, ihi, u, ok_i)
+                call locate_cell(grid1%G%y, sy, .false., jlo, jhi, v, ok_j)
+                if (.not. (ok_i .and. ok_j)) cycle
+
+                cci = [ilo, ihi, ilo, ihi]
+                ccj = [jlo, jlo, jhi, jhi]
+                wq(1) = (1.0_dp-u)*(1.0_dp-v); wq(2) = u*(1.0_dp-v)
+                wq(3) = (1.0_dp-u)*v;          wq(4) = u*v
+
+                if (use_cart) then
+                    tx = grid2%x(i2,j2)*xyc; ty = grid2%y(i2,j2)*xyc
+                end if
+
+                do cc = 1, 4
+                    src = (ccj(cc)-1)*nx1 + cci(cc)
+                    nl = nl + 1
+                    lsrc(nl) = src; ldst(nl) = k
+                    if (is_bil) then
+                        lw(nl) = wq(cc)
+                    else if (use_cart) then
+                        lxn(nl)  = grid1%x(cci(cc),ccj(cc))*xyc
+                        lyn(nl)  = grid1%y(cci(cc),ccj(cc))*xyc
+                        ldist(nl)= cartesian_distance(tx, ty, lxn(nl), lyn(nl))
+                        lquad(nl)= quadrant_cartesian(tx, ty, lxn(nl), lyn(nl))
+                    else
+                        lxn(nl)  = grid1%lon(cci(cc),ccj(cc))
+                        lyn(nl)  = grid1%lat(cci(cc),ccj(cc))
+                        ldist(nl)= planet_distance(a, f, tlon, tlat, lxn(nl), lyn(nl))
+                        lquad(nl)= quadrant_latlon(tlon, tlat, lxn(nl), lyn(nl))
+                    end if
+                end do
+            end do
+        end do
+
+        if (is_bil) then
+            call weight_map_alloc(map%wm, MAP_WEIGHT, n1, n2, nl)
+            map%wm%src(1:nl) = lsrc(1:nl)
+            map%wm%dst(1:nl) = ldst(1:nl)
+            map%wm%w(1:nl)   = lw(1:nl)
+        else
+            call weight_map_alloc(map%wm, MAP_DISTANCE, n1, n2, nl)
+            map%wm%src(1:nl)      = lsrc(1:nl)
+            map%wm%dst(1:nl)      = ldst(1:nl)
+            map%wm%dist(1:nl)     = ldist(1:nl)
+            map%wm%quadrant(1:nl) = lquad(1:nl)
+            map%wm%xn(1:nl)       = lxn(1:nl)
+            map%wm%yn(1:nl)       = lyn(1:nl)
+        end if
+        call weight_map_index(map%wm)
+
+        write(*,'(a)') "  map(coords/structured): "//trim(grid1%name)//" => "// &
+                       trim(grid2%name)//" ["//trim(method)//"]"
+
+        if (allocated(lw))   deallocate(lw)
+        if (allocated(ldist)) deallocate(ldist, lquad, lxn, lyn)
+        deallocate(lsrc, ldst)
+    end subroutine map_init_structured
 
     subroutine sphere_embed(lon, lat, emb)
         real(dp), intent(in)  :: lon(:), lat(:)

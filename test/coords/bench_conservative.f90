@@ -56,9 +56,86 @@ program bench_conservative
     call regime_idw(10.0_dp)
 
     write(*,"(a)") ""
+    write(*,"(a)") "# Structured nn / bilinear (coords grid-locate vs cdo gennn / genbil)"
+    write(*,"(a)") ""
+    write(*,"(a)") "regime                    n_src     n_tgt   t_coords[s]  t_cdo[s]   speedup   max|co-cdo|"
+    write(*,"(a)") "-------------------------------------------------------------------------------------------"
+    call regime_interp("bil ll->stereo dx20", "bilst20", .false., "bil", "bil", 20.0_dp)
+    call regime_interp("bil stereo->ll dx20", "bills20", .true.,  "bil", "bil", 20.0_dp)
+    call regime_interp("nn  ll->stereo dx20", "nnst20",  .false., "nn",  "nn",  20.0_dp)
+    call regime_interp("nn  stereo->ll dx20", "nnls20",  .true.,  "nn",  "nn",  20.0_dp)
+
+    write(*,"(a)") ""
     write(*,"(a)") "done."
 
 contains
+
+    subroutine regime_interp(label, tag, reverse, method, cdo_method, dxkm)
+        ! coords structured nn/bilinear vs cdo gennn/genbil. reverse=.false. maps a
+        ! global lat-lon source to a Greenland stereographic target (source-latlon
+        ! locate); reverse=.true. maps the stereographic source to the lat-lon
+        ! target (source-projection locate) -- the Rtopo<->NH shapes.
+        character(len=*), intent(in) :: label, tag, method, cdo_method
+        logical,          intent(in) :: reverse
+        real(dp),         intent(in) :: dxkm
+        type(grid_class)  :: gll, gst, gs, gt
+        type(map_class)   :: map_co, map_cdo
+        type(map_scrip_class) :: mps
+        real(dp), allocatable :: fs(:,:), ft_co(:,:), ft_cdo(:,:)
+        logical,  allocatable :: m_co(:,:), m_cdo(:,:)
+        integer(8) :: c0, c1, cr
+        integer    :: r, nx, ny
+        real(dp)   :: t_co, t_cdo, maxdiff, sp
+        character(len=512) :: src_nc, xnm, ynm
+        character(len=64)  :: snm, tnm
+
+        call grid_init(gll, name="il"//trim(tag), mtype="latlon", units="degrees", &
+                       x0=0.0_dp, dx=2.0_dp, nx=180, y0=-90.0_dp, dy=2.0_dp, ny=91)
+        nx = nint(1520.0_dp/dxkm); ny = nint(3020.0_dp/dxkm)
+        call grid_init(gst, name="ig"//trim(tag), mtype="stereographic", units="kilometers", &
+                       dx=dxkm, nx=nx, dy=dxkm, ny=ny, lambda=-40.0_dp, phi=72.0_dp, alpha=7.5_dp)
+        if (reverse) then; gs = gst; gt = gll; else; gs = gll; gt = gst; end if
+
+        call smooth_field(gs, fs)
+        allocate(ft_co(gt%G%nx,gt%G%ny), m_co(gt%G%nx,gt%G%ny))
+
+        call system_clock(c0, cr)
+        do r = 1, NREP
+            call map_init(map_co, gs, gt, max_neighbors=10, method=trim(method), load=.false.)
+        end do
+        call system_clock(c1)
+        t_co = real(c1-c0,dp)/real(cr,dp)/real(NREP,dp)
+        call map_field(map_co, "f", fs, ft_co, method=trim(method), mask2=m_co)
+
+        snm = trim(tag)//"_src"; tnm = trim(tag)//"_tgt"
+        src_nc = trim(fldr)//"/src_"//trim(tag)//".nc"
+        if (gs%cs%is_projection .or. gs%cs%is_cartesian) then
+            xnm = "xc"; ynm = "yc"
+        else
+            xnm = "lon"; ynm = "lat"
+        end if
+        call system_clock(c0, cr)
+        do r = 1, NREP
+            call write_descriptions(gs, gt, snm, tnm)
+            call grid_write(gs, fnm=trim(src_nc), xnm=trim(xnm), ynm=trim(ynm), create=.true.)
+            call map_scrip_init_from_griddesc(mps, trim(snm), trim(tnm), fldr, trim(src_nc), &
+                                              trim(cdo_method), load=.false.)
+        end do
+        call system_clock(c1)
+        t_cdo = real(c1-c0,dp)/real(cr,dp)/real(NREP,dp)
+
+        call map_scrip_to_weight_map(mps, map_cdo%wm)
+        allocate(ft_cdo(gt%G%nx,gt%G%ny), m_cdo(gt%G%nx,gt%G%ny))
+        call map_field(map_cdo, "f", fs, ft_cdo, stat="mean", mask2=m_cdo)
+        maxdiff = -1.0_dp
+        if (any(m_co .and. m_cdo)) maxdiff = maxval(abs(ft_co - ft_cdo), mask=(m_co .and. m_cdo))
+        call map_scrip_end(mps)
+
+        sp = -1.0_dp
+        if (t_cdo > 0.0_dp .and. t_co > 0.0_dp) sp = t_cdo/t_co
+        write(*,"(a24,1x,i9,1x,i9,2x,es10.3,1x,es10.3,2x,f7.1,3x,es10.3)") &
+              adjustl(label), gs%npts, gt%npts, t_co, t_cdo, sp, maxdiff
+    end subroutine regime_interp
 
     ! ---- field helpers -------------------------------------------------------
 
