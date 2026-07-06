@@ -387,8 +387,12 @@ contains
 
     real(dp) function interval_overlap(a, b, c, d) result(ov)
         ! Length of the overlap of intervals [a,b] and [c,d] (0 if disjoint).
+        ! Orientation-independent: each interval is normalized to [min,max] first,
+        ! so descending axes (e.g. a Gaussian grid stored north->south, or a
+        ! sin(lat) band from such an axis) overlap correctly. Without this the
+        ! separable lat/planar paths return zero links for descending targets.
         real(dp), intent(in) :: a, b, c, d
-        ov = max(0.0_dp, min(b, d) - max(a, c))
+        ov = max(0.0_dp, min(max(a,b), max(c,d)) - max(min(a,b), min(c,d)))
     end function interval_overlap
 
     real(dp) function lon_overlap(a, b, c, d) result(ov)
@@ -396,11 +400,16 @@ contains
         ! wrap so grids with different longitude conventions (0..360 vs -180..180)
         ! and the periodic seam are handled. Both intervals are < 360 wide, so at
         ! most one shift yields a positive overlap; take the largest.
+        ! Orientation-independent: each interval is normalized to [min,max] first
+        ! so a descending longitude axis overlaps correctly (see interval_overlap).
         real(dp), intent(in) :: a, b, c, d
+        real(dp) :: alo, ahi, clo, chi
         integer :: k
+        alo = min(a,b); ahi = max(a,b)
+        clo = min(c,d); chi = max(c,d)
         ov = 0.0_dp
         do k = -1, 1
-            ov = max(ov, min(b, d + 360.0_dp*k) - max(a, c + 360.0_dp*k))
+            ov = max(ov, min(ahi, chi + 360.0_dp*k) - max(alo, clo + 360.0_dp*k))
         end do
         ov = max(0.0_dp, ov)
     end function lon_overlap
