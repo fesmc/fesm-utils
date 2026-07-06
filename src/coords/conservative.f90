@@ -252,7 +252,7 @@ contains
         type(kdtree_t) :: tree
         integer  :: n1, n2, nx1, ny1, nx2, ny2
         integer  :: i, j, ic, jc, c, cs, cc, nf, no, nv, nthreads, tid
-        real(dp) :: rad, area, a, f
+        real(dp) :: rad, area, a, f, srcdeg, tgtdeg
         real(dp), allocatable :: emb(:,:)
         real(dp), allocatable :: slon(:,:), slat(:,:)     ! source cell corners (lon/lat)
         real(dp) :: tlon(4), tlat(4)
@@ -279,9 +279,21 @@ contains
         end do
         call kdtree_build(tree, emb)
 
-        ! candidate radius (chord on unit sphere): target + source angular size
-        rad = chord(max(grid1%G%dx, grid1%G%dy) + max(grid2%G%dx, grid2%G%dy) + &
-                    0.5_dp*max(grid2%G%dx, grid2%G%dy))
+        ! candidate radius (chord on unit sphere): source + target angular cell
+        ! size, both in DEGREES. grid2 is the lat-lon/Gaussian target, so its dx/dy
+        ! are already degrees. grid1 (source) may be projected or cartesian, whose
+        ! dx/dy are in axis units (km/m), NOT degrees -- convert via the planet
+        ! radius (as the cross-system planar path does at conservative_planar).
+        ! Using the raw axis value as degrees inflates the radius by ~100x, pulling
+        ! nearly every source cell per target and degrading toward O(n_src*n_tgt).
+        if (grid1%cs%is_cartesian .or. grid1%cs%is_projection) then
+            srcdeg = (max(grid1%G%dx, grid1%G%dy)*grid1%cs%xy_conv/grid1%cs%planet%a) &
+                     / degrees_to_radians
+        else
+            srcdeg = max(grid1%G%dx, grid1%G%dy)
+        end if
+        tgtdeg = max(grid2%G%dx, grid2%G%dy)
+        rad = chord(srcdeg + 1.5_dp*tgtdeg)
 
         nthreads = 1
         !$ nthreads = omp_get_max_threads()
