@@ -78,7 +78,7 @@ contains
     end subroutine map_init_points_points
 
     subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr, load, clean, &
-                                  precompute_weights)
+                                  precompute_weights, weight_cutoff)
         ! Build (or load) a grid -> grid map and cache it as a SCRIP(-superset)
         ! file under `fldr` (default "maps").
         !   method - interpolation kernel: "con" (conservative) or a distance
@@ -95,6 +95,13 @@ contains
         !            to keep the distance store (e.g. to inspect neighbor geometry
         !            or force the full runtime kernel). The on-disk cache is
         !            unaffected -- it always stays distance-format.
+        !   weight_cutoff - relative cutoff for pruning sliver links from a baked
+        !            MAP_WEIGHT map (conservative "con", baked bilinear) at
+        !            generation: for each target, links below weight_cutoff times
+        !            that target's total weight are dropped before caching (see
+        !            weight_map_prune). Default 1e-4 (0.01% of target weight);
+        !            pass 0.0 to keep every link. No effect on distance maps or
+        !            on maps loaded from an existing cache.
         ! The loader auto-detects the file format, so a cdo-generated SCRIP file
         ! and an in-package (coords) cache interoperate at the same filename.
         type(map_class), intent(inout) :: map
@@ -107,11 +114,13 @@ contains
         logical,  optional, intent(in) :: load
         logical,  optional, intent(in) :: clean
         logical,  optional, intent(in) :: precompute_weights
+        real(dp), optional, intent(in) :: weight_cutoff
 
         type(points_class) :: pts1, pts2
         character(len=32)  :: mtd, g
         character(len=256) :: mfldr, filename
         logical :: load_file, file_exists, precompute
+        real(dp) :: wcut
         integer :: nmax
 
         mtd = "nn"
@@ -124,6 +133,8 @@ contains
         if (present(load)) load_file = load
         precompute = .true.
         if (present(precompute_weights)) precompute = precompute_weights
+        wcut = 1.0e-4_dp
+        if (present(weight_cutoff)) wcut = weight_cutoff
 
         filename = gen_map_filename(grid1%name, grid2%name, mfldr, mtd)
         inquire(file=trim(filename), exist=file_exists)
@@ -158,6 +169,9 @@ contains
                         map%is_grid = .true.
                         map%G = grid2%G
                     end if
+                    ! Prune sub-cutoff sliver links (no-op on distance maps) so
+                    ! the cache and in-memory map carry only significant links.
+                    call weight_map_prune(map%wm, wcut)
                     ! Cache the freshly generated map
                     call map_save_wm(map, mfldr, filename)
                 case ("cdo")
@@ -178,7 +192,8 @@ contains
         if (precompute .and. map%wm%kind == MAP_DISTANCE) call map_precompute_weights(map)
     end subroutine map_init_grid_grid
 
-    subroutine map_init_grid_names(map, name1, name2, max_neighbors, dist_max, method, gen, fldr, load, clean)
+    subroutine map_init_grid_names(map, name1, name2, max_neighbors, dist_max, method, gen, fldr, load, clean, &
+                                   weight_cutoff)
         ! Build (or load) a grid -> grid map from grid *names* alone. The source
         ! and target grid definitions are read from cdo description files
         ! (grid_<name>.txt) found in `fldr`, the grids are reconstructed
@@ -195,6 +210,7 @@ contains
         character(len=*), optional, intent(in) :: fldr
         logical,  optional, intent(in)  :: load
         logical,  optional, intent(in)  :: clean
+        real(dp), optional, intent(in)  :: weight_cutoff
 
         type(grid_class)   :: grid1, grid2
         character(len=256) :: mfldr
@@ -207,7 +223,8 @@ contains
 
         call map_init_grid_grid(map, grid1, grid2, max_neighbors=max_neighbors, &
                                 dist_max=dist_max, method=method, gen=gen, &
-                                fldr=mfldr, load=load, clean=clean)
+                                fldr=mfldr, load=load, clean=clean, &
+                                weight_cutoff=weight_cutoff)
     end subroutine map_init_grid_names
 
     subroutine map_set_target_from_grid(map, grid1, grid2)

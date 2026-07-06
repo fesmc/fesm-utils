@@ -44,6 +44,7 @@ module weight_map
 
     public :: weight_map_t
     public :: weight_map_alloc, weight_map_free, weight_map_index, weight_map_apply
+    public :: weight_map_prune
 
 contains
 
@@ -99,6 +100,56 @@ contains
             k = k + 1
         end do
     end subroutine weight_map_index
+
+    subroutine weight_map_prune(wm, cutoff)
+        ! Drop the boundary-sliver links a separable/tensor generator produces:
+        ! for each target, remove links whose weight is below `cutoff` times that
+        ! target's total link weight, then compact and reindex. apply already
+        ! renormalizes per target over the survivors, so dropping sub-cutoff
+        ! links changes results negligibly while shrinking the map (memory, the
+        ! on-disk cache, and apply work). No-op unless it is a MAP_WEIGHT map
+        ! with cutoff > 0 (MAP_DISTANCE weights are built at apply time).
+        type(weight_map_t), intent(inout) :: wm
+        real(dp),           intent(in)    :: cutoff
+        integer  :: k, j, j1, j2, nkeep
+        real(dp) :: total, thresh
+        integer,  allocatable :: src2(:), dst2(:), off2(:)
+        real(dp), allocatable :: w2(:)
+
+        if (cutoff <= 0.0_dp)         return
+        if (wm%kind /= MAP_WEIGHT)    return
+        if (wm%n_links == 0)          return
+
+        allocate(src2(wm%n_links), dst2(wm%n_links), w2(wm%n_links))
+        allocate(off2(wm%n_dst+1))
+        off2(1) = 1
+        nkeep = 0
+        do k = 1, wm%n_dst
+            j1 = wm%dst_off(k); j2 = wm%dst_off(k+1) - 1
+            total = 0.0_dp
+            do j = j1, j2
+                total = total + wm%w(j)
+            end do
+            thresh = cutoff * total
+            do j = j1, j2
+                if (wm%w(j) >= thresh) then
+                    nkeep = nkeep + 1
+                    src2(nkeep) = wm%src(j)
+                    dst2(nkeep) = wm%dst(j)
+                    w2(nkeep)   = wm%w(j)
+                end if
+            end do
+            off2(k+1) = nkeep + 1
+        end do
+
+        deallocate(wm%src, wm%dst, wm%w)
+        allocate(wm%src(nkeep), wm%dst(nkeep), wm%w(nkeep))
+        wm%src = src2(1:nkeep)
+        wm%dst = dst2(1:nkeep)
+        wm%w   = w2(1:nkeep)
+        wm%dst_off = off2
+        wm%n_links = nkeep
+    end subroutine weight_map_prune
 
     subroutine weight_map_apply(wm, var1, var2, kernel, stat, missing_value, radius, mask2)
         ! Apply the map: var2(n_dst) = aggregation of var1(n_src) over each
