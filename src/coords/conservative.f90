@@ -105,11 +105,38 @@ contains
         type(weight_map_t), intent(inout) :: wm
         type(grid_class),   intent(in)    :: grid1, grid2
         if (grid2%cs%is_cartesian) then
-            call conservative_planar(wm, grid1, grid2)
+            ! target is Cartesian/projected: planar clip. Use the analytic separable
+            ! overlap when source and target share one Cartesian plane (both are
+            ! axis-aligned rectangles); otherwise the general Sutherland-Hodgman
+            ! clip (e.g. lat-lon source -> projected target).
+            if (same_cartesian_system(grid1, grid2)) then
+                call conservative_planar_reg(wm, grid1, grid2)
+            else
+                call conservative_planar(wm, grid1, grid2)
+            end if
+        else if (is_latlon(grid1) .and. is_latlon(grid2)) then
+            ! both lat-lon/Gaussian: axis-aligned in (lon,lat), so the cell overlap
+            ! is separable and analytic -- no great-circle polygon clipping needed.
+            call conservative_latlon(wm, grid1, grid2)
         else
             call conservative_spherical(wm, grid1, grid2)
         end if
     end subroutine conservative_weights
+
+    logical function is_latlon(grid)
+        ! A lat-lon / Gaussian grid: axes are (lon,lat) in degrees, neither a
+        ! Cartesian nor a projected system (both flags false; see coordinates).
+        type(grid_class), intent(in) :: grid
+        is_latlon = (.not. grid%cs%is_cartesian) .and. (.not. grid%cs%is_projection)
+    end function is_latlon
+
+    logical function same_cartesian_system(grid1, grid2)
+        ! True when both grids live in the same Cartesian/projected plane, so their
+        ! cells are axis-aligned rectangles in shared xy coordinates.
+        type(grid_class), intent(in) :: grid1, grid2
+        same_cartesian_system = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian &
+                                .and. grid1%cs%is_cartesian
+    end function same_cartesian_system
 
     subroutine conservative_planar(wm, grid1, grid2)
         type(weight_map_t), intent(inout) :: wm
@@ -341,6 +368,239 @@ contains
         call kdtree_free(tree)
         deallocate(emb, slon, slat, bufs)
     end subroutine conservative_spherical
+
+    subroutine axis_edges(x, xe)
+        ! Cell edges (n+1 values, index 0:n) from n cell centers, using the same
+        ! adjacent-midpoint rule as cell_corners_grid so the separable/analytic
+        ! paths tile identically to the general polygon-clip path. Boundary edges
+        ! are extrapolated by half the end cell width. Requires n >= 2.
+        real(dp), intent(in)  :: x(:)
+        real(dp), intent(out) :: xe(0:)
+        integer :: n, i
+        n = size(x)
+        xe(0) = x(1) - 0.5_dp*(x(2) - x(1))
+        do i = 1, n-1
+            xe(i) = 0.5_dp*(x(i) + x(i+1))
+        end do
+        xe(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
+    end subroutine axis_edges
+
+    real(dp) function interval_overlap(a, b, c, d) result(ov)
+        ! Length of the overlap of intervals [a,b] and [c,d] (0 if disjoint).
+        real(dp), intent(in) :: a, b, c, d
+        ov = max(0.0_dp, min(b, d) - max(a, c))
+    end function interval_overlap
+
+    real(dp) function lon_overlap(a, b, c, d) result(ov)
+        ! Longitude overlap of target [a,b] and source [c,d], allowing a +-360 deg
+        ! wrap so grids with different longitude conventions (0..360 vs -180..180)
+        ! and the periodic seam are handled. Both intervals are < 360 wide, so at
+        ! most one shift yields a positive overlap; take the largest.
+        real(dp), intent(in) :: a, b, c, d
+        integer :: k
+        ov = 0.0_dp
+        do k = -1, 1
+            ov = max(ov, min(b, d + 360.0_dp*k) - max(a, c + 360.0_dp*k))
+        end do
+        ov = max(0.0_dp, ov)
+    end function lon_overlap
+
+    subroutine conservative_latlon(wm, grid1, grid2)
+        ! Analytic conservative weights for lat-lon/Gaussian source -> lat-lon/
+        ! Gaussian target. Cells are axis-aligned in (lon,lat), so the spherical
+        ! overlap area of a source and target cell is separable:
+        !     area = R^2 * (lon overlap, rad) * (sin(lat_hi) - sin(lat_lo))
+        ! The R^2 and the deg->rad factor are global constants that cancel in the
+        ! per-target weighted mean, so the stored weight is
+        !     w = lon_overlap(deg) * sinlat_overlap.
+        ! The candidate search is separable too: overlapping source rows/columns
+        ! per target row/column are found by 1-D interval tests (O(1) amortized),
+        ! never a k-d tree. This replaces the great-circle polygon clip
+        ! (conservative_spherical) for the both-lat-lon case.
+        type(weight_map_t), intent(inout) :: wm
+        type(grid_class),   intent(in)    :: grid1, grid2
+
+        integer  :: nx1, ny1, nx2, ny2, n1, n2
+        integer  :: i1, j1, i2, j2, nthreads, tid, p, q
+        real(dp) :: wlo, wla
+        real(dp), allocatable :: sxe(:), sye(:), txe(:), tye(:)   ! 0:n edges
+        real(dp), allocatable :: ssin(:), tsin(:)                 ! 0:ny sin(lat edge)
+        ! CSR of per-target-column lon overlaps and per-target-row lat overlaps
+        integer,  allocatable :: lon_off(:), lat_off(:)
+        integer,  allocatable :: lon_i1(:),  lat_j1(:)
+        real(dp), allocatable :: lon_w(:),   lat_w(:)
+        type(link_buf), allocatable :: bufs(:)
+
+        nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
+        nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
+
+        allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
+        call axis_edges(grid1%G%x, sxe); call axis_edges(grid1%G%y, sye)
+        call axis_edges(grid2%G%x, txe); call axis_edges(grid2%G%y, tye)
+
+        ! Clamp latitude edges to the poles (polar cells are half cells) and take
+        ! the sine, in which latitude bands overlap linearly.
+        allocate(ssin(0:ny1), tsin(0:ny2))
+        do j1 = 0, ny1
+            ssin(j1) = sin(max(-90.0_dp, min(90.0_dp, sye(j1)))*degrees_to_radians)
+        end do
+        do j2 = 0, ny2
+            tsin(j2) = sin(max(-90.0_dp, min(90.0_dp, tye(j2)))*degrees_to_radians)
+        end do
+
+        ! Build the 1-D overlap tables (two-pass CSR: count, then fill).
+        call build_axis_overlap_lon(txe, sxe, nx2, nx1, lon_off, lon_i1, lon_w)
+        call build_axis_overlap_lat(tsin, ssin, ny2, ny1, lat_off, lat_j1, lat_w)
+
+        nthreads = 1
+        !$ nthreads = omp_get_max_threads()
+        allocate(bufs(0:nthreads-1))
+
+        ! Assemble links as the (row overlap) x (column overlap) cross product per
+        ! target cell. Parallel over target rows; per-thread buffers avoid a shared
+        ! append counter (bufs_to_wm merges them in destination order).
+        !$omp parallel default(shared) &
+        !$omp   private(i2, j2, i1, j1, p, q, wlo, wla, tid)
+        tid = 0
+        !$ tid = omp_get_thread_num()
+        !$omp do schedule(guided)
+        do j2 = 1, ny2
+            do q = lat_off(j2), lat_off(j2+1)-1
+                j1  = lat_j1(q); wla = lat_w(q)
+                do i2 = 1, nx2
+                    do p = lon_off(i2), lon_off(i2+1)-1
+                        i1  = lon_i1(p); wlo = lon_w(p)
+                        call buf_push(bufs(tid), (j1-1)*nx1 + i1, (j2-1)*nx2 + i2, wlo*wla)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end do
+        !$omp end parallel
+
+        call bufs_to_wm(wm, bufs, n1, n2)
+        deallocate(sxe, sye, txe, tye, ssin, tsin, bufs)
+        deallocate(lon_off, lon_i1, lon_w, lat_off, lat_j1, lat_w)
+    end subroutine conservative_latlon
+
+    subroutine build_axis_overlap_lon(txe, sxe, nt, ns, off, idx, w)
+        ! Per-target-column CSR list of overlapping source columns and the
+        ! (wrap-aware) longitude overlap width. Two-pass to size exactly.
+        real(dp), intent(in)  :: txe(0:), sxe(0:)
+        integer,  intent(in)  :: nt, ns
+        integer,  allocatable, intent(out) :: off(:), idx(:)
+        real(dp), allocatable, intent(out) :: w(:)
+        integer  :: i2, i1, cnt, p
+        real(dp) :: ov
+        allocate(off(nt+1)); off = 0
+        do i2 = 1, nt
+            cnt = 0
+            do i1 = 1, ns
+                if (lon_overlap(txe(i2-1), txe(i2), sxe(i1-1), sxe(i1)) > 0.0_dp) cnt = cnt + 1
+            end do
+            off(i2+1) = cnt
+        end do
+        off(1) = 1
+        do i2 = 1, nt
+            off(i2+1) = off(i2+1) + off(i2)
+        end do
+        allocate(idx(off(nt+1)-1), w(off(nt+1)-1))
+        do i2 = 1, nt
+            p = off(i2)
+            do i1 = 1, ns
+                ov = lon_overlap(txe(i2-1), txe(i2), sxe(i1-1), sxe(i1))
+                if (ov > 0.0_dp) then
+                    idx(p) = i1; w(p) = ov; p = p + 1
+                end if
+            end do
+        end do
+    end subroutine build_axis_overlap_lon
+
+    subroutine build_axis_overlap_lat(tsin, ssin, nt, ns, off, idx, w)
+        ! Per-target-row CSR list of overlapping source rows and the sin(lat)-band
+        ! overlap. Non-periodic; edges are monotonic so ranges are contiguous.
+        real(dp), intent(in)  :: tsin(0:), ssin(0:)
+        integer,  intent(in)  :: nt, ns
+        integer,  allocatable, intent(out) :: off(:), idx(:)
+        real(dp), allocatable, intent(out) :: w(:)
+        integer  :: j2, j1, cnt, p
+        real(dp) :: ov
+        allocate(off(nt+1)); off = 0
+        do j2 = 1, nt
+            cnt = 0
+            do j1 = 1, ns
+                if (interval_overlap(tsin(j2-1), tsin(j2), ssin(j1-1), ssin(j1)) > 0.0_dp) cnt = cnt + 1
+            end do
+            off(j2+1) = cnt
+        end do
+        off(1) = 1
+        do j2 = 1, nt
+            off(j2+1) = off(j2+1) + off(j2)
+        end do
+        allocate(idx(off(nt+1)-1), w(off(nt+1)-1))
+        do j2 = 1, nt
+            p = off(j2)
+            do j1 = 1, ns
+                ov = interval_overlap(tsin(j2-1), tsin(j2), ssin(j1-1), ssin(j1))
+                if (ov > 0.0_dp) then
+                    idx(p) = j1; w(p) = ov; p = p + 1
+                end if
+            end do
+        end do
+    end subroutine build_axis_overlap_lat
+
+    subroutine conservative_planar_reg(wm, grid1, grid2)
+        ! Analytic conservative weights when source and target share one Cartesian
+        ! plane: cells are axis-aligned rectangles, so the overlap area is the
+        ! separable product of the x- and y-interval overlaps (in shared axis
+        ! units). No polygon clip, no k-d tree. Exact to rounding.
+        type(weight_map_t), intent(inout) :: wm
+        type(grid_class),   intent(in)    :: grid1, grid2
+
+        integer  :: nx1, ny1, nx2, ny2, n1, n2
+        integer  :: i1, j1, i2, j2, nthreads, tid, p, q
+        real(dp) :: wx, wy
+        real(dp), allocatable :: sxe(:), sye(:), txe(:), tye(:)
+        integer,  allocatable :: x_off(:), y_off(:), x_i1(:), y_j1(:)
+        real(dp), allocatable :: x_w(:), y_w(:)
+        type(link_buf), allocatable :: bufs(:)
+
+        nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
+        nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
+
+        allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
+        call axis_edges(grid1%G%x, sxe); call axis_edges(grid1%G%y, sye)
+        call axis_edges(grid2%G%x, txe); call axis_edges(grid2%G%y, tye)
+
+        call build_axis_overlap_lat(txe, sxe, nx2, nx1, x_off, x_i1, x_w)
+        call build_axis_overlap_lat(tye, sye, ny2, ny1, y_off, y_j1, y_w)
+
+        nthreads = 1
+        !$ nthreads = omp_get_max_threads()
+        allocate(bufs(0:nthreads-1))
+
+        !$omp parallel default(shared) private(i2, j2, i1, j1, p, q, wx, wy, tid)
+        tid = 0
+        !$ tid = omp_get_thread_num()
+        !$omp do schedule(guided)
+        do j2 = 1, ny2
+            do q = y_off(j2), y_off(j2+1)-1
+                j1 = y_j1(q); wy = y_w(q)
+                do i2 = 1, nx2
+                    do p = x_off(i2), x_off(i2+1)-1
+                        i1 = x_i1(p); wx = x_w(p)
+                        call buf_push(bufs(tid), (j1-1)*nx1 + i1, (j2-1)*nx2 + i2, wx*wy)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end do
+        !$omp end parallel
+
+        call bufs_to_wm(wm, bufs, n1, n2)
+        deallocate(sxe, sye, txe, tye, bufs)
+        deallocate(x_off, x_i1, x_w, y_off, y_j1, y_w)
+    end subroutine conservative_planar_reg
 
     real(dp) function chord(deg) result(c)
         ! chord length on the unit sphere subtended by an angle of `deg` degrees
