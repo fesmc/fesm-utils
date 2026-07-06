@@ -604,8 +604,13 @@ contains
         ! bracketing indices ilo/ihi and the fractional position t in [0,1] from
         ! c(ilo) to c(ihi). For periodic (longitude) axes, val0 is wrapped by 360
         ! and the seam cell between c(n) and c(1)+360 is bracketed as ilo=n,ihi=1.
-        ! ok=.false. means val0 is outside the (non-periodic) axis span -> the
-        ! target is not interpolated (no extrapolation, matching cdo genbil).
+        ! For non-periodic axes, a val0 outside the center span is clamped onto the
+        ! nearest boundary cell (ilo=ihi at that edge, t=0), so the target collapses
+        ! to a nearest-edge value there instead of being dropped. This mirrors cdo
+        ! genbil's nearest-neighbour fallback and guarantees every reachable target
+        ! is mapped -- e.g. a polar-stereographic target reaching 90N when the last
+        ! lat-lon source center sits below 90N. ok=.false. only for a degenerate
+        ! axis (n<2).
         real(dp), intent(in)  :: c(:)
         real(dp), intent(in)  :: val0
         logical,  intent(in)  :: periodic
@@ -633,10 +638,19 @@ contains
                 ok = .true.
             end if
         else
-            if (val < min(c(1), c(n)) .or. val > max(c(1), c(n))) return
-            call bisect_axis(c, val, lo)
-            ilo = lo; ihi = lo + 1
-            t = (val - c(lo)) / (c(lo+1) - c(lo)); ok = .true.
+            if (val <= min(c(1), c(n))) then
+                ! Clamp onto the boundary cell at the low end of the span.
+                if (c(1) <= c(n)) then; ilo = 1; else; ilo = n; end if
+                ihi = ilo; t = 0.0_dp; ok = .true.
+            else if (val >= max(c(1), c(n))) then
+                ! Clamp onto the boundary cell at the high end of the span.
+                if (c(1) >= c(n)) then; ilo = 1; else; ilo = n; end if
+                ihi = ilo; t = 0.0_dp; ok = .true.
+            else
+                call bisect_axis(c, val, lo)
+                ilo = lo; ihi = lo + 1
+                t = (val - c(lo)) / (c(lo+1) - c(lo)); ok = .true.
+            end if
         end if
     end subroutine locate_cell
 
@@ -651,7 +665,10 @@ contains
         ! lon/lat-quadrant bilinear is not). nn stores the four cell corners as a
         ! MAP_DISTANCE so apply picks the nearest valid corner (nearest source
         ! node on a regular grid), with fallback to the others under a mask.
-        ! Targets outside the source span are left unmapped (no extrapolation).
+        ! Targets outside the source span are clamped onto the nearest source
+        ! boundary cell (see locate_cell), giving a nearest-edge value there
+        ! instead of a hole -- e.g. the polar cap of a stereographic target that
+        ! reaches latitudes beyond the last lat-lon source row.
         type(map_class),  intent(inout) :: map
         type(grid_class), intent(in)    :: grid1, grid2
         character(len=*), intent(in)    :: method
