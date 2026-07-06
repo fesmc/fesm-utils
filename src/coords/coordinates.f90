@@ -68,9 +68,9 @@ module coordinates
     end type
 
     interface grid_init
-        module procedure grid_init_from_opts, grid_init_from_par
+        module procedure grid_init_from_opts, grid_init_from_file
         module procedure grid_init_from_grid, grid_init_from_points
-    end interface 
+    end interface
     
     interface grid_allocate 
         module procedure grid_allocate_integer, grid_allocate_float
@@ -274,6 +274,189 @@ contains
         return
 
     end subroutine grid_init_from_par
+
+    subroutine grid_init_from_file(grid,filename,x,y,x0,dx,nx,y0,dy,ny)
+        ! Dispatcher for building a grid from a file. The file type is chosen
+        ! by extension: a netcdf grid (".nc") is read with grid_init_from_netcdf_file;
+        ! anything else is treated as a coords/cdo namelist and read with
+        ! grid_init_from_par. This keeps the whole file-based API under grid_init().
+
+        implicit none
+
+        type(grid_class)   :: grid
+        character(len=*)   :: filename
+        integer, optional  :: nx, ny
+        real(dp), optional :: x(:), y(:), x0, dx, y0, dy
+
+        integer :: n
+
+        n = len_trim(filename)
+
+        if (n .ge. 3 .and. filename(max(1,n-2):n) .eq. ".nc") then
+            ! Gridded netcdf data file (axes + CF crs metadata)
+            call grid_init_from_netcdf_file(grid,filename)
+        else
+            ! coords/cdo namelist (/map/ group), optionally with axis overrides
+            call grid_init_from_par(grid,filename,x,y,x0,dx,nx,y0,dy,ny)
+        end if
+
+        return
+
+    end subroutine grid_init_from_file
+
+    subroutine grid_init_from_netcdf_file(grid,filename,name,xnm,ynm,lonnm,units,lon180)
+        ! Initialize a grid_class by reading axis values and CF projection
+        ! metadata from a gridded netcdf file, then delegating to
+        ! grid_init_from_opts (which computes lon/lat and cell areas from the
+        ! projection). Note: this reads a gridded *data* file, not a cdo/coords
+        ! griddesc text file - for that use grid_init_from_par.
+        !
+        ! Axis units in the file (via the axis "units" attribute) are honoured;
+        ! output axes/areas default to meters (the natural internal unit for
+        ! projected grids) unless a different target "units" is requested.
+
+        implicit none
+
+        type(grid_class)   :: grid
+        character(len=*)   :: filename
+        character(len=*), optional :: name
+        character(len=*), optional :: xnm, ynm, lonnm
+        character(len=*), optional :: units
+        logical,          optional :: lon180
+
+        ! Local variables
+        integer  :: nx, ny
+        character(len=256) :: grid_name
+        character(len=56)  :: x_name, y_name, lon_name
+        character(len=56)  :: file_units, out_units, crs_name, mtype, planet
+        real(dp), allocatable :: xc(:), yc(:), lon(:,:)
+        real(dp) :: lambda, phi, alpha, x_e, y_n
+        real(dp) :: semi_major_axis, inverse_flattening
+        real(dp) :: conv
+        logical  :: is_projection, lon180_in
+
+        ! Argument defaults
+        x_name   = "xc"    ; if (present(xnm))   x_name   = trim(xnm)
+        y_name   = "yc"    ; if (present(ynm))   y_name   = trim(ynm)
+        lon_name = "lon2D" ; if (present(lonnm)) lon_name = trim(lonnm)
+
+        lon180_in = .FALSE.
+
+        ! Grid name: explicit arg, else file attribute, else filename
+        if (present(name)) then
+            grid_name = trim(name)
+        else if (nc_exists_attr(filename,"grid_name")) then
+            call nc_read_attr(filename,"grid_name",grid_name)
+        else
+            grid_name = trim(filename)
+        end if
+
+        ! Read axis sizes and values
+        nx = nc_size(filename,x_name)
+        ny = nc_size(filename,y_name)
+        allocate(xc(nx),yc(ny))
+        call nc_read(filename,x_name,xc)
+        call nc_read(filename,y_name,yc)
+
+        ! Determine axis units in file and convert axes to meters
+        call nc_read_attr(filename,x_name,"units",file_units)
+        select case(trim(file_units))
+            case("kilometers","km")
+                xc = xc*1.d3
+                yc = yc*1.d3
+            case("meters","m")
+                ! already in meters
+            case DEFAULT
+                write(*,*) "grid_init_from_netcdf_file:: error: axis units not recognized: "//trim(file_units)
+                stop
+        end select
+
+        ! Target output units (default: meters)
+        out_units = "meters"
+        if (present(units)) out_units = trim(units)
+        select case(trim(out_units))
+            case("kilometers","km")
+                conv = 1.d-3
+            case("meters","m")
+                conv = 1.d0
+            case DEFAULT
+                write(*,*) "grid_init_from_netcdf_file:: error: target units not recognized: "//trim(out_units)
+                stop
+        end select
+        xc = xc*conv
+        yc = yc*conv
+
+        ! Detect whether this is a projected grid by inspecting longitude spread
+        is_projection = .FALSE.
+        if (nc_exists_var(filename,lon_name)) then
+            allocate(lon(nx,ny))
+            call nc_read(filename,lon_name,lon)
+            if (minval(lon) .ne. maxval(lon)) is_projection = .TRUE.
+            ! Preserve the file's longitude convention (-180..180 vs 0..360)
+            if (minval(lon) .lt. 0.0_dp) lon180_in = .TRUE.
+            deallocate(lon)
+        end if
+
+        ! An explicit request overrides the inferred convention
+        if (present(lon180)) lon180_in = lon180
+
+        ! Projection defaults (cartesian)
+        mtype  = "cartesian"
+        planet = "Spherical Earth"
+        lambda = 0.d0 ; phi = 0.d0 ; alpha = 0.d0
+        x_e = 0.d0 ; y_n = 0.d0
+        semi_major_axis = 0.d0 ; inverse_flattening = 0.d0
+
+        if (is_projection) then
+            ! Load projection info from the crs grid_mapping variable if present.
+            ! (Only newer files with a variable named "crs" following CF-conventions
+            !  carry the parameters we can use here.)
+            if (nc_exists_attr(filename,lon_name,"grid_mapping")) then
+                call nc_read_attr(filename,lon_name,"grid_mapping",crs_name)
+                if (nc_exists_var(filename,crs_name) .and. trim(crs_name) .eq. "crs") then
+                    call nc_read_attr(filename,crs_name,"grid_mapping_name",mtype)
+                    select case(trim(mtype))
+                        case("polar_stereographic")
+                            call nc_read_attr(filename,crs_name,"straight_vertical_longitude_from_pole",lambda)
+                            call nc_read_attr(filename,crs_name,"standard_parallel",phi)
+                            call nc_read_attr(filename,crs_name,"false_easting",x_e)
+                            call nc_read_attr(filename,crs_name,"false_northing",y_n)
+                            call nc_read_attr(filename,crs_name,"semi_major_axis",semi_major_axis)
+                            call nc_read_attr(filename,crs_name,"inverse_flattening",inverse_flattening)
+                            ! Oblique tangent angle from standard parallel
+                            alpha = 90.d0 - abs(phi)
+                        case("stereographic")
+                            call nc_read_attr(filename,crs_name,"longitude_of_projection_origin",lambda)
+                            call nc_read_attr(filename,crs_name,"latitude_of_projection_origin",phi)
+                            call nc_read_attr(filename,crs_name,"angle_of_oblique_tangent",alpha)
+                            call nc_read_attr(filename,crs_name,"false_easting",x_e)
+                            call nc_read_attr(filename,crs_name,"false_northing",y_n)
+                            call nc_read_attr(filename,crs_name,"semi_major_axis",semi_major_axis)
+                            call nc_read_attr(filename,crs_name,"inverse_flattening",inverse_flattening)
+                        case DEFAULT
+                            write(*,*) "grid_init_from_netcdf_file:: warning: unsupported projection '" &
+                                        //trim(mtype)//"'. Projection parameters not loaded."
+                    end select
+                    ! Choose planet/ellipsoid from the flattening
+                    if (inverse_flattening .ne. 0.d0) then
+                        planet = "WGS84"
+                    else
+                        planet = "Spherical Earth"
+                    end if
+                end if
+            end if
+        end if
+
+        ! Build the grid via the master initialization routine. Passing the axis
+        ! vectors (x,y) lets grid_init_from_opts compute lon/lat and cell areas
+        ! from the projection.
+        call grid_init_from_opts(grid,name=trim(grid_name),mtype=trim(mtype),units=trim(out_units), &
+                                 planet=trim(planet),lon180=lon180_in,x=xc,y=yc, &
+                                 lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n)
+
+        return
+
+    end subroutine grid_init_from_netcdf_file
 
     subroutine grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
                                    x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n)
