@@ -621,21 +621,23 @@ contains
         ! bracketing indices ilo/ihi and the fractional position t in [0,1] from
         ! c(ilo) to c(ihi). For periodic (longitude) axes, val0 is wrapped by 360
         ! and the seam cell between c(n) and c(1)+360 is bracketed as ilo=n,ihi=1.
-        ! For non-periodic axes, a val0 outside the center span is clamped onto the
-        ! nearest boundary cell (ilo=ihi at that edge, t=0), so the target collapses
-        ! to a nearest-edge value there instead of being dropped. This mirrors cdo
-        ! genbil's nearest-neighbour fallback and guarantees every reachable target
-        ! is mapped -- e.g. a polar-stereographic target reaching 90N when the last
-        ! lat-lon source center sits below 90N. ok=.false. only for a degenerate
-        ! axis (n<2).
+        ! For non-periodic axes, a val0 just outside the center span -- within one
+        ! boundary-cell width -- is clamped onto the nearest boundary cell (ilo=ihi
+        ! at that edge, t=0), a nearest-edge fill that covers e.g. a polar-
+        ! stereographic target reaching 90N a fraction of a cell past the last
+        ! lat-lon source row. A val0 FARTHER than one cell beyond the span is off
+        ! the source domain (e.g. a global target over a regional source such as an
+        ! NH-only ice grid) and is left unmapped (ok=.false.), so downstream
+        ! map_field(reset=.false.) leaves that cell untouched instead of pulling in
+        ! a spurious source-edge value. ok=.false. also for a degenerate axis (n<2).
         real(dp), intent(in)  :: c(:)
         real(dp), intent(in)  :: val0
         logical,  intent(in)  :: periodic
         integer,  intent(out) :: ilo, ihi
         real(dp), intent(out) :: t
         logical,  intent(out) :: ok
-        integer  :: n, lo
-        real(dp) :: val, span
+        integer  :: n, lo, ib
+        real(dp) :: val, span, edge
         n = size(c)
         ok = .false.; ilo = 0; ihi = 0; t = 0.0_dp
         if (n < 2) return
@@ -656,13 +658,19 @@ contains
             end if
         else
             if (val <= min(c(1), c(n))) then
-                ! Clamp onto the boundary cell at the low end of the span.
-                if (c(1) <= c(n)) then; ilo = 1; else; ilo = n; end if
-                ihi = ilo; t = 0.0_dp; ok = .true.
+                ! Low end: clamp onto the boundary cell only within one cell width.
+                if (c(1) <= c(n)) then; ib = 1; edge = abs(c(2) - c(1))
+                else;                   ib = n; edge = abs(c(n) - c(n-1)); end if
+                if (min(c(1), c(n)) - val <= edge) then
+                    ilo = ib; ihi = ib; t = 0.0_dp; ok = .true.
+                end if
             else if (val >= max(c(1), c(n))) then
-                ! Clamp onto the boundary cell at the high end of the span.
-                if (c(1) >= c(n)) then; ilo = 1; else; ilo = n; end if
-                ihi = ilo; t = 0.0_dp; ok = .true.
+                ! High end: clamp onto the boundary cell only within one cell width.
+                if (c(1) >= c(n)) then; ib = 1; edge = abs(c(2) - c(1))
+                else;                   ib = n; edge = abs(c(n) - c(n-1)); end if
+                if (val - max(c(1), c(n)) <= edge) then
+                    ilo = ib; ihi = ib; t = 0.0_dp; ok = .true.
+                end if
             else
                 call bisect_axis(c, val, lo)
                 ilo = lo; ihi = lo + 1
@@ -682,10 +690,12 @@ contains
         ! lon/lat-quadrant bilinear is not). nn stores the four cell corners as a
         ! MAP_DISTANCE so apply picks the nearest valid corner (nearest source
         ! node on a regular grid), with fallback to the others under a mask.
-        ! Targets outside the source span are clamped onto the nearest source
-        ! boundary cell (see locate_cell), giving a nearest-edge value there
-        ! instead of a hole -- e.g. the polar cap of a stereographic target that
-        ! reaches latitudes beyond the last lat-lon source row.
+        ! Targets just outside the source span (within one boundary cell) are
+        ! clamped onto the nearest source boundary cell (see locate_cell), giving
+        ! a nearest-edge value there instead of a hole -- e.g. the polar cap of a
+        ! stereographic target that reaches latitudes beyond the last lat-lon
+        ! source row. Targets farther outside (a global target over a regional
+        ! source) are left unmapped, matching cdo genbil.
         type(map_class),  intent(inout) :: map
         type(grid_class), intent(in)    :: grid1, grid2
         character(len=*), intent(in)    :: method
