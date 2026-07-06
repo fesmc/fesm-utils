@@ -18,6 +18,13 @@ module coupler
     ! the default) or a distance kernel (nn / shepard / quadrant / bilin). stat
     ! (mean / count / stdev) is applied when the field is mapped and is NOT part
     ! of the key -- it is forwarded to map_field per call.
+    !
+    ! gen selects the map generator used when a map's weights must actually be
+    ! built: "coords" (in-package, the default) or "cdo" (external cdo call). It
+    ! is a build-time-only concern (irrelevant once the map is cached), so it is
+    ! NOT part of the cache key. A coupler carries a default gen (set in
+    ! coupler_init); a specific map can override it via coupler_prime(gen=),
+    ! which is the point at which that map's weights are generated.
 
     use coords, only : dp, sp, grid_class, map_class, map_init, map_field, &
                        grid_cdo_read_desc
@@ -39,6 +46,8 @@ module coupler
         type(map_class)    :: maps(MAP_MAX)
         integer            :: nmaps  = 0
         character(len=512) :: map_fldr = "maps"   ! disk cache dir for map_init
+        character(len=32)  :: gen = "coords"       ! default map generator; override
+                                                   ! per map via coupler_prime(gen=)
     end type
 
     interface remap
@@ -54,15 +63,20 @@ module coupler
 
 contains
 
-    subroutine coupler_init(cpl, map_fldr)
-        ! Reset a coupler to an empty registry + cache.
+    subroutine coupler_init(cpl, map_fldr, gen)
+        ! Reset a coupler to an empty registry + cache. `gen` sets the coupler-wide
+        ! default map generator ("coords" / "cdo"); it can be overridden per map at
+        ! prime time via coupler_prime(gen=).
         type(coupler_class), intent(out) :: cpl
         character(len=*), intent(in), optional :: map_fldr
+        character(len=*), intent(in), optional :: gen
 
         cpl%ngrids = 0
         cpl%nmaps  = 0
         cpl%map_fldr = "maps"
         if (present(map_fldr)) cpl%map_fldr = trim(map_fldr)
+        cpl%gen = "coords"
+        if (present(gen)) cpl%gen = trim(gen)
     end subroutine coupler_init
 
     subroutine coupler_add_grid(cpl, name, grid)
@@ -85,15 +99,18 @@ contains
         cpl%grids(cpl%ngrids)%grid%name = trim(name)
     end subroutine coupler_add_grid
 
-    subroutine coupler_prime(cpl, src, dst, method)
+    subroutine coupler_prime(cpl, src, dst, method, gen)
         ! Eagerly build a map up front (fail fast, pay the build/disk-load cost
         ! at init rather than mid-timestep). Same find-or-build path as remap.
+        ! `gen` overrides the coupler-wide default generator for this one map --
+        ! prime is where a specific map's weights get generated, so it is the
+        ! natural override point.
         type(coupler_class), intent(inout) :: cpl
         character(len=*),    intent(in)    :: src, dst
-        character(len=*), intent(in), optional :: method
+        character(len=*), intent(in), optional :: method, gen
 
         integer :: im
-        im = get_map(cpl, src, dst, method_or_default(method))
+        im = get_map(cpl, src, dst, method_or_default(method), gen)
     end subroutine coupler_prime
 
     ! ----- internals ---------------------------------------------------------
@@ -113,16 +130,19 @@ contains
         end do
     end function find_grid
 
-    function get_map(cpl, src, dst, method) result(im)
+    function get_map(cpl, src, dst, method, gen) result(im)
         ! Find the cached (src->dst, method) map, or build+cache it on miss.
         ! Grids are resolved by name: an in-memory registered grid takes
         ! precedence; otherwise the definition is read from grid_<name>.txt in
-        ! the map folder (grid_cdo_read_desc).
+        ! the map folder (grid_cdo_read_desc). `gen` selects the generator on a
+        ! build miss; when absent the coupler-wide default (cpl%gen) is used.
         type(coupler_class), intent(inout) :: cpl
         character(len=*),    intent(in)    :: src, dst, method
+        character(len=*), intent(in), optional :: gen
         integer :: im
 
         integer :: i
+        character(len=32) :: g
         type(grid_class) :: grid_src, grid_dst
 
         ! Cache hit: registered/disk grids both carry grid%name == the name the
@@ -142,10 +162,13 @@ contains
         call resolve_grid(cpl, src, grid_src)
         call resolve_grid(cpl, dst, grid_dst)
 
+        g = cpl%gen
+        if (present(gen)) g = trim(gen)
+
         cpl%nmaps = cpl%nmaps + 1
         im = cpl%nmaps
         call map_init(cpl%maps(im), grid_src, grid_dst, &
-                      method=trim(method), fldr=trim(cpl%map_fldr), load=.true.)
+                      method=trim(method), gen=trim(g), fldr=trim(cpl%map_fldr), load=.true.)
     end function get_map
 
     subroutine resolve_grid(cpl, name, grid)

@@ -137,7 +137,7 @@ $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/
 								$(objdir)/grid_cdo.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/coupler.o: $(srcdir)/coords/coupler.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
+$(objdir)/coupler.o: $(srcdir)/coupler.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
 								$(objdir)/mapping.o $(objdir)/coords.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
