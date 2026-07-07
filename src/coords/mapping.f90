@@ -701,12 +701,12 @@ contains
         character(len=*), intent(in)    :: method
 
         integer  :: nx1, ny1, nx2, ny2, n1, n2
-        integer  :: i2, j2, k, ilo, ihi, jlo, jhi, cc, nl
+        integer  :: i, i2, j2, k, ilo, ihi, jlo, jhi, cc, nl
         integer  :: cci(4), ccj(4), src
         real(dp) :: u, v, xyc, a, f, tlon, tlat, tx, ty, sx, sy, px, py, wq(4)
         logical  :: ok_i, ok_j, src_ll, src_proj, use_cart, is_bil
         integer,  allocatable :: lsrc(:), ldst(:), lquad(:)
-        real(dp), allocatable :: lw(:), ldist(:), lxn(:), lyn(:)
+        real(dp), allocatable :: lw(:), ldist(:), lxn(:), lyn(:), xloc(:)
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
@@ -714,6 +714,22 @@ contains
         src_ll   = (.not. grid1%cs%is_cartesian) .and. (.not. grid1%cs%is_projection)
         src_proj = grid1%cs%is_projection
         is_bil   = .not. (trim(method) == "nn" .or. trim(method) == "nearest")
+
+        ! Longitude-locate axis. locate_cell (bisect + periodic seam) needs the
+        ! source x-axis monotonic, but a lat-lon grid built from 0..360 centers
+        ! with lon180=.true. stores them remapped in place (0..179, -179..-0.7) --
+        ! non-monotonic across the seam, which sends every target into the wrong
+        ! cell. Unwrap the centers to a monotonic ascending sequence (indices, and
+        ! thus the located cells, are unchanged; the periodic wrap of the target
+        ! lon inside locate_cell then resolves against this frame). Only the
+        ! periodic (lat-lon) x-axis needs it; projected/Cartesian x is monotonic.
+        allocate(xloc(nx1))
+        xloc = grid1%G%x
+        if (src_ll) then
+            do i = 2, nx1
+                do while (xloc(i) < xloc(i-1)); xloc(i) = xloc(i) + 360.0_dp; end do
+            end do
+        end if
 
         call map_set_target_from_grid(map, grid1, grid2)
         map%method = trim(method)
@@ -747,7 +763,7 @@ contains
                     sx = grid2%x(i2,j2); sy = grid2%y(i2,j2)   ! Cartesian, same system
                 end if
 
-                call locate_cell(grid1%G%x, sx, src_ll, ilo, ihi, u, ok_i)
+                call locate_cell(xloc, sx, src_ll, ilo, ihi, u, ok_i)
                 call locate_cell(grid1%G%y, sy, .false., jlo, jhi, v, ok_j)
                 if (.not. (ok_i .and. ok_j)) cycle
 
@@ -802,7 +818,7 @@ contains
 
         if (allocated(lw))   deallocate(lw)
         if (allocated(ldist)) deallocate(ldist, lquad, lxn, lyn)
-        deallocate(lsrc, ldst)
+        deallocate(lsrc, ldst, xloc)
     end subroutine map_init_structured
 
     subroutine sphere_embed(lon, lat, emb)

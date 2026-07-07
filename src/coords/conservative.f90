@@ -412,6 +412,21 @@ contains
         xe(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
     end subroutine axis_edges
 
+    subroutine unwrap_lon(xin, xout)
+        ! Copy longitude centers to a monotonic ascending sequence, undoing the
+        ! in-place -180..180 remap (lon180=.true. on a 0..360 grid) that leaves the
+        ! stored centers non-monotonic across the seam. Indices are preserved; only
+        ! the values are shifted by whole turns so adjacent-midpoint edges are sane.
+        real(dp), intent(in)  :: xin(:)
+        real(dp), intent(out) :: xout(:)
+        integer :: i
+        xout(1) = xin(1)
+        do i = 2, size(xin)
+            xout(i) = xin(i)
+            do while (xout(i) < xout(i-1)); xout(i) = xout(i) + 360.0_dp; end do
+        end do
+    end subroutine unwrap_lon
+
     real(dp) function interval_overlap(a, b, c, d) result(ov)
         ! Length of the overlap of intervals [a,b] and [c,d] (0 if disjoint).
         ! Orientation-independent: each interval is normalized to [min,max] first,
@@ -461,6 +476,7 @@ contains
         real(dp) :: wlo, wla
         real(dp), allocatable :: sxe(:), sye(:), txe(:), tye(:)   ! 0:n edges
         real(dp), allocatable :: ssin(:), tsin(:)                 ! 0:ny sin(lat edge)
+        real(dp), allocatable :: sxc(:), txc(:)                   ! monotonic lon centers
         ! CSR of per-target-column lon overlaps and per-target-row lat overlaps
         integer,  allocatable :: lon_off(:), lat_off(:)
         integer,  allocatable :: lon_i1(:),  lat_j1(:)
@@ -470,9 +486,18 @@ contains
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
 
+        ! Unwrap the longitude centers to a monotonic sequence before taking edges:
+        ! a grid built from 0..360 centers with lon180=.true. stores them remapped
+        ! in place (0..179, -179..-0.7), so the seam cell's adjacent-midpoint edge
+        ! would land at ~0 instead of ~180. lon_overlap already handles the +-360
+        ! convention offset between source and target, so only monotonicity matters.
+        allocate(sxc(nx1), txc(nx2))
+        call unwrap_lon(grid1%G%x, sxc)
+        call unwrap_lon(grid2%G%x, txc)
+
         allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
-        call axis_edges(grid1%G%x, sxe); call axis_edges(grid1%G%y, sye)
-        call axis_edges(grid2%G%x, txe); call axis_edges(grid2%G%y, tye)
+        call axis_edges(sxc, sxe); call axis_edges(grid1%G%y, sye)
+        call axis_edges(txc, txe); call axis_edges(grid2%G%y, tye)
 
         ! Clamp latitude edges to the poles (polar cells are half cells) and take
         ! the sine, in which latitude bands overlap linearly.
@@ -515,7 +540,7 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
-        deallocate(sxe, sye, txe, tye, ssin, tsin, bufs)
+        deallocate(sxe, sye, txe, tye, ssin, tsin, sxc, txc, bufs)
         deallocate(lon_off, lon_i1, lon_w, lat_off, lat_j1, lat_w)
     end subroutine conservative_latlon
 
