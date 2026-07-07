@@ -7,10 +7,14 @@ module conservative
     !
     ! Two planar modes are supported:
     !   - same-system: source and target share a Cartesian/projected plane;
-    !     cells are clipped directly.
-    !   - lat-lon source -> projected target: source cell corners (lon/lat) are
-    !     projected into the target projection plane, then clipped there.
-    ! Lat-lon / Gaussian *targets* need great-circle clipping (stage C, later).
+    !     cells are clipped directly as axis-aligned rectangles.
+    !   - lat-lon source -> projected target: each source cell edge is subsampled
+    !     into NSUB segments and projected into the target plane, so the clipped
+    !     source polygon follows the curved parallels/meridians (chording straight
+    !     across them biases the overlap area, growing with source cell size and
+    !     projection distortion; subsampling brings a 1deg source to sub-metre
+    !     agreement with cdo, matching a fine source).
+    ! Lat-lon / Gaussian *targets* need great-circle clipping (conservative_spherical).
 
     use precision,       only: dp
     use constants, only: degrees_to_radians
@@ -146,11 +150,12 @@ contains
         logical  :: same_sys, do_project
         integer  :: n1, n2, nx1, ny1, nx2, ny2
         integer  :: i, j, ic, jc, c, cs, cc, k, nf, no, nthreads, tid
+        integer  :: e, en, s, nsv
         real(dp) :: rad, diag2, area, maxsrcdiag, d, xyc, px, py
-        real(dp) :: cx, cy, cz, srcdeg, tgtdeg
+        real(dp) :: cx, cy, cz, srcdeg, tgtdeg, tt, plon, plat
         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
-        real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source corners in target plane
+        real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source cell boundary in target plane
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
         type(link_buf), allocatable :: bufs(:)
@@ -180,7 +185,14 @@ contains
         !     source and the k-d tree degrades to O(n_src*n_tgt). The sphere is
         !     undistorted, so the candidate set per target stays O(1).
         !     (see docs/coords-performance.md)
-        allocate(scornx(4, n1), scorny(4, n1))
+        ! same-system cells are exact rectangles (4 corners); projected source
+        ! cells trace their curved lon/lat edges with NSUB samples per edge.
+        if (do_project) then
+            nsv = 4*NSUB
+        else
+            nsv = 4
+        end if
+        allocate(scornx(nsv, n1), scorny(nsv, n1))
         if (same_sys) then
             allocate(emb(2, n1))
         else
@@ -198,10 +210,25 @@ contains
                            + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
                     maxsrcdiag = max(maxsrcdiag, d)
                 else
-                    ! lx,ly are lon,lat -> project corners into the target plane
-                    do k = 1, 4
-                        call oblimap_projection(lx(k), ly(k), px, py, grid2%cs%proj)
-                        scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
+                    ! lx,ly are lon,lat -> subsample each cell edge into NSUB
+                    ! segments and project every sample into the target plane, so
+                    ! the projected source polygon follows the curved parallels/
+                    ! meridians instead of chording across them. The chord error
+                    ! grows with source cell size and projection distortion;
+                    ! subsampling cuts it from ~30 m to <1 m vs cdo for a 1deg
+                    ! source. (A separate ~O(100 m) planar-vs-spherical residual
+                    ! remains within a few cells of the geographic pole.)
+                    k = 0
+                    do e = 1, 4
+                        en = mod(e,4) + 1
+                        do s = 0, NSUB-1
+                            tt   = real(s,dp)/real(NSUB,dp)
+                            plon = lx(e) + tt*(lx(en) - lx(e))
+                            plat = ly(e) + tt*(ly(en) - ly(e))
+                            call oblimap_projection(plon, plat, px, py, grid2%cs%proj)
+                            k = k + 1
+                            scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
+                        end do
                     end do
                     ! candidate search uses the undistorted unit-sphere center
                     call lonlat_to_xyz(grid1%lon(ic,jc), grid1%lat(ic,jc), cx, cy, cz)
