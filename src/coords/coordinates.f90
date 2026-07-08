@@ -12,6 +12,7 @@
 !! ####################################################################
 module coordinates
 
+    use, intrinsic :: iso_fortran_env, only : error_unit
     use precision, only: dp, sp
     use constants
 
@@ -367,8 +368,9 @@ contains
             case("meters","m")
                 ! already in meters
             case DEFAULT
-                write(*,*) "grid_init_from_netcdf_file:: error: axis units not recognized: "//trim(file_units)
-                stop
+                call coordinates_error("grid_init_from_netcdf_file", &
+                    "axis units not recognized.", &
+                    "file_units = "//trim(file_units))
         end select
 
         ! Target output units (default: meters)
@@ -380,8 +382,9 @@ contains
             case("meters","m")
                 conv = 1.d0
             case DEFAULT
-                write(*,*) "grid_init_from_netcdf_file:: error: target units not recognized: "//trim(out_units)
-                stop
+                call coordinates_error("grid_init_from_netcdf_file", &
+                    "target units not recognized.", &
+                    "out_units = "//trim(out_units))
         end select
         xc = xc*conv
         yc = yc*conv
@@ -828,20 +831,19 @@ contains
             case("cartesian")
                 pts%cs%is_cartesian  = .TRUE. 
                 pts%cs%is_projection = .FALSE. 
-            case DEFAULT 
-                write(*,"(a7,a20,a)")  &
-                    "coord::","points_init: ","error: map type not allowed:"//trim(pts%cs%mtype)
-                write(*,*) "    map type must be one of the following: "
-                write(*,*) "        latitude_longitude"
-                write(*,*) "        latlon"
-                write(*,*) "        gaussian"
-                write(*,*) "        cartesian"
-                write(*,*) "        stereographic"
-                write(*,*) "        polar_stereographic"
-                write(*,*) "        lambert_azimuthal_equal_area"
-                write(*,*) 
-                stop 
-        end select 
+            case DEFAULT
+                call coordinates_error("points_init", &
+                    "map type not allowed.", &
+                    "map type = "//trim(pts%cs%mtype)//new_line("a")// &
+                    "map type must be one of:"//new_line("a")// &
+                    "    latitude_longitude"//new_line("a")// &
+                    "    latlon"//new_line("a")// &
+                    "    gaussian"//new_line("a")// &
+                    "    cartesian"//new_line("a")// &
+                    "    stereographic"//new_line("a")// &
+                    "    polar_stereographic"//new_line("a")// &
+                    "    lambert_azimuthal_equal_area")
+        end select
 
         ! Make sure we can convert the units of the points as needed
         select case(trim(pts%cs%units))
@@ -857,9 +859,10 @@ contains
 
         ! Make sure x and y vectors have the same length
         if (size(x) .ne. size(y)) then
-            write(*,"(a7,a20,a)") "coord::","points_init: ", &
-                       "error: x and y points must have the same length."
-            stop
+            call coordinates_error("points_init", &
+                "x and y points must have the same length.", &
+                "size(x) = "//to_str(size(x))//new_line("a")// &
+                "size(y) = "//to_str(size(y)))
         end if
 
         ! Check whether input points are xy values or latlon values (for projected grid)
@@ -867,10 +870,10 @@ contains
         if (present(latlon)) latlon_in = latlon
 
         if (latlon_in .and. (pts%cs%is_cartesian .and. .not. pts%cs%is_projection)) then 
-            write(*,*) "points_init:: error: x/y input values can only &
-                       &be latlon values for projected grids or for latlon grids."
-            stop 
-        end if 
+            call coordinates_error("points_init", &
+                "x/y input values can only be latlon values for projected grids or "// &
+                "for latlon grids.")
+        end if
 
         ! Assign point information
         pts%npts = size(x)
@@ -1014,13 +1017,13 @@ contains
 
         ! Make sure mask is consistent with desired pts output
         if (sum(maski) .ne. pts%npts) then
-            write(*,*) "grid_to_points:: Error, "// &
-                       "total masked values not equal to npts."
-            write(*,*) "count(mask_pack) npts:",sum(maski), pts%npts 
-            write(*,*) "Grid name:   "//trim(grid%name)
-            write(*,*) "Points name: "//trim(pts%name)
-            stop 
-        end if 
+            call coordinates_error("grid_to_points", &
+                "total masked values not equal to npts.", &
+                "count(mask_pack) = "//to_str(sum(maski))//new_line("a")// &
+                "npts             = "//to_str(pts%npts)//new_line("a")// &
+                "Grid name        = "//trim(grid%name)//new_line("a")// &
+                "Points name      = "//trim(pts%name))
+        end if
 
         ! Deallocate all points fields
         if (define_fields) then 
@@ -1104,13 +1107,13 @@ contains
 
         ! Make sure mask is consistent with desired pts output
         if (sum(maski) .ne. pts%npts) then
-            write(*,*) "points_to_grid:: Error, "// &
-                       "total masked values not equal to npts, sum(mask) npts:", &
-                       sum(maski), pts%npts 
-            write(*,*) "Grid name:   "//trim(grid%name)
-            write(*,*) "Points name: "//trim(pts%name)
-            stop 
-        end if 
+            call coordinates_error("points_to_grid", &
+                "total masked values not equal to npts.", &
+                "sum(mask)   = "//to_str(sum(maski))//new_line("a")// &
+                "npts        = "//to_str(pts%npts)//new_line("a")// &
+                "Grid name   = "//trim(grid%name)//new_line("a")// &
+                "Points name = "//trim(pts%name))
+        end if
 
         ! Reallocate all grid fields 
         if (define_fields .and. allocated(grid%x))      deallocate(grid%x)
@@ -1579,10 +1582,9 @@ contains
         if (present(latlon)) is_latlon = latlon 
 
         if (is_latlon .and. (pts%cs%is_cartesian .and. .not. pts%cs%is_projection)) then 
-            write(*,*) "pts_which_nearest:: error: "// &
-                       "x and y cannot by latlon values unless coordinates have latlon defined."
-            stop
-        end if 
+            call coordinates_error("pts_which_nearest", &
+                "x and y cannot be latlon values unless coordinates have latlon defined.")
+        end if
 
         allocate(dist(pts%npts))
 
@@ -1634,6 +1636,44 @@ contains
         return
 
     end subroutine progress
+
+    ! ===== Error reporting (coordinates-local) ==============================
+    ! Self-contained, private helpers mirroring the varslice pattern: a uniform,
+    ! context-rich abort on error_unit via error stop. Kept module-local on
+    ! purpose (no shared error module) to avoid adding interdependencies.
+
+    subroutine coordinates_error(proc, msg, detail)
+        character(len=*), intent(in)           :: proc
+        character(len=*), intent(in)           :: msg
+        character(len=*), intent(in), optional :: detail
+        integer :: p0, p1
+        write(error_unit,"(a)") ""
+        write(error_unit,"(a)") "coordinates:: error in "//trim(proc)
+        write(error_unit,"(a)") "    "//trim(msg)
+        if (present(detail)) then
+            p0 = 1
+            do
+                p1 = index(detail(p0:), new_line("a"))
+                if (p1 == 0) then
+                    write(error_unit,"(a)") "    "//trim(detail(p0:))
+                    exit
+                end if
+                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
+                p0 = p0 + p1
+            end do
+        end if
+        write(error_unit,"(a)") "  stopped by coordinates."
+        flush(error_unit)
+        error stop 1
+    end subroutine coordinates_error
+
+    function to_str(v) result(s)
+        integer, intent(in) :: v
+        character(len=:), allocatable :: s
+        character(len=32) :: buf
+        write(buf,"(i0)") v
+        s = trim(adjustl(buf))
+    end function to_str
 
 end module coordinates
 

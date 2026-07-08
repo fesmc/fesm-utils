@@ -91,15 +91,13 @@ contains
 
             ! Safety check
             if (.not. present(map)) then
-                write(error_unit,*) ""
-                write(error_unit,*) "nc_read_interp:: Error: map_class object must &
-                        &be provided as an argument since array read from file does not &
-                        &match the target array size."
-                write(error_unit,*) "filename: ", trim(filename)
-                write(error_unit,*) "variable: ", trim(vnm)
-                write(error_unit,*) "dims in file:          ", nx, ny
-                write(error_unit,*) "dims in target object: ", size(var2D,1), size(var2D,2)
-                stop
+                call ncio_interp_error("nc_read_interp", &
+                    "map_class object must be provided as an argument since the array read "// &
+                    "from file does not match the target array size.", &
+                    "filename = "//trim(filename)//new_line("a")// &
+                    "variable = "//trim(vnm)//new_line("a")// &
+                    "dims in file          = "//to_str(nx)//" "//to_str(ny)//new_line("a")// &
+                    "dims in target object = "//to_str(size(var2D,1))//" "//to_str(size(var2D,2)))
             end if
 
             ! Perform interpolation
@@ -144,15 +142,14 @@ contains
 
         ! Safety check
         if (nz .ne. size(var3D,3)) then
-            write(error_unit,*) ""
-            write(error_unit,*) "nc_read_interp_dp_3D:: Error: third dimension of variable in &
-                    &input file does not match third dimension of array provided as an argument. &
-                    &Interpolation of the third dimension is not yet supported."
-            write(error_unit,*) "filename  = ", trim(filename)
-            write(error_unit,*) "variable  = ", trim(vnm)
-            write(error_unit,*) "nz[file]  = ", nz
-            write(error_unit,*) "nz[array] = ", size(var3D,3)
-            stop
+            call ncio_interp_error("nc_read_interp_dp_3D", &
+                "third dimension of variable in input file does not match third dimension "// &
+                "of array provided as an argument. Interpolation of the third dimension is "// &
+                "not yet supported.", &
+                "filename  = "//trim(filename)//new_line("a")// &
+                "variable  = "//trim(vnm)//new_line("a")// &
+                "nz[file]  = "//to_str(nz)//new_line("a")// &
+                "nz[array] = "//to_str(size(var3D,3)))
         end if
 
         call nc_read(filename,vnm,var3D_src,ncid=ncid,start=start,count=[nx,ny,nz,1],missing_value=real(MV,dp))
@@ -211,15 +208,13 @@ contains
             if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
-                write(error_unit,*) ""
-                write(error_unit,*) "nc_read_interp:: Error: map_class object must &
-                        &be provided as an argument since array read from file does not &
-                        &match the target array size."
-                write(error_unit,*) "filename: ", trim(filename)
-                write(error_unit,*) "variable: ", trim(vnm)
-                write(error_unit,*) "dims in file:          ", nx, ny
-                write(error_unit,*) "dims in target object: ", size(var2D,1), size(var2D,2)
-                stop
+                call ncio_interp_error("nc_read_interp", &
+                    "map_class object must be provided as an argument since the array read "// &
+                    "from file does not match the target array size.", &
+                    "filename = "//trim(filename)//new_line("a")// &
+                    "variable = "//trim(vnm)//new_line("a")// &
+                    "dims in file          = "//to_str(nx)//" "//to_str(ny)//new_line("a")// &
+                    "dims in target object = "//to_str(size(var2D,1))//" "//to_str(size(var2D,2)))
             end if
 
             var2D = real(MV,sp)
@@ -262,15 +257,14 @@ contains
         allocate(var3D_src(nx,ny,nz))
 
         if (nz .ne. size(var3D,3)) then
-            write(error_unit,*) ""
-            write(error_unit,*) "nc_read_interp_sp_3D:: Error: third dimension of variable in &
-                    &input file does not match third dimension of array provided as an argument. &
-                    &Interpolation of the third dimension is not yet supported."
-            write(error_unit,*) "filename  = ", trim(filename)
-            write(error_unit,*) "variable  = ", trim(vnm)
-            write(error_unit,*) "nz[file]  = ", nz
-            write(error_unit,*) "nz[array] = ", size(var3D,3)
-            stop
+            call ncio_interp_error("nc_read_interp_sp_3D", &
+                "third dimension of variable in input file does not match third dimension "// &
+                "of array provided as an argument. Interpolation of the third dimension is "// &
+                "not yet supported.", &
+                "filename  = "//trim(filename)//new_line("a")// &
+                "variable  = "//trim(vnm)//new_line("a")// &
+                "nz[file]  = "//to_str(nz)//new_line("a")// &
+                "nz[array] = "//to_str(size(var3D,3)))
         end if
 
         call nc_read(filename,vnm,var3D_src,ncid=ncid,start=start,count=[nx,ny,nz,1],missing_value=real(MV,sp))
@@ -327,15 +321,13 @@ contains
             if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
-                write(error_unit,*) ""
-                write(error_unit,*) "nc_read_interp:: Error: map_class object must &
-                        &be provided as an argument since array read from file does not &
-                        &match the target array size."
-                write(error_unit,*) "filename: ", trim(filename)
-                write(error_unit,*) "variable: ", trim(vnm)
-                write(error_unit,*) "dims in file:          ", nx, ny
-                write(error_unit,*) "dims in target object: ", size(var2D,1), size(var2D,2)
-                stop
+                call ncio_interp_error("nc_read_interp", &
+                    "map_class object must be provided as an argument since the array read "// &
+                    "from file does not match the target array size.", &
+                    "filename = "//trim(filename)//new_line("a")// &
+                    "variable = "//trim(vnm)//new_line("a")// &
+                    "dims in file          = "//to_str(nx)//" "//to_str(ny)//new_line("a")// &
+                    "dims in target object = "//to_str(size(var2D,1))//" "//to_str(size(var2D,2)))
             end if
 
             var2D = int(MV)
@@ -375,15 +367,14 @@ contains
         allocate(var3D_src(nx,ny,nz))
 
         if (nz .ne. size(var3D,3)) then
-            write(error_unit,*) ""
-            write(error_unit,*) "nc_read_interp_int_3D:: Error: third dimension of variable in &
-                    &input file does not match third dimension of array provided as an argument. &
-                    &Interpolation of the third dimension is not yet supported."
-            write(error_unit,*) "filename  = ", trim(filename)
-            write(error_unit,*) "variable  = ", trim(vnm)
-            write(error_unit,*) "nz[file]  = ", nz
-            write(error_unit,*) "nz[array] = ", size(var3D,3)
-            stop
+            call ncio_interp_error("nc_read_interp_int_3D", &
+                "third dimension of variable in input file does not match third dimension "// &
+                "of array provided as an argument. Interpolation of the third dimension is "// &
+                "not yet supported.", &
+                "filename  = "//trim(filename)//new_line("a")// &
+                "variable  = "//trim(vnm)//new_line("a")// &
+                "nz[file]  = "//to_str(nz)//new_line("a")// &
+                "nz[array] = "//to_str(size(var3D,3)))
         end if
 
         call nc_read(filename,vnm,var3D_src,ncid=ncid,start=start,count=[nx,ny,nz,1],missing_value=int(MV))
@@ -442,15 +433,13 @@ contains
             if (present(stat)) mapping_method = trim(stat)
 
             if (.not. present(map)) then
-                write(error_unit,*) ""
-                write(error_unit,*) "nc_read_interp:: Error: map_class object must &
-                        &be provided as an argument since array read from file does not &
-                        &match the target array size."
-                write(error_unit,*) "filename: ", trim(filename)
-                write(error_unit,*) "variable: ", trim(vnm)
-                write(error_unit,*) "dims in file:          ", nx, ny
-                write(error_unit,*) "dims in target object: ", size(var2D,1), size(var2D,2)
-                stop
+                call ncio_interp_error("nc_read_interp", &
+                    "map_class object must be provided as an argument since the array read "// &
+                    "from file does not match the target array size.", &
+                    "filename = "//trim(filename)//new_line("a")// &
+                    "variable = "//trim(vnm)//new_line("a")// &
+                    "dims in file          = "//to_str(nx)//" "//to_str(ny)//new_line("a")// &
+                    "dims in target object = "//to_str(size(var2D,1))//" "//to_str(size(var2D,2)))
             end if
 
             allocate(var2D_int(size(var2D,1),size(var2D,2)))
@@ -465,5 +454,43 @@ contains
         return
 
     end subroutine nc_read_interp_logical_2D
+
+    ! ===== Error reporting (ncio_interp-local) ==============================
+    ! Self-contained, private helpers mirroring the varslice pattern: a uniform,
+    ! context-rich abort on error_unit via error stop. Kept module-local on
+    ! purpose (no shared error module) to avoid adding interdependencies.
+
+    subroutine ncio_interp_error(proc, msg, detail)
+        character(len=*), intent(in)           :: proc
+        character(len=*), intent(in)           :: msg
+        character(len=*), intent(in), optional :: detail
+        integer :: p0, p1
+        write(error_unit,"(a)") ""
+        write(error_unit,"(a)") "ncio_interp:: error in "//trim(proc)
+        write(error_unit,"(a)") "    "//trim(msg)
+        if (present(detail)) then
+            p0 = 1
+            do
+                p1 = index(detail(p0:), new_line("a"))
+                if (p1 == 0) then
+                    write(error_unit,"(a)") "    "//trim(detail(p0:))
+                    exit
+                end if
+                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
+                p0 = p0 + p1
+            end do
+        end if
+        write(error_unit,"(a)") "  stopped by ncio_interp."
+        flush(error_unit)
+        error stop 1
+    end subroutine ncio_interp_error
+
+    function to_str(v) result(s)
+        integer, intent(in) :: v
+        character(len=:), allocatable :: s
+        character(len=32) :: buf
+        write(buf,"(i0)") v
+        s = trim(adjustl(buf))
+    end function to_str
 
 end module ncio_interp

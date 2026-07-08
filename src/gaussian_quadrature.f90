@@ -971,8 +971,7 @@ contains
        print*, Jac(2,:)
        print*, Jac(3,:) 
        !call write_log('Jacobian matrix is singular', GM_FATAL)
-       write(error_unit,*) 'Jacobian matrix is singular'
-       stop
+       call gaussian_quadrature_error("get_basis_function_derivatives_3d", "Jacobian matrix is singular")
     endif
 
     if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest .and. k==ktest) then
@@ -1016,8 +1015,7 @@ contains
                 print*, prod(2,:)
                 print*, prod(3,:)
                 !call write_log('Jacobian matrix was not correctly inverted', GM_FATAL)
-                write(error_unit,*) 'Jacobian matrix was not correctly inverted'
-                stop
+                call gaussian_quadrature_error("get_basis_function_derivatives_3d", "Jacobian matrix was not correctly inverted")
              endif
           enddo
        enddo
@@ -1061,8 +1059,7 @@ contains
           print*, 'sum =', sum(dphi_dx_3d)
           print*, 'i, j, k, p =', i, j, k, p
           !call write_log('Sum over basis functions of dphi_dx /= 0', GM_FATAL)
-          write(error_unit,*) 'Sum over basis functions of dphi_dx /= 0'
-          stop
+          call gaussian_quadrature_error("get_basis_function_derivatives_3d", "Sum over basis functions of dphi_dx /= 0")
        endif
 
        if (abs( sum(dphi_dy_3d)/maxval(dphi_dy_3d) ) > 1.d-11) then
@@ -1071,8 +1068,7 @@ contains
           print*, 'sum =', sum(dphi_dy_3d)
           print*, 'i, j, k, p =', i, j, k, p
           !call write_log('Sum over basis functions of dphi_dy /= 0', GM_FATAL)
-          write(error_unit,*) 'Sum over basis functions of dphi_dy /= 0'
-          stop
+          call gaussian_quadrature_error("get_basis_function_derivatives_3d", "Sum over basis functions of dphi_dy /= 0")
        endif
 
        if (abs( sum(dphi_dz_3d)/maxval(dphi_dz_3d) ) > 1.d-11) then
@@ -1081,8 +1077,7 @@ contains
           print*, 'sum =', sum(dphi_dz_3d)
           print*, 'i, j, k, p =', i, j, k, p
           !call write_log('Sum over basis functions of dphi_dz /= 0', GM_FATAL)
-          write(error_unit,*) 'Sum over basis functions of dphi_dz /= 0'
-          stop
+          call gaussian_quadrature_error("get_basis_function_derivatives_3d", "Sum over basis functions of dphi_dz /= 0")
        endif
 
     endif  ! Jac_bug_check
@@ -1186,8 +1181,7 @@ contains
        print*, Jac(1,:)
        print*, Jac(2,:)
        !call write_log('Jacobian matrix is singular', GM_FATAL)
-       write(error_unit,*) 'Jacobian matrix is singular'
-       stop
+       call gaussian_quadrature_error("get_basis_function_derivatives_2d", "Jacobian matrix is singular")
     endif
 
     if (verbose_Jac .and. this_rank==rtest .and. i==itest .and. j==jtest) then
@@ -1222,8 +1216,7 @@ contains
                 print*, prod(1,:)
                 print*, prod(2,:)
                 !call write_log('Jacobian matrix was not correctly inverted', GM_FATAL)
-                write(error_unit,*) 'Jacobian matrix was not correctly inverted'
-                stop
+                call gaussian_quadrature_error("get_basis_function_derivatives_2d", "Jacobian matrix was not correctly inverted")
              endif
           enddo
        enddo
@@ -1257,8 +1250,7 @@ contains
           print*, 'dphi_dx_2d =', dphi_dx_2d(:)
           print*, 'i, j, p =', i, j, p
           !call write_log('Sum over basis functions of dphi_dx /= 0', GM_FATAL)
-          write(error_unit,*) 'Sum over basis functions of dphi_dx /= 0'
-          stop
+          call gaussian_quadrature_error("get_basis_function_derivatives_2d", "Sum over basis functions of dphi_dx /= 0")
        endif
 
        if (abs( sum(dphi_dy_2d)/maxval(dphi_dy_2d) ) > 1.d-11) then
@@ -1266,12 +1258,31 @@ contains
           print*, 'dphi_dy =', dphi_dy_2d(:)
           print*, 'i, j, p =', i, j, p
           !call write_log('Sum over basis functions of dphi_dy /= 0', GM_FATAL)
-          write(error_unit,*) 'Sum over basis functions of dphi_dy /= 0'
-          stop
+          call gaussian_quadrature_error("get_basis_function_derivatives_2d", "Sum over basis functions of dphi_dy /= 0")
        endif
 
     endif
 
   end subroutine get_basis_function_derivatives_2d
+
+  ! ===== Error reporting (gaussian_quadrature-local) ======================
+  ! Self-contained, private abort helper mirroring the varslice pattern:
+  ! a uniform, framed message on error_unit followed by error stop (nonzero
+  ! exit, plus a backtrace when built with -fbacktrace). Kept module-local on
+  ! purpose (no shared error module). The detailed numeric context (indices,
+  ! Jacobian/basis-function values) is still emitted by the print* diagnostics
+  ! immediately preceding each call site.
+
+  subroutine gaussian_quadrature_error(proc, msg)
+    character(len=*), intent(in) :: proc
+    character(len=*), intent(in) :: msg
+    write(error_unit,"(a)") ""
+    write(error_unit,"(a)") "gaussian_quadrature:: error in "//trim(proc)
+    write(error_unit,"(a)") "    "//trim(msg)
+    write(error_unit,"(a)") "  (see the diagnostics printed above for indices/values)"
+    write(error_unit,"(a)") "  stopped by gaussian_quadrature."
+    flush(error_unit)
+    error stop 1
+  end subroutine gaussian_quadrature_error
 
 end module gaussian_quadrature

@@ -57,7 +57,13 @@ module varslice
         module procedure axis_init_dp
     end interface
 
-    private 
+    ! Render scalars / 1-D arrays into the `detail` string of varslice_error.
+    interface to_str
+        module procedure to_str_int, to_str_sp, to_str_dp, to_str_log
+        module procedure to_str_int1, to_str_sp1, to_str_dp1
+    end interface
+
+    private
     public :: varslice_param_class
     public :: varslice_class
     public :: varslice_update
@@ -111,12 +117,11 @@ contains
         ndim = size(vs_src%dim,1)
 
         if (ndim .lt. 2 .or. (vs_src%par%with_time .and. ndim .lt. 3)) then
-            write(error_unit,*) "varslice_map_to_grid:: Error: mapping can only be done &
-            &for fields with two spatial dimensions."
-            write(error_unit,*) "name = ", trim(vs_src%par%name)
-            write(error_unit,*) "ndim = ", ndim
-            write(error_unit,*) "dim  = ", vs_src%dim
-            stop
+            call varslice_error("varslice_map_to_grid", &
+                "mapping can only be done for fields with two spatial dimensions.", &
+                "name = "//trim(vs_src%par%name)//new_line("a")// &
+                "ndim = "//to_str(ndim)//new_line("a")// &
+                "dim  = "//to_str(vs_src%dim))
         end if
 
         ! Determine size of target var
@@ -230,20 +235,19 @@ contains
 
         if (with_time) then 
 
-            if (.not. present(time)) then 
-                write(*,*) "varslice_update:: Error: current time or time range &
-                            &must be given as an argument (1D array)."
-                stop 
-            end if 
+            if (.not. present(time)) then
+                call varslice_error("varslice_update", &
+                    "current time or time range must be given as an argument (1D array).")
+            end if
 
-            ! Consistency check 
-            if (size(time,1) .eq. 2) then 
-                if (time(2) .lt. time(1)) then 
-                    write(*,*) "varslice_update:: Error: time(2) should be >= time(1)."
-                    write(*,*) "time = ", time
-                    stop 
+            ! Consistency check
+            if (size(time,1) .eq. 2) then
+                if (time(2) .lt. time(1)) then
+                    call varslice_error("varslice_update", &
+                        "time(2) should be >= time(1).", &
+                        "time = "//to_str(time))
                 end if
-            end if 
+            end if
 
         end if 
 
@@ -253,10 +257,10 @@ contains
         fill_method = "none"
         if (present(fill)) fill_method = trim(fill) 
 
-        if (trim(fill_method) .ne. "none") then 
-            write(error_unit,*) "Error: varslice: fill methods have not yet been implemented. &
-            &Set fill_method='none' for now."
-            stop
+        if (trim(fill_method) .ne. "none") then
+            call varslice_error("varslice_update", &
+                "fill methods have not yet been implemented. Set fill_method='none' for now.", &
+                "fill_method = "//trim(fill_method))
         end if
         
         if (present(time)) then
@@ -325,9 +329,9 @@ contains
 
                     case DEFAULT 
 
-                        write(*,*) "varslice_update:: ndim >= 4 with no time dimension is not allowed."
-                        write(*,*) "ndim = ", par%ndim 
-                        stop 
+                        call varslice_error("varslice_update", &
+                            "ndim >= 4 with no time dimension is not allowed.", &
+                            "ndim = "//to_str(par%ndim))
 
                 end select
 
@@ -339,12 +343,12 @@ contains
                     ! Update time range for interp/extrap methods 
 
                     ! Additional consistency check 
-                    if (size(time,1) .ne. 1) then 
-                        write(*,*) "varslice_update:: Error: to use slice_method=['interp','extrap'], &
-                        &only one time should be provided as an argument."
-                        write(*,*) "time = ", time 
-                        stop 
-                    end if 
+                    if (size(time,1) .ne. 1) then
+                        call varslice_error("varslice_update", &
+                            "to use slice_method=['interp','extrap'], only one time should be "// &
+                            "provided as an argument.", &
+                            "time = "//to_str(time))
+                    end if
 
                 end if
 
@@ -370,13 +374,13 @@ contains
                     nt_major = max(nt_tot / nt_rep, 1)
 
                     if (nt_major .ne. int(real(nt_tot)/real(nt_rep))) then
-                        write(error_unit,*) "varslice_update:: Error: number of major time axis points &
-                        &does not match number of total points divided by number of sub-time points."
-                        write(error_unit,*) "nt_rep   = ", nt_rep
-                        write(error_unit,*) "nt_tot   = ", nt_tot
-                        write(error_unit,*) "nt_major = ", nt_major
-                        write(error_unit,*) "int(real(nt_tot)/real(nt_rep)) = ", int(real(nt_tot)/real(nt_rep))
-                        stop
+                        call varslice_error("varslice_update", &
+                            "number of major time axis points does not match number of total "// &
+                            "points divided by number of sub-time points.", &
+                            "nt_rep   = "//to_str(nt_rep)//new_line("a")// &
+                            "nt_tot   = "//to_str(nt_tot)//new_line("a")// &
+                            "nt_major = "//to_str(nt_major)//new_line("a")// &
+                            "int(real(nt_tot)/real(nt_rep)) = "//to_str(int(real(nt_tot)/real(nt_rep))))
                     end if
 
                     if (verbose) then
@@ -427,9 +431,9 @@ contains
 
                         case DEFAULT 
 
-                            write(*,*) "varslice_update:: ndim > 4 with time dimension not allowed."
-                            write(*,*) "ndim = ", par%ndim 
-                            stop 
+                            call varslice_error("varslice_update", &
+                                "ndim > 4 with time dimension not allowed.", &
+                                "ndim = "//to_str(par%ndim))
 
                     end select
 
@@ -505,21 +509,20 @@ contains
 
                                 case("interp","extrap")
                                     
-                                    if (nt_tot .ne. 2*nt_out) then 
-                                        write(*,*) "varslice_update:: Error: something went wrong during &
-                                        &interpolation. Exactly 2 major time slices should be available to interpolate &
-                                        &between. Check!"
-                                        write(*,*) "nt_tot   = ", nt_tot
-                                        write(*,*) "rep      = ", nt_out 
-                                        write(*,*) "2*rep    = ", 2*nt_out 
-                                        write(*,*) "time     = ", time 
-                                        write(*,*) "indices k0, k1: ", k0, k1 
-                                        write(*,*) "times : ", vs%time(k0:k1) 
-                                        stop 
+                                    if (nt_tot .ne. 2*nt_out) then
                                         ! Remember that if nt_tot==nt_out, this means that nt_major=1,
                                         ! and so only one time slice was available. So the method was
                                         ! changed to 'exact'.
-                                    end if 
+                                        call varslice_error("varslice_update", &
+                                            "something went wrong during interpolation. Exactly 2 major "// &
+                                            "time slices should be available to interpolate between. Check!", &
+                                            "nt_tot   = "//to_str(nt_tot)//new_line("a")// &
+                                            "rep      = "//to_str(nt_out)//new_line("a")// &
+                                            "2*rep    = "//to_str(2*nt_out)//new_line("a")// &
+                                            "time     = "//to_str(time)//new_line("a")// &
+                                            "k0, k1   = "//to_str([k0,k1])//new_line("a")// &
+                                            "times    = "//to_str(vs%time(k0:k1)))
+                                    end if
 
                                     ! Calculate time weighting between two extremes
                                     allocate(time_wt(2))
@@ -539,26 +542,25 @@ contains
 
                             end select
 
-                            if (minval(time_wt) .lt. 0.0_wp .or. maxval(time_wt) .gt. 1.0_wp) then 
-                                write(*,*) "varslice_update:: Error: interpolation weights are incorrect."
-                                write(*,*) "time_wt  = ", time_wt 
-                                write(*,*) "time     = ", time 
-                                write(*,*) "time(k0) = ", vs%time(k0)
-                                write(*,*) "time(k1) = ", vs%time(k1) 
-                                stop
+                            if (minval(time_wt) .lt. 0.0_wp .or. maxval(time_wt) .gt. 1.0_wp) then
+                                call varslice_error("varslice_update", &
+                                    "interpolation weights are incorrect.", &
+                                    "time_wt  = "//to_str(time_wt)//new_line("a")// &
+                                    "time     = "//to_str(time)//new_line("a")// &
+                                    "time(k0) = "//to_str(vs%time(k0))//new_line("a")// &
+                                    "time(k1) = "//to_str(vs%time(k1)))
                             end if
                             
                             ! Make sure that var has at least as many values as we expect 
-                            if (nt_out .gt. nt_tot) then 
-                                write(*,*) "varslice_update:: Error: the specified time range &
-                                    & does not provide enough data points to be consistent with &
-                                    & the specified value of range_rep."
-                                write(*,*) "time_range      = ", vs%time_range 
-                                write(*,*) "nt (time_range) = ", nt_tot 
-                                write(*,*) "range_rep       = ", vs%range_rep 
-                                write(*,*) "range_rep must be <= nt."
-                                stop 
-                            end if 
+                            if (nt_out .gt. nt_tot) then
+                                call varslice_error("varslice_update", &
+                                    "the specified time range does not provide enough data points to "// &
+                                    "be consistent with the specified value of range_rep "// &
+                                    "(range_rep must be <= nt).", &
+                                    "time_range      = "//to_str(vs%time_range)//new_line("a")// &
+                                    "nt (time_range) = "//to_str(nt_tot)//new_line("a")// &
+                                    "range_rep       = "//to_str(vs%range_rep))
+                            end if
 
                             if (allocated(vs%var)) deallocate(vs%var)
 
@@ -710,10 +712,9 @@ contains
 
         if (with_sub) then
             if ( abs(x0-floor(x0)) .gt. TOL .or. abs(x1-floor(x1)) .gt. TOL) then
-                write(error_unit,*) "get_indices:: Error: when time sub-axis is used, then the time range &
-                & should be specified by whole numbers."
-                write(error_unit,*) "xrange: ", xrange
-                stop
+                call varslice_error("get_indices", &
+                    "when time sub-axis is used, the time range should be specified by whole numbers.", &
+                    "xrange = "//to_str(xrange))
             end if
         end if
 
@@ -869,10 +870,10 @@ contains
 
                 ! Safety check
                 if (size(wt,1) .ne. size(var,1)) then
-                    write(error_unit,*) "calc_vec_value:: Error: wt vector must be the same length as the var vector."
-                    write(error_unit,*) "size(wt):  ", size(wt,1)
-                    write(error_unit,*) "size(var): ", size(var,1)
-                    stop
+                    call varslice_error("calc_vec_value", &
+                        "wt vector must be the same length as the var vector.", &
+                        "size(wt)  = "//to_str(size(wt,1))//new_line("a")// &
+                        "size(var) = "//to_str(size(var,1)))
                 end if
             else 
                 wt_now = 1.0_wp
@@ -918,9 +919,9 @@ contains
 
                 case DEFAULT 
 
-                    write(*,*) "calc_vec_value:: Error: method not recognized."
-                    write(*,*) "method = ", trim(method) 
-                    stop 
+                    call varslice_error("calc_vec_value", &
+                        "method not recognized.", &
+                        "method = "//trim(method))
 
             end select
 
@@ -1018,6 +1019,7 @@ contains
         integer  :: nt
         integer, allocatable :: dim_now(:)
         character(len=1024)  :: filename_dims
+        character(len=:), allocatable :: fnames
 
         ! Local shortcut
         with_time       = vs%par%with_time 
@@ -1100,23 +1102,25 @@ contains
             end if
 
             ! Check to make sure time vector matches netcdf file length 
-            if (size(vs%time,1) .ne. vs%dim(vs%par%ndim)) then 
-                write(*,*) "varslice_init_data:: Error: generated time coordinate &
-                &does not match the length of the time dimension in the netcdf file."
-                write(*,*) "time_par:    ", vs%par%time_par 
-                write(*,*) "size(time):  ", size(vs%time,1)
-                write(*,*) "nt (netcdf): ", vs%dim(vs%par%ndim)
-                write(*,*) "filename:    ", trim(vs%par%filename)
+            if (size(vs%time,1) .ne. vs%dim(vs%par%ndim)) then
+                fnames = ""
                 if (size(vs%par%filenames,1) .gt. 1) then
-                    write(*,*) "filenames     = "
+                    fnames = "filenames    ="
                     do i = 1, size(vs%par%filenames,1)
-                        write(*,*) "                  ", trim(vs%par%filenames(i))
+                        fnames = fnames//new_line("a")//"               "//trim(vs%par%filenames(i))
                     end do
+                    fnames = fnames//new_line("a")
                 end if
-                write(*,*) 
-                write(*,*) "time = ", vs%time
-                stop 
-            end if 
+                call varslice_error("varslice_init_data", &
+                    "generated time coordinate does not match the length of the time "// &
+                    "dimension in the netcdf file.", &
+                    "time_par    = "//to_str(vs%par%time_par)//new_line("a")// &
+                    "size(time)  = "//to_str(size(vs%time,1))//new_line("a")// &
+                    "nt (netcdf) = "//to_str(vs%dim(vs%par%ndim))//new_line("a")// &
+                    "filename    = "//trim(vs%par%filename)//new_line("a")// &
+                    fnames// &
+                    "time        = "//to_str(vs%time))
+            end if
 
         end if 
 
@@ -1222,16 +1226,16 @@ contains
                         call axis_init(vs%z,nx=vs%dim(3))
                     end if
                     
-                else 
-                    write(*,*) "varslice_init_data:: 4D array without time dimension is not yet supported."
-                    stop 
+                else
+                    call varslice_error("varslice_init_data", &
+                        "4D array without time dimension is not yet supported.")
                 end if
 
-                    
-            case DEFAULT 
-                write(*,*) "varslice_init_data:: ndim > 4 not allowed."
-                write(*,*) "ndim = ", vs%par%ndim 
-                stop 
+
+            case DEFAULT
+                call varslice_error("varslice_init_data", &
+                    "ndim > 4 not allowed.", &
+                    "ndim = "//to_str(vs%par%ndim))
 
         end select
 
@@ -1399,10 +1403,10 @@ contains
             x1_now = x1 
         else if (present(nx)) then 
             x1_now = x0_now + (nx-1)*dx_now 
-        else 
-            write(*,*) "axis_init:: Error: either x1 or nx must be present."
-            stop 
-        end if 
+        else
+            call varslice_error("axis_init", &
+                "either x1 or nx must be present.")
+        end if
 
         if (allocated(x)) deallocate(x)
 
@@ -1411,13 +1415,12 @@ contains
 
         if ( abs(nx_now - nx_check) .gt. TOL ) then
             ! Make sure nx is a round number.
-            write(error_unit,*) "axis_init:: Error: desired axis bounds [x0,x1] do &
-            & not divide evenly with dx."
-            write(error_unit,*) "  x0: ", x0_now
-            write(error_unit,*) "  x1: ", x1_now
-            write(error_unit,*) "  dx: ", dx_now
-            write(error_unit,*) "  nx: ", ((x1_now-x0_now)/dx_now + 1)
-            stop
+            call varslice_error("axis_init", &
+                "desired axis bounds [x0,x1] do not divide evenly with dx.", &
+                "x0 = "//to_str(x0_now)//new_line("a")// &
+                "x1 = "//to_str(x1_now)//new_line("a")// &
+                "dx = "//to_str(dx_now)//new_line("a")// &
+                "nx = "//to_str((x1_now-x0_now)/dx_now + 1))
         end if
         
         allocate(x(nx_now))
@@ -1459,10 +1462,10 @@ contains
             x1_now = x1 
         else if (present(nx)) then 
             x1_now = x0_now + (nx-1)*dx_now 
-        else 
-            write(*,*) "axis_init:: Error: either x1 or nx must be present."
-            stop 
-        end if 
+        else
+            call varslice_error("axis_init", &
+                "either x1 or nx must be present.")
+        end if
 
         if (allocated(x)) deallocate(x)
 
@@ -1471,13 +1474,12 @@ contains
 
         if ( abs(nx_now - nx_check) .gt. TOL ) then
             ! Make sure nx is a round number.
-            write(error_unit,*) "axis_init:: Error: desired axis bounds [x0,x1] do &
-            & not divide evenly with dx."
-            write(error_unit,*) "  x0: ", x0_now
-            write(error_unit,*) "  x1: ", x1_now
-            write(error_unit,*) "  dx: ", dx_now
-            write(error_unit,*) "  nx: ", ((x1_now-x0_now)/dx_now + 1)
-            stop
+            call varslice_error("axis_init", &
+                "desired axis bounds [x0,x1] do not divide evenly with dx.", &
+                "x0 = "//to_str(x0_now)//new_line("a")// &
+                "x1 = "//to_str(x1_now)//new_line("a")// &
+                "dx = "//to_str(dx_now)//new_line("a")// &
+                "nx = "//to_str((x1_now-x0_now)/dx_now + 1))
         end if
         
         allocate(x(nx_now))
@@ -1547,9 +1549,10 @@ contains
         
         ! Make sure at least one file was found
         if (ios /= 0) then
-            write(error_unit,*) "get_matching_files:: Error: temporary file could not be opened."
-            write(error_unit,*) "temp_filename = ", trim(temp_filename)
-            stop
+            call varslice_error("get_matching_files", &
+                "temporary file could not be opened.", &
+                "temp_filename = "//trim(temp_filename)//new_line("a")// &
+                "iostat        = "//to_str(ios))
         end if
 
         ! First, count the number of files
@@ -1564,9 +1567,9 @@ contains
 
         ! Make sure at least one file was found
         if (num_files .eq. 0) then
-            write(error_unit,*) "get_matching_files:: Error: filename(s) not found."
-            write(error_unit,*) "filename = ", trim(pattern)
-            stop
+            call varslice_error("get_matching_files", &
+                "filename(s) not found.", &
+                "filename = "//trim(pattern))
         end if
 
         ! Allocate the output array
@@ -1611,6 +1614,7 @@ contains
         integer, allocatable :: nt_files(:)
         integer, allocatable :: dims(:)
         character(len=1024) :: filename
+        character(len=:), allocatable :: fnames
 
         ! Get number of dimensions we are working with
         ndim = size(start,1)
@@ -1626,14 +1630,16 @@ contains
 
         ! Consistency check
         if (sum(nt_files) .lt. count(ndim)) then
-            write(error_unit,*) "nc_read_multifile:: Error: number of time axis values read in &
-            &is not sufficient to cover count."
-            write(error_unit,*) "count: ", count
-            write(error_unit,*) "nt_files: ", sum(nt_files)
+            fnames = "per-file nt:"
             do i = 1, num_files
-                write(error_unit,*) trim(filenames(i)), nt_files(i)
+                fnames = fnames//new_line("a")// &
+                    "  "//trim(filenames(i))//"  "//to_str(nt_files(i))
             end do
-            stop
+            call varslice_error("nc_read_multifile", &
+                "number of time axis values read in is not sufficient to cover count.", &
+                "count        = "//to_str(count)//new_line("a")// &
+                "sum(nt_files) = "//to_str(sum(nt_files))//new_line("a")// &
+                fnames)
         end if
 
         ! To do: figure out where index k0 begins within nt_files.
@@ -1677,16 +1683,132 @@ contains
         end do
 
         if (nt .ne. count(ndim)) then
-            write(error_unit,*) "nc_read_multifile:: Error: number of time axis values read in &
-            &do not much the expected total."
-            write(error_unit,*) "count: ", count
-            write(error_unit,*) "nk: ", nk
-            write(error_unit,*) "nt: ", nt
-            stop
+            call varslice_error("nc_read_multifile", &
+                "number of time axis values read in does not match the expected total.", &
+                "count = "//to_str(count)//new_line("a")// &
+                "nk    = "//to_str(nk)//new_line("a")// &
+                "nt    = "//to_str(nt))
         end if
 
         return
 
     end subroutine nc_read_multifile
+
+    ! ===== Error reporting (varslice-local) =================================
+    ! Self-contained helpers so every varslice failure aborts with a uniform,
+    ! context-rich message on error_unit. Deliberately private and
+    ! dependency-free (no shared error module) to avoid coupling varslice to
+    ! the other utils modules. `varslice_error` frames the failing routine and
+    ! message (plus an optional multi-line `detail`) and halts via `error stop`
+    ! (nonzero exit, and a backtrace if built with -fbacktrace). `to_str`
+    ! renders scalars / 1-D arrays into the `detail` string; build detail with
+    ! several values by joining them with new_line("a").
+
+    subroutine varslice_error(proc, msg, detail)
+        ! Abort with a framed, informative message on error_unit.
+        implicit none
+        character(len=*), intent(in)           :: proc    ! failing routine, e.g. "varslice_update"
+        character(len=*), intent(in)           :: msg     ! what went wrong
+        character(len=*), intent(in), optional :: detail  ! extra lines (join with new_line("a"))
+
+        integer :: p0, p1
+
+        write(error_unit,"(a)") ""
+        write(error_unit,"(a)") "varslice:: error in "//trim(proc)
+        write(error_unit,"(a)") "    "//trim(msg)
+
+        if (present(detail)) then
+            ! Emit `detail` line by line, indenting each, splitting on newlines.
+            p0 = 1
+            do
+                p1 = index(detail(p0:), new_line("a"))
+                if (p1 == 0) then
+                    write(error_unit,"(a)") "    "//trim(detail(p0:))
+                    exit
+                end if
+                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
+                p0 = p0 + p1
+            end do
+        end if
+
+        write(error_unit,"(a)") "  stopped by varslice."
+        flush(error_unit)
+        error stop 1
+
+    end subroutine varslice_error
+
+    function to_str_int(v) result(s)
+        implicit none
+        integer, intent(in) :: v
+        character(len=:), allocatable :: s
+        character(len=32) :: buf
+        write(buf,"(i0)") v
+        s = trim(adjustl(buf))
+    end function to_str_int
+
+    function to_str_sp(v) result(s)
+        implicit none
+        real(sp), intent(in) :: v
+        character(len=:), allocatable :: s
+        character(len=64) :: buf
+        write(buf,"(g0)") v
+        s = trim(adjustl(buf))
+    end function to_str_sp
+
+    function to_str_dp(v) result(s)
+        implicit none
+        real(dp), intent(in) :: v
+        character(len=:), allocatable :: s
+        character(len=64) :: buf
+        write(buf,"(g0)") v
+        s = trim(adjustl(buf))
+    end function to_str_dp
+
+    function to_str_log(v) result(s)
+        implicit none
+        logical, intent(in) :: v
+        character(len=:), allocatable :: s
+        if (v) then
+            s = "T"
+        else
+            s = "F"
+        end if
+    end function to_str_log
+
+    function to_str_int1(v) result(s)
+        implicit none
+        integer, intent(in) :: v(:)
+        character(len=:), allocatable :: s
+        integer :: i
+        s = ""
+        do i = 1, size(v)
+            s = trim(s)//" "//to_str_int(v(i))
+        end do
+        s = adjustl(s)
+    end function to_str_int1
+
+    function to_str_sp1(v) result(s)
+        implicit none
+        real(sp), intent(in) :: v(:)
+        character(len=:), allocatable :: s
+        integer :: i
+        s = ""
+        do i = 1, size(v)
+            s = trim(s)//" "//to_str_sp(v(i))
+        end do
+        s = adjustl(s)
+    end function to_str_sp1
+
+    function to_str_dp1(v) result(s)
+        implicit none
+        real(dp), intent(in) :: v(:)
+        character(len=:), allocatable :: s
+        integer :: i
+        s = ""
+        do i = 1, size(v)
+            s = trim(s)//" "//to_str_dp(v(i))
+        end do
+        s = adjustl(s)
+    end function to_str_dp1
 
 end module varslice
