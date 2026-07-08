@@ -53,6 +53,13 @@ module coupler
     interface remap
         ! One wrapper per (kind x rank); each sizes var_dst and calls the generic
         ! map_field, which dispatches on kind (dp / sp / int).
+        !
+        ! Note: the concrete `dp` and `sp` overloads are intentional and are NOT
+        ! tied to the compile-time working precision `wp`. The coupler accepts
+        ! both real kinds from callers regardless of how `wp` is set, so these
+        ! must stay `real(dp)` / `real(sp)` — do not "genericize" the `_sp`
+        ! wrappers to `real(wp)`: if `wp == dp` that collides with the `_dp`
+        ! overload (ambiguous generic) and drops support for `sp` input.
         module procedure remap_2D_dp, remap_2D_sp, remap_2D_int
         module procedure remap_3D_dp, remap_3D_sp, remap_3D_int
     end interface
