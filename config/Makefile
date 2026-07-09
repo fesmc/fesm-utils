@@ -178,6 +178,9 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
@@ -212,7 +215,8 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/timeout.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
-					$(objdir)/varslice.o
+					$(objdir)/varslice.o \
+					$(objdir)/tsgen.o
 
 ###############################################
 ##
@@ -297,6 +301,14 @@ bench-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
+		@echo " "
+
+# tsgen (time-series generator) test program
+test-tsgen : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    tsgen test program ready: $(bindir)/test_tsgen.x"
 		@echo " "
 
 # map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
