@@ -4,8 +4,8 @@ module hyster
     use nml 
     use ncio 
 
-    use precision, only: sp, dp, wp
-    use constants, only: mv, pi
+    use precision, only: wp
+    use constants, only: mv, pi, TOL
     implicit none 
 
 
@@ -103,7 +103,7 @@ contains
 
         ! Prescribe a very small, but nonzero minimum value 
         ! (important to be nonzero for the pi controller methods)
-        hyst%par%df_dt_min = 1e-9   ! [f/yr]
+        hyst%par%df_dt_min = 1e-9_wp   ! [f/yr]
 
         ! Set after_step false to start, since the first step is the initial ramp
         hyst%par%after_step = .FALSE. 
@@ -127,8 +127,8 @@ contains
         hyst%var   = MV
         hyst%dv_dt = MV
 
-        hyst%dv_dt_ave = 0.0
-        hyst%df_dt     = 0.0
+        hyst%dv_dt_ave = 0.0_wp
+        hyst%df_dt     = 0.0_wp
 
         hyst%pi_df  = hyst%par%df_dt_min 
         hyst%pi_eta = hyst%par%eps 
@@ -151,9 +151,9 @@ contains
 
         end if 
 
-        ! Set noise to zero for now 
-        hyst%eta_now = 0.0
-        hyst%f_now = hyst%f_mean_now 
+        ! Set noise to zero for now
+        hyst%eta_now = 0.0_wp
+        hyst%f_now = hyst%f_mean_now
         
         ! Set kill switch to false to start 
         hyst%kill = .FALSE. 
@@ -173,14 +173,10 @@ contains
 
   
     subroutine hyster_calc_forcing(hyst,time,var,dv_dt)
-        ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        ! Subroutine :  d t T r a n s 1
-        ! Author     :  Alex Robinson
-        ! Purpose    :  Generate correct T_warming for gradual changes over
-        !               time (continuous stability diagram!)
-        ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++  
+        ! Generate the transient forcing value f_now for the current time,
+        ! given the model response variable var (and optionally its rate dv_dt).
 
-        type(hyster_class), intent(INOUT) :: hyst 
+        type(hyster_class), intent(INOUT) :: hyst
         real(wp),           intent(IN)    :: time
         real(wp),           intent(IN)    :: var 
         real(wp), optional, intent(IN)    :: dv_dt
@@ -189,17 +185,13 @@ contains
         real(wp) :: time_elapsed
         real(wp) :: dv_dt_now
         real(wp) :: f_scale 
-        integer  :: ntot, kmin, kmax, nk, k 
+        integer  :: ntot, kmin, kmax, nk
         real(wp) :: dt_tot 
         real(wp) :: dvdt_fac 
         real(wp) :: pi_df_now
 
-        ! For periodic forcing 
-        real(wp) :: p 
-        real(wp) :: amp
-        real(wp) :: x_offset
-        real(wp) :: y_offset 
-        real(wp) :: f_tmp 
+        ! For periodic forcing
+        real(wp) :: f_tmp
 
         ! Since dv_dt is typically calculated over an averaging period,
         ! assume second-order PI controller parameters are needed. 
@@ -209,19 +201,19 @@ contains
         ntot = size(hyst%time,1) 
 
         ! Get current timestep
-        if (hyst%time(ntot) .ne. MV) then  
-            hyst%dt = time - hyst%time(ntot) 
-        else 
-            hyst%dt = 0.0
-        end if 
+        if (hyst%time(ntot) .ne. MV) then
+            hyst%dt = time - hyst%time(ntot)
+        else
+            hyst%dt = 0.0_wp
+        end if
 
         ! Get current derivative
         if (present(dv_dt)) then 
             dv_dt_now = dv_dt
-        else if (hyst%dt .gt. 0.0) then 
-            dv_dt_now = (var-hyst%var(ntot))/hyst%dt 
-        else 
-            dv_dt_now = 0.0
+        else if (hyst%dt .gt. 0.0_wp) then
+            dv_dt_now = (var-hyst%var(ntot))/hyst%dt
+        else
+            dv_dt_now = 0.0_wp
         end if
 
         ! Remove oldest point from beginning and add current one to the end
@@ -332,28 +324,21 @@ contains
                             
                         end if
 
-                    
                         if ( (hyst%par%df_sign .lt. 0.0 .and.&
                                     hyst%f_mean_now .le. hyst%par%f_min) .or. &
                              (hyst%par%df_sign .gt. 0.0 .and.&
-                                    hyst%f_mean_now .ge. hyst%par%f_max) ) then  
-                            ! Ramp-up complete, no more forcing change 
+                                    hyst%f_mean_now .ge. hyst%par%f_max) ) then
+                            ! Ramp-up complete, no more forcing change
 
-                            hyst%df_dt = 0.0_wp 
+                            hyst%df_dt = 0.0_wp
 
-                        else 
-                            ! Linear rate of change from f_max to f_min (or vice versa) over 
-                            ! the time of interest dt_ramp. 
+                        else
+                            ! Linear rate of change from f_max to f_min (or vice versa) over
+                            ! the time of interest dt_ramp.
 
-                            hyst%df_dt = abs(hyst%par%f_max-hyst%par%f_min)/hyst%par%dt_ramp 
+                            hyst%df_dt = abs(hyst%par%f_max-hyst%par%f_min)/hyst%par%dt_ramp
 
-                        end if 
-
-                        ! write(*,"(a,f10.2,3f10.2,1x,l,1x,3f10.2)") &
-                        !                 trim(hyst%par%method), time, hyst%par%f_min, hyst%par%f_max, &
-                        !                 hyst%f_mean_now, hyst%par%triangle_return, hyst%par%dt_ramp, &
-                        !                 hyst%par%df_sign, hyst%df_dt 
-
+                        end if
 
                 case("ramp-slope")
                     ! Ramp up to the constant rate of change for the first N years. 
@@ -433,7 +418,7 @@ contains
 
                         ! Apply limits to eta so that algorithm works well. 
                         ! pi_eta should be greater than zero
-                        hyst%pi_eta(1) = max(hyst%pi_eta(1),1e-3)
+                        hyst%pi_eta(1) = max(hyst%pi_eta(1),1e-3_wp)
 
                         ! Get forcing rate of change magnitude in [f/yr]
                         hyst%df_dt = hyst%pi_df(1) 
@@ -447,8 +432,8 @@ contains
         ! Apply sign of change
         hyst%df_dt = hyst%par%df_sign*hyst%df_dt
 
-        ! Avoid underflow errors 
-        if (abs(hyst%df_dt) .lt. 1e-8) hyst%df_dt = 0.0 
+        ! Avoid underflow errors
+        if (abs(hyst%df_dt) .lt. TOL) hyst%df_dt = 0.0_wp
 
 
         ! ajr: Note: for now, keep diagnosing df_dt even when limits have been reached.
@@ -521,10 +506,8 @@ contains
         real(wp) :: dt_n, dt_nm1, dt_nm2          ! [yr]   Timesteps (n:n-2)
         real(wp) :: eta_n, eta_nm1, eta_nm2       ! [X/yr] Maximum truncation error (n:n-2)
         real(wp) :: rho_n, rho_nm1, rho_nm2
-        real(wp) :: rhohat_n 
-        real(wp) :: dt_adv 
-        real(wp) :: dtmax_now
-        real(wp) :: k_i 
+        real(wp) :: rhohat_n
+        real(wp) :: k_i
         real(wp) :: k_p, k_d 
 
         ! Smoothing parameter; Söderlind and Wang (2006) method, Eq. 10
@@ -794,22 +777,17 @@ contains
         real(wp), intent(IN)  :: mu 
         real(wp), intent(IN)  :: sigma 
 
-        ! Local variables 
-        integer :: i, j, nx, ny 
+        ! Local variables
         real(wp) :: yuni(2)
 
         ! Get 2 numbers from uniform distribution between 0 and 1
         call random_number(yuni)
         
         ! Convert to normal distribution using the Box-Mueller algorithm
-        ynrm = mu + sigma * sqrt(-2.0*log(yuni(1))) * cos(2*pi*yuni(2))
+        ynrm = mu + sigma * sqrt(-2.0_wp*log(yuni(1))) * cos(2.0_wp*pi*yuni(2))
 
         return 
 
     end subroutine gen_random_normal
 
-
-    ! === IO ===
-
-    
 end module hyster
