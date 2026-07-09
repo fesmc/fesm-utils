@@ -1,8 +1,9 @@
 
-module tsgen 
+module tsgen
 
-    use nml 
-    use ncio 
+    use nml
+    use ncio
+    use series
 
     use precision, only: wp
     use constants, only: mv, pi, TOL
@@ -22,20 +23,37 @@ module tsgen
         real(wp) :: dt_conv
         real(wp) :: dt_ave
         real(wp) :: df_sign
-        real(wp) :: eps
+        real(wp) :: tol
         real(wp) :: df_dt_max
         real(wp) :: sigma
         real(wp) :: f_min
         real(wp) :: f_max
         real(wp) :: f_conv
 
+        ! Tabulated-series method ("series"): file + (netCDF) variable names
+        character(len=512) :: series_file
+        character(len=56)  :: series_var
+        character(len=56)  :: series_time_name
+
         ! Derived at init: .TRUE. for response-driven (feedback) methods
         logical  :: feedback
+    end type
+
+    type tsgen_vec_class
+        ! Per-channel outputs, allocated only when nc > 1 (a multi-channel
+        ! "series" file, e.g. 12 monthly values). For nc == 1 the scalar
+        ! outputs on tsgen_class are used and these stay unallocated.
+        real(wp), allocatable :: f_now(:)
+        real(wp), allocatable :: f_mean(:)
+        real(wp), allocatable :: eps(:)
     end type
 
     type tsgen_class
 
         type(tsgen_par_class) :: par
+
+        ! Loaded forcing series (only for method="series")
+        type(series_class) :: ser
 
         ! History buffers over the time-averaging window
         real(wp), allocatable :: time(:)
@@ -47,15 +65,19 @@ module tsgen
         real(wp) :: pi_eta(3)
 
         ! Runtime state
+        integer  :: nc              ! number of output channels (1 except a 2-D series)
         real(wp) :: dt
         real(wp) :: time_prev       ! time seen at the previous update (MV if none)
         real(wp) :: dv_dt_ave
         real(wp) :: df_dt
-        real(wp) :: f_now
+        real(wp) :: f_now           ! scalar forcing (channel mean when nc>1)
         real(wp) :: f_mean_now
-        real(wp) :: eta_now
+        real(wp) :: eps             ! realized noise (channel mean when nc>1)
         logical  :: kill
         real(wp) :: time_init
+
+        ! Per-channel outputs (allocated only when nc>1)
+        type(tsgen_vec_class) :: vec
     end type
 
     private
@@ -69,42 +91,23 @@ contains
 
     subroutine tsgen_init(ts,filename,time,label)
 
-        type(tsgen_class), intent(INOUT) :: ts 
-        character(len=*),   intent(IN)    :: filename 
-        real(wp),           intent(IN)    :: time 
-        character(len=*),   intent(IN), optional :: label 
-        
-        integer :: ntot 
-        character(len=56) :: par_label 
+        type(tsgen_class), intent(INOUT) :: ts
+        character(len=*),   intent(IN)    :: filename
+        real(wp),           intent(IN)    :: time
+        character(len=*),   intent(IN), optional :: label
+
+        integer :: ntot
+        character(len=56) :: par_label
 
         par_label = "tsgen"
         if (present(label)) par_label = trim(par_label)//"_"//trim(label)
 
-        ! Load parameters
+        ! The method determines which parameters are relevant, so read it first.
         call nml_read(filename,trim(par_label),"method",      ts%par%method)
-        call nml_read(filename,trim(par_label),"with_kill",   ts%par%with_kill)
-        call nml_read(filename,trim(par_label),"dt_ave",      ts%par%dt_ave)
-        call nml_read(filename,trim(par_label),"dt_init",     ts%par%dt_init)
-        call nml_read(filename,trim(par_label),"dt_ramp",     ts%par%dt_ramp)
-        call nml_read(filename,trim(par_label),"dt_conv",      ts%par%dt_conv)
-        call nml_read(filename,trim(par_label),"df_sign",     ts%par%df_sign)
-        call nml_read(filename,trim(par_label),"eps",         ts%par%eps)
-        call nml_read(filename,trim(par_label),"df_dt_max",   ts%par%df_dt_max)
-        call nml_read(filename,trim(par_label),"sigma",       ts%par%sigma)
-        call nml_read(filename,trim(par_label),"f_min",       ts%par%f_min)
-        call nml_read(filename,trim(par_label),"f_max",       ts%par%f_max)
-        call nml_read(filename,trim(par_label),"f_conv",      ts%par%f_conv)
-        
-        ! Make sure sign is only +1/-1
-        ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
 
-        ! Consistency check
-        if (ts%par%df_sign .eq. -1.0_wp .and. trim(ts%par%method) .eq. "sin") then
-            write(*,*) "tsgen:: Error: method='sin' can only be used with &
-            &df_sign=1.0 (non-negative). Please set df_sign=1.0 or use &
-            &a different method."
-            stop
-        end if
+        ! Noise amplitude applies to every method (it is added on top of the
+        ! mean forcing), so it is always read.
+        call nml_read(filename,trim(par_label),"sigma",       ts%par%sigma)
 
         ! Classify the method: response-driven (feedback) vs time-driven
         select case(trim(ts%par%method))
@@ -114,8 +117,57 @@ contains
                 ts%par%feedback = .FALSE.
         end select
 
-        ! Kill is not meaningful for periodic forcing
-        if (trim(ts%par%method) .eq. "sin") ts%par%with_kill = .FALSE.
+        if (trim(ts%par%method) .eq. "series") then
+            ! Tabulated series: read only the file/variable parameters, load it,
+            ! and derive the channel count. Ramp/feedback parameters are unused.
+            call tsgen_par_defaults(ts%par)
+            ts%par%with_kill = .FALSE.
+
+            call nml_read(filename,trim(par_label),"series_file",ts%par%series_file)
+
+            if (series_is_netcdf(ts%par%series_file)) then
+                call nml_read(filename,trim(par_label),"series_var",      ts%par%series_var)
+                call nml_read(filename,trim(par_label),"series_time_name",ts%par%series_time_name)
+                call series_load(ts%ser,ts%par%series_file, &
+                                    varname=ts%par%series_var, &
+                                    time_name=ts%par%series_time_name, &
+                                    sigma_name=trim(ts%par%series_var)//"_sd")
+            else
+                call series_load(ts%ser,ts%par%series_file)
+            end if
+
+            ts%nc = ts%ser%nc
+
+        else
+            ! Time-driven (analytic) or response-driven (feedback) scalar forcing
+            call nml_read(filename,trim(par_label),"with_kill",   ts%par%with_kill)
+            call nml_read(filename,trim(par_label),"dt_ave",      ts%par%dt_ave)
+            call nml_read(filename,trim(par_label),"dt_init",     ts%par%dt_init)
+            call nml_read(filename,trim(par_label),"dt_ramp",     ts%par%dt_ramp)
+            call nml_read(filename,trim(par_label),"dt_conv",     ts%par%dt_conv)
+            call nml_read(filename,trim(par_label),"df_sign",     ts%par%df_sign)
+            call nml_read(filename,trim(par_label),"tol",         ts%par%tol)
+            call nml_read(filename,trim(par_label),"df_dt_max",   ts%par%df_dt_max)
+            call nml_read(filename,trim(par_label),"f_min",       ts%par%f_min)
+            call nml_read(filename,trim(par_label),"f_max",       ts%par%f_max)
+            call nml_read(filename,trim(par_label),"f_conv",      ts%par%f_conv)
+
+            ! Make sure sign is only +1/-1
+            ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
+
+            ! Consistency check
+            if (ts%par%df_sign .eq. -1.0_wp .and. trim(ts%par%method) .eq. "sin") then
+                write(*,*) "tsgen:: Error: method='sin' can only be used with &
+                &df_sign=1.0 (non-negative). Please set df_sign=1.0 or use &
+                &a different method."
+                stop
+            end if
+
+            ! Kill is not meaningful for periodic forcing
+            if (trim(ts%par%method) .eq. "sin") ts%par%with_kill = .FALSE.
+
+            ts%nc = 1
+        end if
 
         ! Define label for this tsgen object
         ts%par%label = "tsgen"
@@ -137,16 +189,34 @@ contains
             ts%dv_dt = MV
         end if
 
+        ! Allocate per-channel output buffers for a multi-channel series
+        if (allocated(ts%vec%f_now))  deallocate(ts%vec%f_now)
+        if (allocated(ts%vec%f_mean)) deallocate(ts%vec%f_mean)
+        if (allocated(ts%vec%eps))    deallocate(ts%vec%eps)
+        if (ts%nc .gt. 1) then
+            allocate(ts%vec%f_now(ts%nc))
+            allocate(ts%vec%f_mean(ts%nc))
+            allocate(ts%vec%eps(ts%nc))
+            ts%vec%eps = 0.0_wp
+        end if
+
         ts%dv_dt_ave = 0.0_wp
         ts%df_dt     = 0.0_wp
 
         ts%pi_df  = DF_DT_MIN
-        ts%pi_eta = ts%par%eps
+        ts%pi_eta = ts%par%tol
 
-        ! Initial forcing value (analytic series at elapsed time zero)
-        ts%f_mean_now = eval_open(ts%par,0.0_wp)
-        ts%eta_now    = 0.0_wp
-        ts%f_now      = ts%f_mean_now
+        ! Initial forcing value
+        if (trim(ts%par%method) .eq. "series") then
+            ! Series interpolates on the absolute time axis stored in the file,
+            ! so sample it at the initial simulation time.
+            call eval_series(ts,time,noise=.FALSE.)
+        else
+            ! Analytic series at elapsed time zero
+            ts%f_mean_now = eval_open(ts%par,0.0_wp)
+            ts%eps        = 0.0_wp
+            ts%f_now      = ts%f_mean_now
+        end if
 
         ! Kill switch off to start
         ts%kill = .FALSE.
@@ -180,15 +250,29 @@ contains
             ts%dt = 0.0_wp
         end if
 
+        ! Remember previous mean forcing (for the diagnostic rate df_dt)
+        f_mean_prev = ts%f_mean_now
+
+        if (trim(ts%par%method) .eq. "series") then
+            ! Tabulated series: interpolate on the file's own (absolute) axis.
+            call eval_series(ts,time,noise=.TRUE.)
+
+            if (ts%dt .gt. 0.0_wp) then
+                ts%df_dt = (ts%f_mean_now - f_mean_prev)/ts%dt
+            else
+                ts%df_dt = 0.0_wp
+            end if
+
+            ts%time_prev = time
+            return
+        end if
+
         ! Update the history buffers / windowed derivative when they are in use
         ! (feedback control and/or the kill switch need dv_dt_ave)
         if (ts%par%feedback .or. ts%par%with_kill) call update_history(ts,time,var,dv_dt)
 
         ! Elapsed time since initialization
         time_elapsed = time - ts%time_init
-
-        ! Remember previous mean forcing (for the diagnostic rate df_dt)
-        f_mean_prev = ts%f_mean_now
 
         if (ts%par%feedback) then
             ! Response-driven (feedback) control: modulate the forcing rate from
@@ -227,17 +311,17 @@ contains
         ! Optional noise on top of the mean forcing (only on a non-zero step)
         if (ts%dt .gt. 0.0_wp) then
             if (ts%par%sigma .gt. 0.0_wp) then
-                call gen_random_normal(ts%eta_now,mu=0.0_wp,sigma=ts%par%sigma)
+                call gen_random_normal(ts%eps,mu=0.0_wp,sigma=ts%par%sigma)
             else
-                ts%eta_now = 0.0_wp
+                ts%eps = 0.0_wp
             end if
         end if
 
         ! Real forcing value = mean + noise
-        ts%f_now = ts%f_mean_now + ts%eta_now
+        ts%f_now = ts%f_mean_now + ts%eps
 
         ! Kill switch: stop once the response has equilibrated at a bound
-        if (ts%par%with_kill .and. abs(ts%dv_dt_ave) .lt. ts%par%eps) then
+        if (ts%par%with_kill .and. abs(ts%dv_dt_ave) .lt. ts%par%tol) then
             if (ts%par%df_sign .gt. 0.0_wp .and. ts%f_mean_now .ge. ts%par%f_max) ts%kill = .TRUE.
             if (ts%par%df_sign .lt. 0.0_wp .and. ts%f_mean_now .le. ts%par%f_min) ts%kill = .TRUE.
         end if
@@ -248,6 +332,50 @@ contains
         return
 
     end subroutine tsgen_update
+
+    subroutine eval_series(ts,time,noise)
+        ! Evaluate the tabulated forcing series at the (absolute) time `time`,
+        ! filling the scalar outputs (channel mean when nc>1) and, for a
+        ! multi-channel series, the per-channel `vec` buffers.
+
+        type(tsgen_class), intent(INOUT) :: ts
+        real(wp),           intent(IN)    :: time
+        logical,            intent(IN)    :: noise
+
+        ! Local automatic arrays sized by the channel count
+        real(wp) :: vmean(ts%nc)
+        real(wp) :: vsig(ts%nc)
+        real(wp) :: vnoise(ts%nc)
+        integer  :: c
+
+        vmean = series_interp(ts%ser,time)
+
+        ! Per-channel noise (only on a non-zero step): use the series' own
+        ! standard deviation if present, otherwise fall back to par%sigma.
+        vnoise = 0.0_wp
+        if (noise .and. ts%dt .gt. 0.0_wp) then
+            vsig = series_interp_sig(ts%ser,time)
+            do c = 1, ts%nc
+                if (vsig(c) .le. 0.0_wp) vsig(c) = ts%par%sigma
+                if (vsig(c) .gt. 0.0_wp) call gen_random_normal(vnoise(c),mu=0.0_wp,sigma=vsig(c))
+            end do
+        end if
+
+        ! Scalar outputs (channel mean for a multi-channel series)
+        ts%f_mean_now = sum(vmean)  / real(ts%nc,wp)
+        ts%eps        = sum(vnoise) / real(ts%nc,wp)
+        ts%f_now      = ts%f_mean_now + ts%eps
+
+        ! Per-channel outputs
+        if (ts%nc .gt. 1) then
+            ts%vec%f_mean = vmean
+            ts%vec%eps    = vnoise
+            ts%vec%f_now  = vmean + vnoise
+        end if
+
+        return
+
+    end subroutine eval_series
 
     subroutine update_history(ts,time,var,dv_dt)
         ! Push the current (time,var,dv_dt) onto the history buffers and refresh
@@ -381,14 +509,14 @@ contains
 
             case("exp")
                 ! Exponential response (sharp, tuneable): scale in [0,1], ~0.6 at
-                ! dv_dt==eps. Cap the exponent so exp() cannot overflow.
-                dvdt_fac = min(abs(ts%dv_dt_ave)/ts%par%eps,10.0_wp)
+                ! dv_dt==tol. Cap the exponent so exp() cannot overflow.
+                dvdt_fac = min(abs(ts%dv_dt_ave)/ts%par%tol,10.0_wp)
                 f_scale  = exp(-dvdt_fac)
                 ts%df_dt = DF_DT_MIN + f_scale*(ts%par%df_dt_max-DF_DT_MIN)
 
             case default    ! PI42, H312b, H312PID, H321PID, PID1
                 ! Adaptive rate via proportional-integral(-derivative) controller
-                call calc_forcing_rate_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%eps, &
+                call calc_forcing_rate_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%tol, &
                                     DF_DT_MIN,ts%par%df_dt_max,pi_order,ts%par%method)
 
                 ! Push newest error/rate to the front of the controller history
@@ -407,10 +535,11 @@ contains
     end subroutine calc_df_dt_feedback
 
     subroutine tsgen_tabulate(ts,time,f,df_dt,verbose)
-        ! Sample the analytic (time-driven) forcing series over a caller-supplied
-        ! time axis, for validation / diagnostics / output. Only valid for
-        ! time-driven methods; feedback methods have no closed form and must be
-        ! stepped online via tsgen_update.
+        ! Sample the (time-driven) forcing series over a caller-supplied time
+        ! axis, for validation / diagnostics / output. Valid for the analytic
+        ! and tabulated-series methods (the latter reported as the channel mean);
+        ! feedback methods have no closed form and must be stepped online via
+        ! tsgen_update.
 
         type(tsgen_class),  intent(IN)  :: ts
         real(wp),           intent(IN)  :: time(:)      ! [yr] simulation-time axis
@@ -421,6 +550,7 @@ contains
         ! Local variables
         integer  :: i, n
         logical  :: verb
+        logical  :: is_series
 
         verb = .FALSE.
         if (present(verbose)) verb = verbose
@@ -431,10 +561,18 @@ contains
             stop
         end if
 
+        is_series = (trim(ts%par%method) .eq. "series")
+
         n = size(time,1)
 
         do i = 1, n
-            f(i) = eval_open(ts%par, time(i) - ts%time_init)
+            if (is_series) then
+                ! Series carries its own absolute time axis (no init offset);
+                ! report the channel mean to match the scalar f_now semantics.
+                f(i) = sum(series_interp(ts%ser,time(i))) / real(ts%nc,wp)
+            else
+                f(i) = eval_open(ts%par, time(i) - ts%time_init)
+            end if
         end do
 
         if (present(df_dt)) then
@@ -487,7 +625,49 @@ contains
 
     end subroutine tsgen_write
 
-    subroutine calc_forcing_rate_pc(df_new,df,eta,eps,df_min,df_max,pc_k,controller)
+    subroutine tsgen_par_defaults(par)
+        ! Neutral values for the ramp/feedback parameters, used by methods (e.g.
+        ! "series") that do not read them, so downstream code never sees
+        ! uninitialized fields.
+
+        type(tsgen_par_class), intent(INOUT) :: par
+
+        par%with_kill = .FALSE.
+        par%dt_init   = 0.0_wp
+        par%dt_ramp   = 1.0_wp
+        par%dt_conv   = 1.0_wp
+        par%dt_ave    = 1.0_wp
+        par%df_sign   = 1.0_wp
+        par%tol       = 1.0_wp
+        par%df_dt_max = 0.0_wp
+        par%f_min     = 0.0_wp
+        par%f_max     = 0.0_wp
+        par%f_conv    = 0.0_wp
+
+        return
+
+    end subroutine tsgen_par_defaults
+
+    logical function series_is_netcdf(filename)
+        ! .TRUE. when the filename extension denotes a netCDF file.
+
+        character(len=*), intent(IN) :: filename
+        integer :: idot
+
+        series_is_netcdf = .FALSE.
+        idot = index(filename,".",back=.TRUE.)
+        if (idot .gt. 0) then
+            select case(trim(adjustl(filename(idot+1:))))
+                case("nc","nc4","cdf","netcdf")
+                    series_is_netcdf = .TRUE.
+            end select
+        end if
+
+        return
+
+    end function series_is_netcdf
+
+    subroutine calc_forcing_rate_pc(df_new,df,eta,tol,df_min,df_max,pc_k,controller)
         ! Adaptive forcing-rate update following the general predictor-corrector
         ! (pc) controller algorithms of Cheng et al. (2017, GMD). The forcing
         ! increment df plays the role of the "timestep" in the original scheme.
@@ -497,7 +677,7 @@ contains
         real(wp), intent(OUT) :: df_new               ! [f/yr] Forcing rate (n+1)
         real(wp), intent(IN)  :: df(:)                ! [f/yr] Forcing rates (n:n-2)
         real(wp), intent(IN)  :: eta(:)               ! [X/yr] Error signal, |dv_dt_ave| (n:n-2)
-        real(wp), intent(IN)  :: eps                  ! [--]   Tolerance value (eg, eps=1e-4)
+        real(wp), intent(IN)  :: tol                  ! [--]   Tolerance value (eg, tol=1e-4)
         real(wp), intent(IN)  :: df_min               ! [f/yr] Minimum allowed rate, must be > 0
         real(wp), intent(IN)  :: df_max               ! [f/yr] Maximum allowed rate
         integer,    intent(IN)  :: pc_k                 ! pc_k gives the order of the timestepping scheme (pc_k=2 for FE-SBE, pc_k=3 for AB-SAM)
@@ -536,18 +716,18 @@ contains
 
             case("PI42")
                 ! Söderlind and Wang, 2006; Cheng et al., 2017
-                ! Deeper discussion in Söderlind, 2002. Note for example, 
+                ! Deeper discussion in Söderlind, 2002. Note for example,
                 ! that Söderlind (2002) recommends:
-                ! k*k_i >= 0.3 
-                ! k*k_p >= 0.2 
-                ! k*k_i + k*k_p <= 0.7 
+                ! k*k_i >= 0.3
+                ! k*k_p >= 0.2
+                ! k*k_i + k*k_p <= 0.7
                 ! However, the default values of Söderlind and Wang (2006) and Cheng et al (2017)
-                ! are outside of these bounds. 
+                ! are outside of these bounds.
 
-                ! Default parameter values 
+                ! Default parameter values
                 k_i = 2.0_wp / (pc_k*5.0_wp)
                 k_p = 1.0_wp / (pc_k*5.0_wp)
-                
+
                 ! Improved parameter values (reduced oscillations)
 !                 k_i = 4.0_wp / (pc_k*10.0_wp)
 !                 k_p = 3.0_wp / (pc_k*10.0_wp)
@@ -557,38 +737,38 @@ contains
 !                 k_p = 6.5_wp / (pc_k*10.0_wp)
 
                 ! Default parameter values
-                rho_n = calc_pi_rho_pi42(eta_n,eta_nm1,rho_nm1,eps,k_i,k_p,alpha_2=0.0_wp)
+                rho_n = calc_pi_rho_pi42(eta_n,eta_nm1,rho_nm1,tol,k_i,k_p,alpha_2=0.0_wp)
 
-            case("H312b") 
-                ! Söderlind (2003) H312b, Eq. 31+ (unlabeled) 
-                
-                rho_n = calc_pi_rho_H312b(eta_n,eta_nm1,eta_nm2,rho_nm1,rho_nm2,eps,k=real(pc_k,wp),b=8.0_wp)
+            case("H312b")
+                ! Söderlind (2003) H312b, Eq. 31+ (unlabeled)
 
-            case("H312PID") 
+                rho_n = calc_pi_rho_H312b(eta_n,eta_nm1,eta_nm2,rho_nm1,rho_nm2,tol,k=real(pc_k,wp),b=8.0_wp)
+
+            case("H312PID")
                 ! Söderlind (2003) H312PD, Eq. 38
                 ! Note: Suggested k_i =(2/9)*1/pc_k, but lower value gives more stable solution
 
                 !k_i = (2.0_wp/9.0_wp)*1.0_wp/real(pc_k,wp)
                 k_i = 0.08_wp/real(pc_k,wp)
 
-                rho_n = calc_pi_rho_H312PID(eta_n,eta_nm1,eta_nm2,eps,k_i)
+                rho_n = calc_pi_rho_H312PID(eta_n,eta_nm1,eta_nm2,tol,k_i)
 
             case("H321PID")
 
                 k_i = 0.1  / real(pc_k,wp)
-                k_p = 0.45 / real(pc_k,wp) 
+                k_p = 0.45 / real(pc_k,wp)
 
-                rho_n = calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,df_n,df_nm1,eps,k_i,k_p)
-                
+                rho_n = calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,df_n,df_nm1,tol,k_i,k_p)
+
             case("PID1")
 
-                k_i = 0.175 
+                k_i = 0.175
                 k_p = 0.075
-                k_d = 0.01 
+                k_d = 0.01
 
-                rho_n = calc_pi_rho_PID1(eta_n,eta_nm1,eta_nm2,eps,k_i,k_p,k_d)
-                
-            case DEFAULT 
+                rho_n = calc_pi_rho_PID1(eta_n,eta_nm1,eta_nm2,tol,k_i,k_p,k_d)
+
+            case DEFAULT
 
                 write(*,*) "calc_forcing_rate_pc:: Error: controller not recognized."
                 write(*,*) "controller = ", trim(controller)
@@ -612,148 +792,148 @@ contains
 
     end subroutine calc_forcing_rate_pc
 
-    function calc_pi_rho_pi42(eta_n,eta_nm1,rho_nm1,eps,k_i,k_p,alpha_2) result(rho_n)
+    function calc_pi_rho_pi42(eta_n,eta_nm1,rho_nm1,tol,k_i,k_p,alpha_2) result(rho_n)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(IN) :: eta_n 
-        real(wp), intent(IN) :: eta_nm1 
-        real(wp), intent(IN) :: rho_nm1 
-        real(wp), intent(IN) :: eps 
-        real(wp), intent(IN) :: k_i 
+        real(wp), intent(IN) :: eta_n
+        real(wp), intent(IN) :: eta_nm1
+        real(wp), intent(IN) :: rho_nm1
+        real(wp), intent(IN) :: tol
+        real(wp), intent(IN) :: k_i
         real(wp), intent(IN) :: k_p
-        real(wp), intent(IN) :: alpha_2 
-        real(wp) :: rho_n 
+        real(wp), intent(IN) :: alpha_2
+        real(wp) :: rho_n
 
         ! Söderlind and Wang, 2006; Cheng et al., 2017
         ! Original formulation: Söderlind, 2002, Eq. 3.12:
-        rho_n   = (eps/eta_n)**(k_i+k_p) * (eps/eta_nm1)**(-k_p) * rho_nm1**(-alpha_2)
+        rho_n   = (tol/eta_n)**(k_i+k_p) * (tol/eta_nm1)**(-k_p) * rho_nm1**(-alpha_2)
 
-        return 
+        return
 
     end function calc_pi_rho_pi42
 
-    function calc_pi_rho_H312b(eta_n,eta_nm1,eta_nm2,rho_nm1,rho_nm2,eps,k,b) result(rho_n)
+    function calc_pi_rho_H312b(eta_n,eta_nm1,eta_nm2,rho_nm1,rho_nm2,tol,k,b) result(rho_n)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(IN) :: eta_n 
-        real(wp), intent(IN) :: eta_nm1 
-        real(wp), intent(IN) :: eta_nm2 
+        real(wp), intent(IN) :: eta_n
+        real(wp), intent(IN) :: eta_nm1
+        real(wp), intent(IN) :: eta_nm2
         real(wp), intent(IN) :: rho_nm1
         real(wp), intent(IN) :: rho_nm2
-        real(wp), intent(IN) :: eps 
-        real(wp), intent(IN) :: k 
-        real(wp), intent(IN) :: b 
-        real(wp) :: rho_n 
+        real(wp), intent(IN) :: tol
+        real(wp), intent(IN) :: k
+        real(wp), intent(IN) :: b
+        real(wp) :: rho_n
 
-        ! Local variables 
-        real(wp) :: beta_1, beta_2, beta_3 
-        real(wp) :: alpha_2, alpha_3 
+        ! Local variables
+        real(wp) :: beta_1, beta_2, beta_3
+        real(wp) :: alpha_2, alpha_3
 
         beta_1  =  1.0_wp / (k*b)
         beta_2  =  2.0_wp / (k*b)
         beta_3  =  1.0_wp / (k*b)
-        alpha_2 = -3.0_wp / b 
-        alpha_3 = -1.0_wp / b 
+        alpha_2 = -3.0_wp / b
+        alpha_3 = -1.0_wp / b
 
-        ! Söderlind (2003) H312b, Eq. 31+ (unlabeled) 
-        rho_n   = (eps/eta_n)**beta_1 * (eps/eta_nm1)**beta_2 * (eps/eta_nm2)**beta_3 &
-                            * rho_nm1**alpha_2 * rho_nm2**alpha_3 
+        ! Söderlind (2003) H312b, Eq. 31+ (unlabeled)
+        rho_n   = (tol/eta_n)**beta_1 * (tol/eta_nm1)**beta_2 * (tol/eta_nm2)**beta_3 &
+                            * rho_nm1**alpha_2 * rho_nm2**alpha_3
 
-        return 
+        return
 
     end function calc_pi_rho_H312b
 
-    function calc_pi_rho_H312PID(eta_n,eta_nm1,eta_nm2,eps,k_i) result(rho_n)
+    function calc_pi_rho_H312PID(eta_n,eta_nm1,eta_nm2,tol,k_i) result(rho_n)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(IN) :: eta_n 
-        real(wp), intent(IN) :: eta_nm1 
-        real(wp), intent(IN) :: eta_nm2 
-        real(wp), intent(IN) :: eps 
-        real(wp), intent(IN) :: k_i  
-        real(wp) :: rho_n 
+        real(wp), intent(IN) :: eta_n
+        real(wp), intent(IN) :: eta_nm1
+        real(wp), intent(IN) :: eta_nm2
+        real(wp), intent(IN) :: tol
+        real(wp), intent(IN) :: k_i
+        real(wp) :: rho_n
 
-        ! Local variables 
+        ! Local variables
         real(wp) :: k_i_1, k_i_2, k_i_3
 
-        k_i_1   = k_i / 4.0_wp 
-        k_i_2   = k_i / 2.0_wp 
-        k_i_3   = k_i / 4.0_wp 
+        k_i_1   = k_i / 4.0_wp
+        k_i_2   = k_i / 2.0_wp
+        k_i_3   = k_i / 4.0_wp
 
         ! Söderlind (2003) H312PID, Eq. 38
-        rho_n   = (eps/eta_n)**k_i_1 * (eps/eta_nm1)**k_i_2 * (eps/eta_nm2)**k_i_3
+        rho_n   = (tol/eta_n)**k_i_1 * (tol/eta_nm1)**k_i_2 * (tol/eta_nm2)**k_i_3
 
-        return 
+        return
 
     end function calc_pi_rho_H312PID
 
-    function calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,dt_n,dt_nm1,eps,k_i,k_p) result(rho_n)
+    function calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,dt_n,dt_nm1,tol,k_i,k_p) result(rho_n)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(IN) :: eta_n 
-        real(wp), intent(IN) :: eta_nm1 
-        real(wp), intent(IN) :: eta_nm2 
-        real(wp), intent(IN) :: dt_n 
-        real(wp), intent(IN) :: dt_nm1 
-        real(wp), intent(IN) :: eps 
-        real(wp), intent(IN) :: k_i  
+        real(wp), intent(IN) :: eta_n
+        real(wp), intent(IN) :: eta_nm1
+        real(wp), intent(IN) :: eta_nm2
+        real(wp), intent(IN) :: dt_n
+        real(wp), intent(IN) :: dt_nm1
+        real(wp), intent(IN) :: tol
+        real(wp), intent(IN) :: k_i
         real(wp), intent(IN) :: k_p
-        real(wp) :: rho_n 
+        real(wp) :: rho_n
 
-        ! Local variables 
+        ! Local variables
         real(wp) :: k_i_1, k_i_2, k_i_3
 
-        k_i_1   =   0.75_wp*k_i + 0.50_wp*k_p 
-        k_i_2   =   0.50_wp*k_i 
+        k_i_1   =   0.75_wp*k_i + 0.50_wp*k_p
+        k_i_2   =   0.50_wp*k_i
         k_i_3   = -(0.25_wp*k_i + 0.50_wp*k_p)
 
         ! Söderlind (2003) H321PID, Eq. 42
-        rho_n   = (eps/eta_n)**k_i_1 * (eps/eta_nm1)**k_i_2 * (eps/eta_nm2)**k_i_3 * (dt_n / dt_nm1)
+        rho_n   = (tol/eta_n)**k_i_1 * (tol/eta_nm1)**k_i_2 * (tol/eta_nm2)**k_i_3 * (dt_n / dt_nm1)
 
-        return 
+        return
 
     end function calc_pi_rho_H321PID
 
-    function calc_pi_rho_PID1(eta_n,eta_nm1,eta_nm2,eps,k_i,k_p,k_d) result(rho_n)
+    function calc_pi_rho_PID1(eta_n,eta_nm1,eta_nm2,tol,k_i,k_p,k_d) result(rho_n)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(IN) :: eta_n 
-        real(wp), intent(IN) :: eta_nm1 
-        real(wp), intent(IN) :: eta_nm2 
-        real(wp), intent(IN) :: eps 
-        real(wp), intent(IN) :: k_i  
+        real(wp), intent(IN) :: eta_n
+        real(wp), intent(IN) :: eta_nm1
+        real(wp), intent(IN) :: eta_nm2
+        real(wp), intent(IN) :: tol
+        real(wp), intent(IN) :: k_i
         real(wp), intent(IN) :: k_p
         real(wp), intent(IN) :: k_d
-        real(wp) :: rho_n 
+        real(wp) :: rho_n
 
         ! https://www.mathematik.uni-dortmund.de/~kuzmin/cfdintro/lecture8.pdf
         ! Page 20 (theoretical basis unclear/unknown)
-        rho_n   = (eps/eta_n)**k_i * (eta_nm1/eta_n)**k_p * (eta_nm1**2/(eta_n*eta_nm2))**k_d
+        rho_n   = (tol/eta_n)**k_i * (eta_nm1/eta_n)**k_p * (eta_nm1**2/(eta_n*eta_nm2))**k_d
 
-        return 
+        return
 
     end function calc_pi_rho_PID1
 
 
     subroutine calc_sin_now(f_now,time_now,p,f_min,f_max,x_offset)
 
-        implicit none 
+        implicit none
 
-        real(wp), intent(OUT) :: f_now 
-        real(wp), intent(IN)  :: time_now 
+        real(wp), intent(OUT) :: f_now
+        real(wp), intent(IN)  :: time_now
         real(wp), intent(IN)  :: p
         real(wp), intent(IN)  :: f_min
-        real(wp), intent(IN)  :: f_max 
+        real(wp), intent(IN)  :: f_max
         real(wp), intent(IN)  :: x_offset
 
-        ! Local variables 
-        real(wp) :: amp 
-        real(wp) :: y_offset 
+        ! Local variables
+        real(wp) :: amp
+        real(wp) :: y_offset
 
         ! Get sinusoidal parameters
         amp      = 0.5_wp * (f_max - f_min)
@@ -762,32 +942,32 @@ contains
         ! Calculate expected current forcing value based on time elapsed
         f_now = amp*sin(2.0_wp*pi*(time_now+x_offset)/p) + y_offset
 
-        return 
+        return
 
     end subroutine calc_sin_now
 
 
     subroutine gen_random_normal(ynrm,mu,sigma)
-        ! Calculate a random number from a normal distribution 
-        ! following the Box-Mueller algorithm 
-        ! https://en.wikipedia.org/wiki/Normal_distribution#Generating_values_from_normal_distribution 
+        ! Calculate a random number from a normal distribution
+        ! following the Box-Mueller algorithm
+        ! https://en.wikipedia.org/wiki/Normal_distribution#Generating_values_from_normal_distribution
 
-        implicit none 
+        implicit none
 
         real(wp), intent(OUT) :: ynrm
-        real(wp), intent(IN)  :: mu 
-        real(wp), intent(IN)  :: sigma 
+        real(wp), intent(IN)  :: mu
+        real(wp), intent(IN)  :: sigma
 
         ! Local variables
         real(wp) :: yuni(2)
 
         ! Get 2 numbers from uniform distribution between 0 and 1
         call random_number(yuni)
-        
+
         ! Convert to normal distribution using the Box-Mueller algorithm
         ynrm = mu + sigma * sqrt(-2.0_wp*log(yuni(1))) * cos(2.0_wp*pi*yuni(2))
 
-        return 
+        return
 
     end subroutine gen_random_normal
 

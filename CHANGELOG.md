@@ -13,11 +13,19 @@ All notable changes to fesm-utils are documented here.
   self-check.
 - **tsgen** (time-series generator): transient scalar forcing driven by time
   and/or model response. Time-driven methods (`const`, `ramp-time`,
-  `ramp-time-step`, `ramp-slope`, `sin`) evaluate an analytic series;
-  response-driven methods (`exp`, `PI42`, `H312b`, `H312PID`, `H321PID`,
-  `PID1`) run stateful feedback controllers. Includes `tsgen_tabulate` /
-  `tsgen_write` diagnostics and a `make test-tsgen` self-check. Supersedes the
-  former (unbuilt) `hyster` module.
+  `ramp-time-step`, `ramp-slope`, `sin`) evaluate an analytic series; the
+  `series` method reads a tabulated curve from file (via the `series` module,
+  scalar or multi-channel); response-driven methods (`exp`, `PI42`, `H312b`,
+  `H312PID`, `H321PID`, `PID1`) run stateful feedback controllers. For a
+  multi-channel series, `f_now` is the channel mean and per-channel values are
+  in `vec%f_now(:)`. Includes `tsgen_tabulate` / `tsgen_write` diagnostics and
+  a `make test-tsgen` self-check. Supersedes the former (unbuilt) `hyster`
+  module.
+
+### Changed
+- **tsgen** namelist: the feedback-convergence tolerance is renamed `eps` →
+  `tol`; `eps` now denotes the realized noise sample (was `eta_now`
+  internally). Existing tsgen namelists must rename their `eps` key to `tol`.
 
 ## [v1.2] - 2026-07-08
 

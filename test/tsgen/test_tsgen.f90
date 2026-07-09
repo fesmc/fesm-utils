@@ -12,6 +12,7 @@ program test_tsgen
     implicit none
 
     character(len=*), parameter :: nml_file = "test_tsgen_tmp.nml"
+    character(len=*), parameter :: ser_file = "test_tsgen_series.dat"
     real(wp),         parameter :: tol = real(1e-4,wp)
     integer :: nfail
 
@@ -27,6 +28,7 @@ program test_tsgen
     call test_ramp_time()
     call test_ramp_time_step()
     call test_sin()
+    call test_series_method()
     call test_feedback_bounds()
     call test_kill()
 
@@ -37,12 +39,35 @@ program test_tsgen
         write(*,"(a,i0,a)") " tsgen tests FAILED: ", nfail, " case(s)."
     end if
 
-    ! Clean up the temporary namelist
+    ! Clean up the temporary files
     call remove_file(nml_file)
+    call remove_file(ser_file)
 
     if (nfail > 0) stop 1
 
 contains
+
+    subroutine test_series_method()
+        ! Tabulated ascii series [time value]: forcing must equal the clamped
+        ! linear interpolation of the file at the update time (no noise).
+        type(tsgen_class) :: ts
+        integer :: u
+
+        open(newunit=u, file=ser_file, status="replace", action="write")
+        write(u,"(a)") "   0.0    0.0"
+        write(u,"(a)") "1000.0   10.0"
+        write(u,"(a)") "2000.0   30.0"
+        close(u)
+
+        call tsgen_init(ts, nml_file, 0.0_wp, label="ser")
+
+        call tsgen_update(ts, 500.0_wp, 0.0_wp)
+        call check("series     f(500)  == 5 ", ts%f_now,  5.0_wp)
+        call tsgen_update(ts, 1500.0_wp, 0.0_wp)
+        call check("series     f(1500) == 20", ts%f_now, 20.0_wp)
+        call tsgen_update(ts, 3000.0_wp, 0.0_wp)
+        call check("series     clamp(3000) == 30", ts%f_now, 30.0_wp)
+    end subroutine test_series_method
 
     subroutine test_ramp_time()
         ! Linear ramp 0 -> 10 over dt_ramp=1000, then held at 10.
@@ -176,13 +201,22 @@ contains
         call put(u, "sin",  "sin",            ".FALSE.", 100.0_wp, 2000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.01_wp, 1.0_wp)
         call put(u, "pi",   "PI42",           ".TRUE.",  200.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-2_wp, 0.05_wp, 1.0_wp)
         call put(u, "kill", "const",          ".TRUE.",  100.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.02_wp, 1.0_wp)
+
+        ! Tabulated-series method: only method/sigma/series_file are consulted.
+        write(u,"(a)") "&tsgen_ser"
+        write(u,"(a)") "    method      = ""series"""
+        write(u,"(a)") "    sigma       = 0.0"
+        write(u,"(a)") "    series_file = """//ser_file//""""
+        write(u,"(a)") "/"
+        write(u,"(a)") ""
+
         close(u)
     end subroutine write_namelist
 
-    subroutine put(u, label, method, kill, dt_ave, dt_ramp, dt_conv, f_conv, eps, df_dt_max, df_sign)
+    subroutine put(u, label, method, kill, dt_ave, dt_ramp, dt_conv, f_conv, tolv, df_dt_max, df_sign)
         integer,          intent(in) :: u
         character(len=*), intent(in) :: label, method, kill
-        real(wp),         intent(in) :: dt_ave, dt_ramp, dt_conv, f_conv, eps, df_dt_max, df_sign
+        real(wp),         intent(in) :: dt_ave, dt_ramp, dt_conv, f_conv, tolv, df_dt_max, df_sign
         write(u,"(a)")        "&tsgen_"//trim(label)
         write(u,"(a)")        "    method    = """//trim(method)//""""
         write(u,"(a)")        "    with_kill = "//trim(kill)
@@ -191,7 +225,7 @@ contains
         write(u,"(a,g0)")     "    dt_ramp   = ", dt_ramp
         write(u,"(a,g0)")     "    dt_conv   = ", dt_conv
         write(u,"(a,g0)")     "    df_sign   = ", df_sign
-        write(u,"(a,g0)")     "    eps       = ", eps
+        write(u,"(a,g0)")     "    tol       = ", tolv
         write(u,"(a,g0)")     "    df_dt_max = ", df_dt_max
         write(u,"(a)")        "    sigma     = 0.0"
         write(u,"(a)")        "    f_min     = 0.0"
