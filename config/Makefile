@@ -156,6 +156,9 @@ $(objdir)/precision.o: $(srcdir)/precision.f90
 $(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/root_finder.o: $(srcdir)/root_finder.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/staggering.o: $(srcdir)/staggering.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -209,6 +212,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/ncio_transpose.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
+					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
 					$(objdir)/staggering.o \
 					$(objdir)/timer.o \
@@ -294,6 +298,14 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
+		@echo " "
+
+# root_finder test program
+test-root : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_roots.x $(testdir)/root/test_roots.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    root_finder test program ready: $(bindir)/test_roots.x"
 		@echo " "
 
 bench-coords : fesmutils-static
@@ -383,6 +395,7 @@ usage:
 	@echo " make fftw|lis|shtns   : builds one external library (openmp=0|1)"
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
+	@echo " make test-root        : compiles the root_finder test program"
 	@echo " make clean            : cleans object files"
 	@echo ""
 
