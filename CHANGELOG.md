@@ -5,6 +5,12 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
+- **series** (tabulated time-series reader): load a scalar (`nc=1`) or
+  multi-channel (`nc>1`, e.g. 12 monthly) forcing/index curve from an ASCII
+  table or netCDF variable (auto-detected by extension), with clamped-linear
+  interpolation and an optional per-time standard-deviation companion. The
+  lightweight 0-D cousin of `varslice`. Includes a `make test-series`
+  self-check.
 - **tsgen** (time-series generator): transient scalar forcing driven by time
   and/or model response. Time-driven methods (`const`, `ramp-time`,
   `ramp-time-step`, `ramp-slope`, `sin`) evaluate an analytic series;

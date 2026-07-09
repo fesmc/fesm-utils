@@ -181,7 +181,12 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
+$(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/interp1D.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/series.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 fesmutils_libs = 	$(objdir)/constants.o \
@@ -220,6 +225,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o \
+					$(objdir)/series.o \
 					$(objdir)/tsgen.o
 
 ###############################################
@@ -313,6 +319,14 @@ bench-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
+		@echo " "
+
+# series (tabulated time-series reader) test program
+test-series : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_series.x $(testdir)/series/test_series.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    series test program ready: $(bindir)/test_series.x"
 		@echo " "
 
 # tsgen (time-series generator) test program
