@@ -1,5 +1,5 @@
 
-module hyster 
+module tsgen 
 
     use nml 
     use ncio 
@@ -11,7 +11,7 @@ module hyster
 
 
     
-    type hyster_par_class  
+    type tsgen_par_class  
         character(len=56) :: label 
         character(len=56) :: method 
         logical  :: with_kill  
@@ -33,9 +33,9 @@ module hyster
 
     end type 
     
-    type hyster_class
+    type tsgen_class
 
-        type(hyster_par_class) :: par 
+        type(tsgen_par_class) :: par 
 
         ! variables 
         real(wp), allocatable :: time(:)
@@ -56,15 +56,15 @@ module hyster
     end type 
 
     private
-    public :: hyster_class
-    public :: hyster_init 
-    public :: hyster_calc_forcing
+    public :: tsgen_class
+    public :: tsgen_init 
+    public :: tsgen_update
 
 contains
 
-    subroutine hyster_init(hyst,filename,time,label)
+    subroutine tsgen_init(ts,filename,time,label)
 
-        type(hyster_class), intent(INOUT) :: hyst 
+        type(tsgen_class), intent(INOUT) :: ts 
         character(len=*),   intent(IN)    :: filename 
         real(wp),           intent(IN)    :: time 
         character(len=*),   intent(IN), optional :: label 
@@ -72,30 +72,30 @@ contains
         integer :: ntot 
         character(len=56) :: par_label 
 
-        par_label = "hyster"
+        par_label = "tsgen"
         if (present(label)) par_label = trim(par_label)//"_"//trim(label)
 
         ! Load parameters
-        call nml_read(filename,trim(par_label),"method",      hyst%par%method)
-        call nml_read(filename,trim(par_label),"with_kill",   hyst%par%with_kill)
-        call nml_read(filename,trim(par_label),"dt_ave",      hyst%par%dt_ave)
-        call nml_read(filename,trim(par_label),"dt_init",     hyst%par%dt_init)
-        call nml_read(filename,trim(par_label),"dt_ramp",     hyst%par%dt_ramp)
-        call nml_read(filename,trim(par_label),"dt_conv",      hyst%par%dt_conv)
-        call nml_read(filename,trim(par_label),"df_sign",     hyst%par%df_sign)
-        call nml_read(filename,trim(par_label),"eps",         hyst%par%eps)
-        call nml_read(filename,trim(par_label),"df_dt_max",   hyst%par%df_dt_max)
-        call nml_read(filename,trim(par_label),"sigma",       hyst%par%sigma)
-        call nml_read(filename,trim(par_label),"f_min",       hyst%par%f_min)
-        call nml_read(filename,trim(par_label),"f_max",       hyst%par%f_max)
-        call nml_read(filename,trim(par_label),"f_conv",      hyst%par%f_conv)
+        call nml_read(filename,trim(par_label),"method",      ts%par%method)
+        call nml_read(filename,trim(par_label),"with_kill",   ts%par%with_kill)
+        call nml_read(filename,trim(par_label),"dt_ave",      ts%par%dt_ave)
+        call nml_read(filename,trim(par_label),"dt_init",     ts%par%dt_init)
+        call nml_read(filename,trim(par_label),"dt_ramp",     ts%par%dt_ramp)
+        call nml_read(filename,trim(par_label),"dt_conv",      ts%par%dt_conv)
+        call nml_read(filename,trim(par_label),"df_sign",     ts%par%df_sign)
+        call nml_read(filename,trim(par_label),"eps",         ts%par%eps)
+        call nml_read(filename,trim(par_label),"df_dt_max",   ts%par%df_dt_max)
+        call nml_read(filename,trim(par_label),"sigma",       ts%par%sigma)
+        call nml_read(filename,trim(par_label),"f_min",       ts%par%f_min)
+        call nml_read(filename,trim(par_label),"f_max",       ts%par%f_max)
+        call nml_read(filename,trim(par_label),"f_conv",      ts%par%f_conv)
         
         ! Make sure sign is only +1/-1 
-        hyst%par%df_sign = sign(1.0_wp,hyst%par%df_sign)
+        ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
         
         ! Consistency check 
-        if (hyst%par%df_sign .eq. -1.0_wp .and. trim(hyst%par%method) .eq. "sin") then 
-            write(*,*) "hyster:: Error: method='sin' can only be used with &
+        if (ts%par%df_sign .eq. -1.0_wp .and. trim(ts%par%method) .eq. "sin") then 
+            write(*,*) "tsgen:: Error: method='sin' can only be used with &
             &df_sign=1.0 (non-negative). Please set df_sign=1.0 or use &
             &a different method." 
             stop
@@ -103,80 +103,80 @@ contains
 
         ! Prescribe a very small, but nonzero minimum value 
         ! (important to be nonzero for the pi controller methods)
-        hyst%par%df_dt_min = 1e-9_wp   ! [f/yr]
+        ts%par%df_dt_min = 1e-9_wp   ! [f/yr]
 
         ! Set after_step false to start, since the first step is the initial ramp
-        hyst%par%after_step = .FALSE. 
+        ts%par%after_step = .FALSE. 
 
-        ! Define label for this hyster object 
-        hyst%par%label = "hyster" 
-        if (present(label)) hyst%par%label = trim(hyst%par%label)//"_"//trim(label)
+        ! Define label for this tsgen object
+        ts%par%label = "tsgen"
+        if (present(label)) ts%par%label = trim(ts%par%label)//"_"//trim(label)
 
-        ! (Re)initialize hyster vectors to a large value 
+        ! (Re)initialize history vectors to a large value
         ! to store many timesteps.
         ntot = 2000
-        if (allocated(hyst%time))  deallocate(hyst%time)
-        if (allocated(hyst%var))   deallocate(hyst%var)
-        if (allocated(hyst%dv_dt)) deallocate(hyst%dv_dt)
-        allocate(hyst%time(ntot))
-        allocate(hyst%var(ntot))
-        allocate(hyst%dv_dt(ntot))
+        if (allocated(ts%time))  deallocate(ts%time)
+        if (allocated(ts%var))   deallocate(ts%var)
+        if (allocated(ts%dv_dt)) deallocate(ts%dv_dt)
+        allocate(ts%time(ntot))
+        allocate(ts%var(ntot))
+        allocate(ts%dv_dt(ntot))
 
         ! Initialize variable values
-        hyst%time  = MV
-        hyst%var   = MV
-        hyst%dv_dt = MV
+        ts%time  = MV
+        ts%var   = MV
+        ts%dv_dt = MV
 
-        hyst%dv_dt_ave = 0.0_wp
-        hyst%df_dt     = 0.0_wp
+        ts%dv_dt_ave = 0.0_wp
+        ts%df_dt     = 0.0_wp
 
-        hyst%pi_df  = hyst%par%df_dt_min 
-        hyst%pi_eta = hyst%par%eps 
+        ts%pi_df  = ts%par%df_dt_min 
+        ts%pi_eta = ts%par%eps 
 
         ! Override above choice for sin forcing 
-        if (trim(hyst%par%method) .eq. "sin") then 
+        if (trim(ts%par%method) .eq. "sin") then 
 
             ! Calculate initial forcing value based on sin function
-            call calc_sin_now(hyst%f_mean_now,0.0_wp,hyst%par%dt_ramp, &
-                                hyst%par%f_min,hyst%par%f_max,x_offset=0.0_wp)
+            call calc_sin_now(ts%f_mean_now,0.0_wp,ts%par%dt_ramp, &
+                                ts%par%f_min,ts%par%f_max,x_offset=0.0_wp)
 
         else 
             ! Determine initial forcing value from parameters 
 
-            if (hyst%par%df_sign .gt. 0.0_wp) then 
-                hyst%f_mean_now = hyst%par%f_min 
+            if (ts%par%df_sign .gt. 0.0_wp) then 
+                ts%f_mean_now = ts%par%f_min 
             else 
-                hyst%f_mean_now = hyst%par%f_max 
+                ts%f_mean_now = ts%par%f_max 
             end if 
 
         end if 
 
         ! Set noise to zero for now
-        hyst%eta_now = 0.0_wp
-        hyst%f_now = hyst%f_mean_now
+        ts%eta_now = 0.0_wp
+        ts%f_now = ts%f_mean_now
         
         ! Set kill switch to false to start 
-        hyst%kill = .FALSE. 
+        ts%kill = .FALSE. 
 
         ! Make sure kill is not active for some methods
-        select case(trim(hyst%par%method))
+        select case(trim(ts%par%method))
             case("sin")
-                hyst%par%with_kill = .FALSE. 
+                ts%par%with_kill = .FALSE. 
         end select
 
         ! Store initial simulation time for reference (for ramp method)
-        hyst%time_init = time 
+        ts%time_init = time 
 
         return 
 
-    end subroutine hyster_init
+    end subroutine tsgen_init
 
   
-    subroutine hyster_calc_forcing(hyst,time,var,dv_dt)
+    subroutine tsgen_update(ts,time,var,dv_dt)
         ! Generate the transient forcing value f_now for the current time,
         ! given the model response variable var (and optionally its rate dv_dt).
 
-        type(hyster_class), intent(INOUT) :: hyst
+        type(tsgen_class), intent(INOUT) :: ts
         real(wp),           intent(IN)    :: time
         real(wp),           intent(IN)    :: var 
         real(wp), optional, intent(IN)    :: dv_dt
@@ -197,37 +197,37 @@ contains
         ! assume second-order PI controller parameters are needed. 
         integer, parameter :: pi_order = 2
         
-        ! Get size of hyst vectors 
-        ntot = size(hyst%time,1) 
+        ! Get size of ts vectors 
+        ntot = size(ts%time,1) 
 
         ! Get current timestep
-        if (hyst%time(ntot) .ne. MV) then
-            hyst%dt = time - hyst%time(ntot)
+        if (ts%time(ntot) .ne. MV) then
+            ts%dt = time - ts%time(ntot)
         else
-            hyst%dt = 0.0_wp
+            ts%dt = 0.0_wp
         end if
 
         ! Get current derivative
         if (present(dv_dt)) then 
             dv_dt_now = dv_dt
-        else if (hyst%dt .gt. 0.0_wp) then
-            dv_dt_now = (var-hyst%var(ntot))/hyst%dt
+        else if (ts%dt .gt. 0.0_wp) then
+            dv_dt_now = (var-ts%var(ntot))/ts%dt
         else
             dv_dt_now = 0.0_wp
         end if
 
         ! Remove oldest point from beginning and add current one to the end
-        hyst%time  = eoshift(hyst%time,  1,boundary=time)
-        hyst%var   = eoshift(hyst%var,   1,boundary=var)
-        hyst%dv_dt = eoshift(hyst%dv_dt, 1,boundary=dv_dt_now)
+        ts%time  = eoshift(ts%time,  1,boundary=time)
+        ts%var   = eoshift(ts%var,   1,boundary=var)
+        ts%dv_dt = eoshift(ts%dv_dt, 1,boundary=dv_dt_now)
         
 
         ! Determine range of indices of times within our time-averaging window. 
         ! ajr: `findloc` only available for gfotran9 and above:
-        ! kmin = findloc(hyst%time .ge. time - hyst%par%dt_ave,value=.TRUE., &
-        !                                              dim=1,mask=hyst%time.ne.MV)
-        kmin = minloc(hyst%time,dim=1, &
-                mask=(hyst%time .ge. time - hyst%par%dt_ave) .and. hyst%time.ne.MV)
+        ! kmin = findloc(ts%time .ge. time - ts%par%dt_ave,value=.TRUE., &
+        !                                              dim=1,mask=ts%time.ne.MV)
+        kmin = minloc(ts%time,dim=1, &
+                mask=(ts%time .ge. time - ts%par%dt_ave) .and. ts%time.ne.MV)
         
         kmax = ntot
 
@@ -235,10 +235,10 @@ contains
         ! Note: do not use kmin here, in case time step does not match dt_ave,
         ! rather, use all available times in the vector to see if enough 
         ! time has passed. 
-        dt_tot = hyst%time(kmax) - minval(hyst%time,mask=hyst%time.ne.MV)
+        dt_tot = ts%time(kmax) - minval(ts%time,mask=ts%time.ne.MV)
 
         ! Get currently elapsed time overall
-        time_elapsed = time - hyst%time_init 
+        time_elapsed = time - ts%time_init 
 
          
         ! Calculate average derivative over time steps of interest
@@ -248,13 +248,13 @@ contains
         
 
         ! Calculate the current average value of the derivative
-        hyst%dv_dt_ave = sum(hyst%dv_dt(kmin:kmax)) / real(nk,wp)
+        ts%dv_dt_ave = sum(ts%dv_dt(kmin:kmax)) / real(nk,wp)
     
 
-        if ( time_elapsed .le. hyst%par%dt_init) then 
+        if ( time_elapsed .le. ts%par%dt_init) then 
             ! Initialization time period, no transient methods applied
 
-            hyst%df_dt = 0.0_wp 
+            ts%df_dt = 0.0_wp 
 
         else 
             ! Initialization time has passed, apply transient methods
@@ -262,81 +262,81 @@ contains
 
             ! Determine the magnitude of rate of change (without sign)
             ! depending on method to be used.
-            select case(trim(hyst%par%method))
+            select case(trim(ts%par%method))
 
                 case("const") 
                     ! Apply a constant rate of change, independent of dv_dt.
                     ! Use the df_dt_max parameter as a constant.
 
-                    hyst%df_dt = hyst%par%df_dt_max
+                    ts%df_dt = ts%par%df_dt_max
 
                 case("ramp-time","ramp-time-step")
                     ! Ramp up to the constant rate of change for the first N years. 
                     ! Then maintain a constant anomaly (independent of dv_dt). 
 
-                        if (trim(hyst%par%method) .eq. "ramp-time-step" .and. &
-                                (.not. hyst%par%after_step) ) then
+                        if (trim(ts%par%method) .eq. "ramp-time-step" .and. &
+                                (.not. ts%par%after_step) ) then
                             ! When first extreme value is reached, 
                             ! new extreme value should be imposed and 
                             ! df_sign possibly reversed.
 
-                            if ( (hyst%par%df_sign .lt. 0.0 .and.&
-                                    hyst%f_mean_now .le. hyst%par%f_min) ) then
+                            if ( (ts%par%df_sign .lt. 0.0 .and.&
+                                    ts%f_mean_now .le. ts%par%f_min) ) then
                                 ! Ramp-down complete, start second step
 
-                                if (hyst%par%f_conv .le. hyst%par%f_min) then 
+                                if (ts%par%f_conv .le. ts%par%f_min) then 
                                     ! Rate still going down or constant in second step.
-                                    hyst%par%f_max   = hyst%par%f_min
-                                    hyst%par%f_min   = hyst%par%f_conv
+                                    ts%par%f_max   = ts%par%f_min
+                                    ts%par%f_min   = ts%par%f_conv
                                 else
                                     ! Rate changes sign in second step.
-                                    hyst%par%f_max   = hyst%par%f_conv
-                                    hyst%par%df_sign = -hyst%par%df_sign
+                                    ts%par%f_max   = ts%par%f_conv
+                                    ts%par%df_sign = -ts%par%df_sign
                                 end if 
 
                                 ! Update duration of current step
-                                hyst%par%dt_ramp = hyst%par%dt_conv 
+                                ts%par%dt_ramp = ts%par%dt_conv 
                                 
                                 ! Set switch to know we are on the return part of the triangle
-                                hyst%par%after_step = .TRUE.
+                                ts%par%after_step = .TRUE.
 
-                            else if ( (hyst%par%df_sign .gt. 0.0 .and.&
-                                    hyst%f_mean_now .ge. hyst%par%f_max) ) then  
+                            else if ( (ts%par%df_sign .gt. 0.0 .and.&
+                                    ts%f_mean_now .ge. ts%par%f_max) ) then  
                             ! Ramp-up complete, switch directions
 
-                                if (hyst%par%f_conv .ge. hyst%par%f_max) then 
+                                if (ts%par%f_conv .ge. ts%par%f_max) then 
                                     ! Rate still going up or constant in second step.
-                                    hyst%par%f_min = hyst%par%f_max
-                                    hyst%par%f_max = hyst%par%f_conv
+                                    ts%par%f_min = ts%par%f_max
+                                    ts%par%f_max = ts%par%f_conv
                                 else
                                     ! Rate changes sign in second step.
-                                    hyst%par%f_min   = hyst%par%f_conv
-                                    hyst%par%df_sign = -hyst%par%df_sign
+                                    ts%par%f_min   = ts%par%f_conv
+                                    ts%par%df_sign = -ts%par%df_sign
                                 end if 
 
                                 ! Update duration of current step
-                                hyst%par%dt_ramp = hyst%par%dt_conv 
+                                ts%par%dt_ramp = ts%par%dt_conv 
                                 
                                 ! Set switch to know we are on the return part of the triangle
-                                hyst%par%after_step = .TRUE.
+                                ts%par%after_step = .TRUE.
 
                             end if
                             
                         end if
 
-                        if ( (hyst%par%df_sign .lt. 0.0 .and.&
-                                    hyst%f_mean_now .le. hyst%par%f_min) .or. &
-                             (hyst%par%df_sign .gt. 0.0 .and.&
-                                    hyst%f_mean_now .ge. hyst%par%f_max) ) then
+                        if ( (ts%par%df_sign .lt. 0.0 .and.&
+                                    ts%f_mean_now .le. ts%par%f_min) .or. &
+                             (ts%par%df_sign .gt. 0.0 .and.&
+                                    ts%f_mean_now .ge. ts%par%f_max) ) then
                             ! Ramp-up complete, no more forcing change
 
-                            hyst%df_dt = 0.0_wp
+                            ts%df_dt = 0.0_wp
 
                         else
                             ! Linear rate of change from f_max to f_min (or vice versa) over
                             ! the time of interest dt_ramp.
 
-                            hyst%df_dt = abs(hyst%par%f_max-hyst%par%f_min)/hyst%par%dt_ramp
+                            ts%df_dt = abs(ts%par%f_max-ts%par%f_min)/ts%par%dt_ramp
 
                         end if
 
@@ -345,19 +345,19 @@ contains
                     ! Then maintain a constant anomaly (independent of dv_dt). 
 
                     
-                        if ( (hyst%par%df_sign .lt. 0.0 .and.&
-                                    hyst%f_mean_now .le. hyst%par%f_min) .or. &
-                             (hyst%par%df_sign .gt. 0.0 .and.&
-                                    hyst%f_mean_now .ge. hyst%par%f_max) ) then  
+                        if ( (ts%par%df_sign .lt. 0.0 .and.&
+                                    ts%f_mean_now .le. ts%par%f_min) .or. &
+                             (ts%par%df_sign .gt. 0.0 .and.&
+                                    ts%f_mean_now .ge. ts%par%f_max) ) then  
                             ! Ramp-up complete, no more forcing change 
 
-                            hyst%df_dt = 0.0_wp 
+                            ts%df_dt = 0.0_wp 
 
                         else 
                             ! Linear rate of change from f_max to f_min (or vice versa) over 
                             ! the time of interest dt_ramp. 
 
-                            hyst%df_dt = hyst%par%df_dt_max
+                            ts%df_dt = ts%par%df_dt_max
 
                         end if 
 
@@ -365,23 +365,23 @@ contains
                     ! Apply periodic forcing with a given period, amplitude and x/y offset
 
                     ! Calculate expected current forcing value based on time elapsed
-                    call calc_sin_now(f_tmp,time_elapsed,hyst%par%dt_ramp, &
-                                        hyst%par%f_min,hyst%par%f_max,x_offset=0.0_wp)
+                    call calc_sin_now(f_tmp,time_elapsed,ts%par%dt_ramp, &
+                                        ts%par%f_min,ts%par%f_max,x_offset=0.0_wp)
 
                     ! Get rate of change to apply later 
-                    if (hyst%dt .ne. 0.0_wp) then 
-                        hyst%df_dt = (f_tmp-hyst%f_mean_now)/hyst%dt
+                    if (ts%dt .ne. 0.0_wp) then 
+                        ts%df_dt = (f_tmp-ts%f_mean_now)/ts%dt
                     else 
-                        hyst%df_dt = 0.0_wp 
+                        ts%df_dt = 0.0_wp 
                     end if 
                     
                 case("exp")
 
-                    if (dt_tot .lt. hyst%par%dt_ave) then 
+                    if (dt_tot .lt. ts%par%dt_ave) then 
                         ! Not enough time has passed, maintain constant forcing 
                         ! (to avoid affects of noisy derivatives)
 
-                        hyst%df_dt = 0.0_wp 
+                        ts%df_dt = 0.0_wp 
 
                     else 
                         ! Calculate the current forcing rate, df_dt
@@ -389,39 +389,39 @@ contains
                         ! Returns scalar in range [0-1], 0.6 at dv_dt==eps
                         ! Note: apply limit to dvdt_fac of a maximum value of 10, so 
                         ! that exp function doesn't explode (exp(-10)=>0.0)
-                        dvdt_fac = min(abs(hyst%dv_dt_ave)/hyst%par%eps,10.0_wp)
+                        dvdt_fac = min(abs(ts%dv_dt_ave)/ts%par%eps,10.0_wp)
                         f_scale  = exp(-dvdt_fac)
 
                         ! Get forcing rate of change magnitude
-                        hyst%df_dt = ( hyst%par%df_dt_min + f_scale*(hyst%par%df_dt_max-hyst%par%df_dt_min) )
+                        ts%df_dt = ( ts%par%df_dt_min + f_scale*(ts%par%df_dt_max-ts%par%df_dt_min) )
 
                     end if 
 
                 case("PI42","H312b","H312PID","H321PID","PID1")
 
-                    if (dt_tot .lt. hyst%par%dt_ave) then 
+                    if (dt_tot .lt. ts%par%dt_ave) then 
                         ! Not enough time has passed, maintain constant forcing 
                         ! (to avoid affects of noisy derivatives)
 
-                        hyst%df_dt = 0.0_wp 
+                        ts%df_dt = 0.0_wp 
 
                     else 
                         ! Calculate the current forcing rate, df_dt
 
                         ! Calculate adaptive dfdt value using proportional-integral (PI) methods
-                        call set_adaptive_timestep_pc(pi_df_now,hyst%pi_df,hyst%pi_eta,hyst%par%eps, &
-                                            hyst%par%df_dt_min,hyst%par%df_dt_max,pi_order,hyst%par%method)
+                        call set_adaptive_timestep_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%eps, &
+                                            ts%par%df_dt_min,ts%par%df_dt_max,pi_order,ts%par%method)
 
                         ! Remove oldest point from the end and insert latest point in beginning
-                        hyst%pi_eta = eoshift(hyst%pi_eta,-1,boundary=abs(hyst%dv_dt_ave))
-                        hyst%pi_df  = eoshift(hyst%pi_df, -1,boundary=abs(pi_df_now))
+                        ts%pi_eta = eoshift(ts%pi_eta,-1,boundary=abs(ts%dv_dt_ave))
+                        ts%pi_df  = eoshift(ts%pi_df, -1,boundary=abs(pi_df_now))
 
                         ! Apply limits to eta so that algorithm works well. 
                         ! pi_eta should be greater than zero
-                        hyst%pi_eta(1) = max(hyst%pi_eta(1),1e-3_wp)
+                        ts%pi_eta(1) = max(ts%pi_eta(1),1e-3_wp)
 
                         ! Get forcing rate of change magnitude in [f/yr]
-                        hyst%df_dt = hyst%pi_df(1) 
+                        ts%df_dt = ts%pi_df(1) 
 
                     end if 
 
@@ -430,10 +430,10 @@ contains
         end if 
 
         ! Apply sign of change
-        hyst%df_dt = hyst%par%df_sign*hyst%df_dt
+        ts%df_dt = ts%par%df_sign*ts%df_dt
 
         ! Avoid underflow errors
-        if (abs(hyst%df_dt) .lt. TOL) hyst%df_dt = 0.0_wp
+        if (abs(ts%df_dt) .lt. TOL) ts%df_dt = 0.0_wp
 
 
         ! ajr: Note: for now, keep diagnosing df_dt even when limits have been reached.
@@ -441,50 +441,50 @@ contains
         ! To actually set df_dt to zero too, uncomment following lines:
 
         ! Set df_dt to zero if desired forcing limits have been reached 
-        !if (hyst%f_mean_now .le. hyst%par%f_min) hyst%df_dt = 0.0
-        !if (hyst%f_mean_now .ge. hyst%par%f_max) hyst%df_dt = 0.0
+        !if (ts%f_mean_now .le. ts%par%f_min) ts%df_dt = 0.0
+        !if (ts%f_mean_now .ge. ts%par%f_max) ts%df_dt = 0.0
 
-        if (hyst%dt .gt. 0.0_wp) then 
+        if (ts%dt .gt. 0.0_wp) then 
             ! Update f_now, etc. if time step is non-zero. 
 
             ! Update the mean forcing value 
-            hyst%f_mean_now = hyst%f_mean_now + (hyst%df_dt*hyst%dt) 
+            ts%f_mean_now = ts%f_mean_now + (ts%df_dt*ts%dt) 
 
             ! Ensure f_min/f_max bounds are not exceeded
-            if (hyst%f_mean_now .lt. hyst%par%f_min) hyst%f_mean_now = hyst%par%f_min 
-            if (hyst%f_mean_now .gt. hyst%par%f_max) hyst%f_mean_now = hyst%par%f_max 
+            if (ts%f_mean_now .lt. ts%par%f_min) ts%f_mean_now = ts%par%f_min 
+            if (ts%f_mean_now .gt. ts%par%f_max) ts%f_mean_now = ts%par%f_max 
 
             ! If desired, generate some noise 
-            if (hyst%par%sigma .gt. 0.0) then 
-                call gen_random_normal(hyst%eta_now,mu=0.0_wp,sigma=hyst%par%sigma)
+            if (ts%par%sigma .gt. 0.0) then 
+                call gen_random_normal(ts%eta_now,mu=0.0_wp,sigma=ts%par%sigma)
             else 
-                hyst%eta_now = 0.0_wp 
+                ts%eta_now = 0.0_wp 
             end if 
 
         end if 
         
         ! Update the real forcing value 
-        hyst%f_now = hyst%f_mean_now + hyst%eta_now 
+        ts%f_now = ts%f_mean_now + ts%eta_now 
 
         ! Check if kill should be activated 
-        if (hyst%par%with_kill .and. &
-            abs(hyst%dv_dt_ave) .lt. hyst%par%eps) then 
+        if (ts%par%with_kill .and. &
+            abs(ts%dv_dt_ave) .lt. ts%par%eps) then 
 
-            if (hyst%par%df_sign .gt. 0.0 .and. &
-                hyst%f_mean_now .ge. hyst%par%f_max) then 
-                hyst%kill = .TRUE.
+            if (ts%par%df_sign .gt. 0.0 .and. &
+                ts%f_mean_now .ge. ts%par%f_max) then 
+                ts%kill = .TRUE.
             end if 
 
-            if (hyst%par%df_sign .lt. 0.0 .and. &
-                hyst%f_mean_now .le. hyst%par%f_min) then 
-                hyst%kill = .TRUE.
+            if (ts%par%df_sign .lt. 0.0 .and. &
+                ts%f_mean_now .le. ts%par%f_min) then 
+                ts%kill = .TRUE.
             end if 
 
         end if 
 
         return
 
-    end subroutine hyster_calc_forcing
+    end subroutine tsgen_update
             
     subroutine set_adaptive_timestep_pc(dt_new,dt,eta,eps,dtmin,dtmax,pc_k,controller)
         ! Calculate the timestep following algorithm for 
@@ -790,4 +790,4 @@ contains
 
     end subroutine gen_random_normal
 
-end module hyster
+end module tsgen
