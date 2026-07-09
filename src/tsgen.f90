@@ -13,7 +13,7 @@ module tsgen
     real(wp), parameter :: DF_DT_MIN = 1e-9_wp
 
     type tsgen_par_class
-        ! Configuration (read from namelist)
+        ! Configuration (read from namelist, immutable after init)
         character(len=56) :: label
         character(len=56) :: method
         logical  :: with_kill
@@ -28,6 +28,9 @@ module tsgen
         real(wp) :: f_min
         real(wp) :: f_max
         real(wp) :: f_conv
+
+        ! Derived at init: .TRUE. for response-driven (feedback) methods
+        logical  :: feedback
     end type
 
     type tsgen_class
@@ -45,6 +48,7 @@ module tsgen
 
         ! Runtime state
         real(wp) :: dt
+        real(wp) :: time_prev       ! time seen at the previous update (MV if none)
         real(wp) :: dv_dt_ave
         real(wp) :: df_dt
         real(wp) :: f_now
@@ -52,7 +56,6 @@ module tsgen
         real(wp) :: eta_now
         logical  :: kill
         real(wp) :: time_init
-        logical  :: after_step      ! ramp-time-step: on the return leg of the triangle
     end type
 
     private
@@ -90,38 +93,47 @@ contains
         call nml_read(filename,trim(par_label),"f_max",       ts%par%f_max)
         call nml_read(filename,trim(par_label),"f_conv",      ts%par%f_conv)
         
-        ! Make sure sign is only +1/-1 
+        ! Make sure sign is only +1/-1
         ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
-        
-        ! Consistency check 
-        if (ts%par%df_sign .eq. -1.0_wp .and. trim(ts%par%method) .eq. "sin") then 
+
+        ! Consistency check
+        if (ts%par%df_sign .eq. -1.0_wp .and. trim(ts%par%method) .eq. "sin") then
             write(*,*) "tsgen:: Error: method='sin' can only be used with &
             &df_sign=1.0 (non-negative). Please set df_sign=1.0 or use &
-            &a different method." 
+            &a different method."
             stop
-        end if 
+        end if
 
-        ! Set after_step false to start, since the first step is the initial ramp
-        ts%after_step = .FALSE.
+        ! Classify the method: response-driven (feedback) vs time-driven
+        select case(trim(ts%par%method))
+            case("exp","PI42","H312b","H312PID","H321PID","PID1")
+                ts%par%feedback = .TRUE.
+            case default
+                ts%par%feedback = .FALSE.
+        end select
+
+        ! Kill is not meaningful for periodic forcing
+        if (trim(ts%par%method) .eq. "sin") ts%par%with_kill = .FALSE.
 
         ! Define label for this tsgen object
         ts%par%label = "tsgen"
         if (present(label)) ts%par%label = trim(ts%par%label)//"_"//trim(label)
 
-        ! (Re)initialize history vectors to a large value
-        ! to store many timesteps.
-        ntot = 2000
+        ! The history buffers are only needed for feedback control and/or the
+        ! kill switch (both use the windowed response derivative). Allocate them
+        ! only in that case; time-driven forcing is stateless/analytic.
         if (allocated(ts%time))  deallocate(ts%time)
         if (allocated(ts%var))   deallocate(ts%var)
         if (allocated(ts%dv_dt)) deallocate(ts%dv_dt)
-        allocate(ts%time(ntot))
-        allocate(ts%var(ntot))
-        allocate(ts%dv_dt(ntot))
-
-        ! Initialize variable values
-        ts%time  = MV
-        ts%var   = MV
-        ts%dv_dt = MV
+        if (ts%par%feedback .or. ts%par%with_kill) then
+            ntot = 2000
+            allocate(ts%time(ntot))
+            allocate(ts%var(ntot))
+            allocate(ts%dv_dt(ntot))
+            ts%time  = MV
+            ts%var   = MV
+            ts%dv_dt = MV
+        end if
 
         ts%dv_dt_ave = 0.0_wp
         ts%df_dt     = 0.0_wp
@@ -129,82 +141,129 @@ contains
         ts%pi_df  = DF_DT_MIN
         ts%pi_eta = ts%par%eps
 
-        ! Override above choice for sin forcing 
-        if (trim(ts%par%method) .eq. "sin") then 
+        ! Initial forcing value (analytic series at elapsed time zero)
+        ts%f_mean_now = eval_open(ts%par,0.0_wp)
+        ts%eta_now    = 0.0_wp
+        ts%f_now      = ts%f_mean_now
 
-            ! Calculate initial forcing value based on sin function
-            call calc_sin_now(ts%f_mean_now,0.0_wp,ts%par%dt_ramp, &
-                                ts%par%f_min,ts%par%f_max,x_offset=0.0_wp)
+        ! Kill switch off to start
+        ts%kill = .FALSE.
 
-        else 
-            ! Determine initial forcing value from parameters 
+        ! Store initial simulation time; no previous time seen yet
+        ts%time_init = time
+        ts%time_prev = MV
 
-            if (ts%par%df_sign .gt. 0.0_wp) then 
-                ts%f_mean_now = ts%par%f_min 
-            else 
-                ts%f_mean_now = ts%par%f_max 
-            end if 
-
-        end if 
-
-        ! Set noise to zero for now
-        ts%eta_now = 0.0_wp
-        ts%f_now = ts%f_mean_now
-        
-        ! Set kill switch to false to start 
-        ts%kill = .FALSE. 
-
-        ! Make sure kill is not active for some methods
-        select case(trim(ts%par%method))
-            case("sin")
-                ts%par%with_kill = .FALSE. 
-        end select
-
-        ! Store initial simulation time for reference (for ramp method)
-        ts%time_init = time 
-
-        return 
+        return
 
     end subroutine tsgen_init
 
-  
+
     subroutine tsgen_update(ts,time,var,dv_dt)
         ! Generate the transient forcing value f_now for the current time,
         ! given the model response variable var (and optionally its rate dv_dt).
 
         type(tsgen_class), intent(INOUT) :: ts
         real(wp),           intent(IN)    :: time
-        real(wp),           intent(IN)    :: var 
+        real(wp),           intent(IN)    :: var
         real(wp), optional, intent(IN)    :: dv_dt
 
-        ! Local variables 
+        ! Local variables
         real(wp) :: time_elapsed
-        real(wp) :: dv_dt_now
-        real(wp) :: f_scale 
-        integer  :: ntot, kmin, kmax, nk
-        real(wp) :: dt_tot 
-        real(wp) :: dvdt_fac 
-        real(wp) :: pi_df_now
+        real(wp) :: f_mean_prev
 
-        ! For periodic forcing
-        real(wp) :: f_tmp
-
-        ! Since dv_dt is typically calculated over an averaging period,
-        ! assume second-order PI controller parameters are needed. 
-        integer, parameter :: pi_order = 2
-        
-        ! Get size of ts vectors 
-        ntot = size(ts%time,1) 
-
-        ! Get current timestep
-        if (ts%time(ntot) .ne. MV) then
-            ts%dt = time - ts%time(ntot)
+        ! Current timestep, from the time seen at the previous update
+        if (ts%time_prev .ne. MV) then
+            ts%dt = time - ts%time_prev
         else
             ts%dt = 0.0_wp
         end if
 
-        ! Get current derivative
-        if (present(dv_dt)) then 
+        ! Update the history buffers / windowed derivative when they are in use
+        ! (feedback control and/or the kill switch need dv_dt_ave)
+        if (ts%par%feedback .or. ts%par%with_kill) call update_history(ts,time,var,dv_dt)
+
+        ! Elapsed time since initialization
+        time_elapsed = time - ts%time_init
+
+        ! Remember previous mean forcing (for the diagnostic rate df_dt)
+        f_mean_prev = ts%f_mean_now
+
+        if (ts%par%feedback) then
+            ! Response-driven (feedback) control: modulate the forcing rate from
+            ! the averaged response derivative, then integrate to update f_mean.
+
+            if (time_elapsed .le. ts%par%dt_init) then
+                ! Initialization period: no forcing change yet
+                ts%df_dt = 0.0_wp
+            else
+                call calc_df_dt_feedback(ts)
+
+                ! Apply sign of change and suppress underflow
+                ts%df_dt = ts%par%df_sign * ts%df_dt
+                if (abs(ts%df_dt) .lt. TOL) ts%df_dt = 0.0_wp
+            end if
+
+            if (ts%dt .gt. 0.0_wp) then
+                ! Integrate and keep within [f_min,f_max]
+                ts%f_mean_now = ts%f_mean_now + ts%df_dt*ts%dt
+                ts%f_mean_now = min(max(ts%f_mean_now,ts%par%f_min),ts%par%f_max)
+            end if
+
+        else
+            ! Time-driven forcing: evaluate the analytic series directly.
+            ! The reported rate df_dt is the finite difference over the step.
+
+            ts%f_mean_now = eval_open(ts%par,time_elapsed)
+
+            if (ts%dt .gt. 0.0_wp) then
+                ts%df_dt = (ts%f_mean_now - f_mean_prev)/ts%dt
+            else
+                ts%df_dt = 0.0_wp
+            end if
+        end if
+
+        ! Optional noise on top of the mean forcing (only on a non-zero step)
+        if (ts%dt .gt. 0.0_wp) then
+            if (ts%par%sigma .gt. 0.0_wp) then
+                call gen_random_normal(ts%eta_now,mu=0.0_wp,sigma=ts%par%sigma)
+            else
+                ts%eta_now = 0.0_wp
+            end if
+        end if
+
+        ! Real forcing value = mean + noise
+        ts%f_now = ts%f_mean_now + ts%eta_now
+
+        ! Kill switch: stop once the response has equilibrated at a bound
+        if (ts%par%with_kill .and. abs(ts%dv_dt_ave) .lt. ts%par%eps) then
+            if (ts%par%df_sign .gt. 0.0_wp .and. ts%f_mean_now .ge. ts%par%f_max) ts%kill = .TRUE.
+            if (ts%par%df_sign .lt. 0.0_wp .and. ts%f_mean_now .le. ts%par%f_min) ts%kill = .TRUE.
+        end if
+
+        ! Remember this time for the next call
+        ts%time_prev = time
+
+        return
+
+    end subroutine tsgen_update
+
+    subroutine update_history(ts,time,var,dv_dt)
+        ! Push the current (time,var,dv_dt) onto the history buffers and refresh
+        ! the windowed average response derivative dv_dt_ave.
+
+        type(tsgen_class), intent(INOUT) :: ts
+        real(wp),           intent(IN)    :: time
+        real(wp),           intent(IN)    :: var
+        real(wp), optional, intent(IN)    :: dv_dt
+
+        ! Local variables
+        integer  :: ntot, kmin, kmax, nk
+        real(wp) :: dv_dt_now
+
+        ntot = size(ts%time,1)
+
+        ! Current response derivative
+        if (present(dv_dt)) then
             dv_dt_now = dv_dt
         else if (ts%dt .gt. 0.0_wp) then
             dv_dt_now = (var-ts%var(ntot))/ts%dt
@@ -212,321 +271,184 @@ contains
             dv_dt_now = 0.0_wp
         end if
 
-        ! Remove oldest point from beginning and add current one to the end
+        ! Drop the oldest point and append the current one
         ts%time  = eoshift(ts%time,  1,boundary=time)
         ts%var   = eoshift(ts%var,   1,boundary=var)
         ts%dv_dt = eoshift(ts%dv_dt, 1,boundary=dv_dt_now)
-        
 
-        ! Determine range of indices of times within our time-averaging window. 
-        ! ajr: `findloc` only available for gfotran9 and above:
-        ! kmin = findloc(ts%time .ge. time - ts%par%dt_ave,value=.TRUE., &
-        !                                              dim=1,mask=ts%time.ne.MV)
+        ! Indices within the averaging window [time-dt_ave, time].
+        ! (findloc needs gfortran>=9, so use minloc with a mask instead.)
         kmin = minloc(ts%time,dim=1, &
                 mask=(ts%time .ge. time - ts%par%dt_ave) .and. ts%time.ne.MV)
-        
         kmax = ntot
+        nk   = kmax - kmin + 1
 
-        ! Determine currently available time window
-        ! Note: do not use kmin here, in case time step does not match dt_ave,
-        ! rather, use all available times in the vector to see if enough 
-        ! time has passed. 
-        dt_tot = ts%time(kmax) - minval(ts%time,mask=ts%time.ne.MV)
-
-        ! Get currently elapsed time overall
-        time_elapsed = time - ts%time_init 
-
-         
-        ! Calculate average derivative over time steps of interest
-        
-        ! Get current number of averaging points 
-        nk = kmax - kmin + 1 
-        
-
-        ! Calculate the current average value of the derivative
+        ! Windowed average of the response derivative
         ts%dv_dt_ave = sum(ts%dv_dt(kmin:kmax)) / real(nk,wp)
-    
-
-        if ( time_elapsed .le. ts%par%dt_init) then 
-            ! Initialization time period, no transient methods applied
-
-            ts%df_dt = 0.0_wp 
-
-        else 
-            ! Initialization time has passed, apply transient methods
-
-
-            ! Determine the magnitude of rate of change (without sign)
-            ! depending on method to be used.
-            select case(trim(ts%par%method))
-
-                case("const") 
-                    ! Apply a constant rate of change, independent of dv_dt.
-                    ! Use the df_dt_max parameter as a constant.
-
-                    ts%df_dt = ts%par%df_dt_max
-
-                case("ramp-time","ramp-time-step")
-                    ! Ramp up to the constant rate of change for the first N years. 
-                    ! Then maintain a constant anomaly (independent of dv_dt). 
-
-                        if (trim(ts%par%method) .eq. "ramp-time-step" .and. &
-                                (.not. ts%after_step) ) then
-                            ! When first extreme value is reached, 
-                            ! new extreme value should be imposed and 
-                            ! df_sign possibly reversed.
-
-                            if ( (ts%par%df_sign .lt. 0.0 .and.&
-                                    ts%f_mean_now .le. ts%par%f_min) ) then
-                                ! Ramp-down complete, start second step
-
-                                if (ts%par%f_conv .le. ts%par%f_min) then 
-                                    ! Rate still going down or constant in second step.
-                                    ts%par%f_max   = ts%par%f_min
-                                    ts%par%f_min   = ts%par%f_conv
-                                else
-                                    ! Rate changes sign in second step.
-                                    ts%par%f_max   = ts%par%f_conv
-                                    ts%par%df_sign = -ts%par%df_sign
-                                end if 
-
-                                ! Update duration of current step
-                                ts%par%dt_ramp = ts%par%dt_conv 
-                                
-                                ! Set switch to know we are on the return part of the triangle
-                                ts%after_step = .TRUE.
-
-                            else if ( (ts%par%df_sign .gt. 0.0 .and.&
-                                    ts%f_mean_now .ge. ts%par%f_max) ) then  
-                            ! Ramp-up complete, switch directions
-
-                                if (ts%par%f_conv .ge. ts%par%f_max) then 
-                                    ! Rate still going up or constant in second step.
-                                    ts%par%f_min = ts%par%f_max
-                                    ts%par%f_max = ts%par%f_conv
-                                else
-                                    ! Rate changes sign in second step.
-                                    ts%par%f_min   = ts%par%f_conv
-                                    ts%par%df_sign = -ts%par%df_sign
-                                end if 
-
-                                ! Update duration of current step
-                                ts%par%dt_ramp = ts%par%dt_conv 
-                                
-                                ! Set switch to know we are on the return part of the triangle
-                                ts%after_step = .TRUE.
-
-                            end if
-                            
-                        end if
-
-                        if ( (ts%par%df_sign .lt. 0.0 .and.&
-                                    ts%f_mean_now .le. ts%par%f_min) .or. &
-                             (ts%par%df_sign .gt. 0.0 .and.&
-                                    ts%f_mean_now .ge. ts%par%f_max) ) then
-                            ! Ramp-up complete, no more forcing change
-
-                            ts%df_dt = 0.0_wp
-
-                        else
-                            ! Linear rate of change from f_max to f_min (or vice versa) over
-                            ! the time of interest dt_ramp.
-
-                            ts%df_dt = abs(ts%par%f_max-ts%par%f_min)/ts%par%dt_ramp
-
-                        end if
-
-                case("ramp-slope")
-                    ! Ramp up to the constant rate of change for the first N years. 
-                    ! Then maintain a constant anomaly (independent of dv_dt). 
-
-                    
-                        if ( (ts%par%df_sign .lt. 0.0 .and.&
-                                    ts%f_mean_now .le. ts%par%f_min) .or. &
-                             (ts%par%df_sign .gt. 0.0 .and.&
-                                    ts%f_mean_now .ge. ts%par%f_max) ) then  
-                            ! Ramp-up complete, no more forcing change 
-
-                            ts%df_dt = 0.0_wp 
-
-                        else 
-                            ! Linear rate of change from f_max to f_min (or vice versa) over 
-                            ! the time of interest dt_ramp. 
-
-                            ts%df_dt = ts%par%df_dt_max
-
-                        end if 
-
-                case("sin")
-                    ! Apply periodic forcing with a given period, amplitude and x/y offset
-
-                    ! Calculate expected current forcing value based on time elapsed
-                    call calc_sin_now(f_tmp,time_elapsed,ts%par%dt_ramp, &
-                                        ts%par%f_min,ts%par%f_max,x_offset=0.0_wp)
-
-                    ! Get rate of change to apply later 
-                    if (ts%dt .ne. 0.0_wp) then 
-                        ts%df_dt = (f_tmp-ts%f_mean_now)/ts%dt
-                    else 
-                        ts%df_dt = 0.0_wp 
-                    end if 
-                    
-                case("exp")
-
-                    if (dt_tot .lt. ts%par%dt_ave) then 
-                        ! Not enough time has passed, maintain constant forcing 
-                        ! (to avoid affects of noisy derivatives)
-
-                        ts%df_dt = 0.0_wp 
-
-                    else 
-                        ! Calculate the current forcing rate, df_dt
-                        ! BASED ON EXPONENTIAL (sharp transition, tuneable)
-                        ! Returns scalar in range [0-1], 0.6 at dv_dt==eps
-                        ! Note: apply limit to dvdt_fac of a maximum value of 10, so 
-                        ! that exp function doesn't explode (exp(-10)=>0.0)
-                        dvdt_fac = min(abs(ts%dv_dt_ave)/ts%par%eps,10.0_wp)
-                        f_scale  = exp(-dvdt_fac)
-
-                        ! Get forcing rate of change magnitude
-                        ts%df_dt = ( DF_DT_MIN + f_scale*(ts%par%df_dt_max-DF_DT_MIN) )
-
-                    end if 
-
-                case("PI42","H312b","H312PID","H321PID","PID1")
-
-                    if (dt_tot .lt. ts%par%dt_ave) then 
-                        ! Not enough time has passed, maintain constant forcing 
-                        ! (to avoid affects of noisy derivatives)
-
-                        ts%df_dt = 0.0_wp 
-
-                    else 
-                        ! Calculate the current forcing rate, df_dt
-
-                        ! Calculate adaptive dfdt value using proportional-integral (PI) methods
-                        call set_adaptive_timestep_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%eps, &
-                                            DF_DT_MIN,ts%par%df_dt_max,pi_order,ts%par%method)
-
-                        ! Remove oldest point from the end and insert latest point in beginning
-                        ts%pi_eta = eoshift(ts%pi_eta,-1,boundary=abs(ts%dv_dt_ave))
-                        ts%pi_df  = eoshift(ts%pi_df, -1,boundary=abs(pi_df_now))
-
-                        ! Apply limits to eta so that algorithm works well. 
-                        ! pi_eta should be greater than zero
-                        ts%pi_eta(1) = max(ts%pi_eta(1),1e-3_wp)
-
-                        ! Get forcing rate of change magnitude in [f/yr]
-                        ts%df_dt = ts%pi_df(1) 
-
-                    end if 
-
-            end select 
-
-        end if 
-
-        ! Apply sign of change
-        ts%df_dt = ts%par%df_sign*ts%df_dt
-
-        ! Avoid underflow errors
-        if (abs(ts%df_dt) .lt. TOL) ts%df_dt = 0.0_wp
-
-
-        ! ajr: Note: for now, keep diagnosing df_dt even when limits have been reached.
-        ! df_dt will not be applied beyond forcing limits though.
-        ! To actually set df_dt to zero too, uncomment following lines:
-
-        ! Set df_dt to zero if desired forcing limits have been reached 
-        !if (ts%f_mean_now .le. ts%par%f_min) ts%df_dt = 0.0
-        !if (ts%f_mean_now .ge. ts%par%f_max) ts%df_dt = 0.0
-
-        if (ts%dt .gt. 0.0_wp) then 
-            ! Update f_now, etc. if time step is non-zero. 
-
-            ! Update the mean forcing value 
-            ts%f_mean_now = ts%f_mean_now + (ts%df_dt*ts%dt) 
-
-            ! Ensure f_min/f_max bounds are not exceeded
-            if (ts%f_mean_now .lt. ts%par%f_min) ts%f_mean_now = ts%par%f_min 
-            if (ts%f_mean_now .gt. ts%par%f_max) ts%f_mean_now = ts%par%f_max 
-
-            ! If desired, generate some noise 
-            if (ts%par%sigma .gt. 0.0) then 
-                call gen_random_normal(ts%eta_now,mu=0.0_wp,sigma=ts%par%sigma)
-            else 
-                ts%eta_now = 0.0_wp 
-            end if 
-
-        end if 
-        
-        ! Update the real forcing value 
-        ts%f_now = ts%f_mean_now + ts%eta_now 
-
-        ! Check if kill should be activated 
-        if (ts%par%with_kill .and. &
-            abs(ts%dv_dt_ave) .lt. ts%par%eps) then 
-
-            if (ts%par%df_sign .gt. 0.0 .and. &
-                ts%f_mean_now .ge. ts%par%f_max) then 
-                ts%kill = .TRUE.
-            end if 
-
-            if (ts%par%df_sign .lt. 0.0 .and. &
-                ts%f_mean_now .le. ts%par%f_min) then 
-                ts%kill = .TRUE.
-            end if 
-
-        end if 
 
         return
 
-    end subroutine tsgen_update
-            
-    subroutine set_adaptive_timestep_pc(dt_new,dt,eta,eps,dtmin,dtmax,pc_k,controller)
-        ! Calculate the timestep following algorithm for 
-        ! a general predictor-corrector (pc) method.
-        ! Implemented followig Cheng et al (2017, GMD)
+    end subroutine update_history
 
-        implicit none 
+    function eval_open(par,time_elapsed) result(f_mean)
+        ! Analytic (time-driven) forcing value as a pure function of elapsed time.
+        ! Shared by tsgen_update (time-driven methods) and tsgen_tabulate.
 
-        real(wp), intent(OUT) :: dt_new               ! [yr]   Timestep (n+1)
-        real(wp), intent(IN)  :: dt(:)                ! [yr]   Timesteps (n:n-2)
-        real(wp), intent(IN)  :: eta(:)               ! [X/yr] Maximum truncation error (n:n-2)
+        type(tsgen_par_class), intent(IN) :: par
+        real(wp),              intent(IN) :: time_elapsed
+        real(wp) :: f_mean
+
+        ! Local variables
+        real(wp) :: tau, rate, f_start, f_ext
+
+        ! Time since the end of the initialization period
+        tau = max(0.0_wp, time_elapsed - par%dt_init)
+
+        ! Forcing value at the start of the ramp (depends on ramp direction)
+        f_start = merge(par%f_min, par%f_max, par%df_sign .gt. 0.0_wp)
+
+        select case(trim(par%method))
+
+            case("const","ramp-slope")
+                ! Constant-rate ramp (df_dt_max), clamped to [f_min,f_max]
+                f_mean = f_start + par%df_sign*par%df_dt_max*tau
+                f_mean = min(max(f_mean,par%f_min),par%f_max)
+
+            case("ramp-time")
+                ! Linear ramp from f_start to the far bound over dt_ramp
+                rate   = abs(par%f_max-par%f_min)/par%dt_ramp
+                f_mean = f_start + par%df_sign*rate*tau
+                f_mean = min(max(f_mean,par%f_min),par%f_max)
+
+            case("ramp-time-step")
+                ! Triangle waveform: f_start -> first extreme (over dt_ramp)
+                !                             -> f_conv       (over dt_conv) -> hold
+                f_ext = merge(par%f_max, par%f_min, par%df_sign .gt. 0.0_wp)
+                if (tau .le. par%dt_ramp) then
+                    f_mean = f_start + (f_ext-f_start)*(tau/par%dt_ramp)
+                else if (tau .le. par%dt_ramp+par%dt_conv) then
+                    f_mean = f_ext + (par%f_conv-f_ext)*((tau-par%dt_ramp)/par%dt_conv)
+                else
+                    f_mean = par%f_conv
+                end if
+
+            case("sin")
+                ! Periodic forcing; held flat during the initialization period
+                if (time_elapsed .le. par%dt_init) then
+                    call calc_sin_now(f_mean,0.0_wp,par%dt_ramp, &
+                                        par%f_min,par%f_max,x_offset=0.0_wp)
+                else
+                    call calc_sin_now(f_mean,time_elapsed,par%dt_ramp, &
+                                        par%f_min,par%f_max,x_offset=0.0_wp)
+                end if
+
+            case default
+                ! Feedback methods have no analytic form: report the start value
+                f_mean = f_start
+
+        end select
+
+        return
+
+    end function eval_open
+
+    subroutine calc_df_dt_feedback(ts)
+        ! Response-driven forcing-rate magnitude (unsigned), stored in ts%df_dt.
+        ! Uses the windowed response derivative dv_dt_ave and therefore requires
+        ! the history buffer, which is allocated for feedback methods.
+
+        type(tsgen_class), intent(INOUT) :: ts
+
+        ! Local variables
+        real(wp) :: dt_tot, dvdt_fac, f_scale, pi_df_now
+
+        ! dv_dt is a windowed average, so use 2nd-order PI controller parameters
+        integer, parameter :: pi_order = 2
+
+        ! Time span currently covered by the history buffer
+        dt_tot = ts%time(size(ts%time,1)) - minval(ts%time,mask=ts%time.ne.MV)
+
+        if (dt_tot .lt. ts%par%dt_ave) then
+            ! Not enough time has passed; hold the forcing to avoid reacting
+            ! to noisy derivatives.
+            ts%df_dt = 0.0_wp
+            return
+        end if
+
+        select case(trim(ts%par%method))
+
+            case("exp")
+                ! Exponential response (sharp, tuneable): scale in [0,1], ~0.6 at
+                ! dv_dt==eps. Cap the exponent so exp() cannot overflow.
+                dvdt_fac = min(abs(ts%dv_dt_ave)/ts%par%eps,10.0_wp)
+                f_scale  = exp(-dvdt_fac)
+                ts%df_dt = DF_DT_MIN + f_scale*(ts%par%df_dt_max-DF_DT_MIN)
+
+            case default    ! PI42, H312b, H312PID, H321PID, PID1
+                ! Adaptive rate via proportional-integral(-derivative) controller
+                call calc_forcing_rate_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%eps, &
+                                    DF_DT_MIN,ts%par%df_dt_max,pi_order,ts%par%method)
+
+                ! Push newest error/rate to the front of the controller history
+                ts%pi_eta = eoshift(ts%pi_eta,-1,boundary=abs(ts%dv_dt_ave))
+                ts%pi_df  = eoshift(ts%pi_df, -1,boundary=abs(pi_df_now))
+
+                ! Keep the newest error strictly positive for stability
+                ts%pi_eta(1) = max(ts%pi_eta(1),1e-3_wp)
+
+                ts%df_dt = ts%pi_df(1)
+
+        end select
+
+        return
+
+    end subroutine calc_df_dt_feedback
+
+    subroutine calc_forcing_rate_pc(df_new,df,eta,eps,df_min,df_max,pc_k,controller)
+        ! Adaptive forcing-rate update following the general predictor-corrector
+        ! (pc) controller algorithms of Cheng et al. (2017, GMD). The forcing
+        ! increment df plays the role of the "timestep" in the original scheme.
+
+        implicit none
+
+        real(wp), intent(OUT) :: df_new               ! [f/yr] Forcing rate (n+1)
+        real(wp), intent(IN)  :: df(:)                ! [f/yr] Forcing rates (n:n-2)
+        real(wp), intent(IN)  :: eta(:)               ! [X/yr] Error signal, |dv_dt_ave| (n:n-2)
         real(wp), intent(IN)  :: eps                  ! [--]   Tolerance value (eg, eps=1e-4)
-        real(wp), intent(IN)  :: dtmin                ! [yr]   Minimum allowed timestep, must be > 0
-        real(wp), intent(IN)  :: dtmax                ! [yr]   Maximum allowed timestep
+        real(wp), intent(IN)  :: df_min               ! [f/yr] Minimum allowed rate, must be > 0
+        real(wp), intent(IN)  :: df_max               ! [f/yr] Maximum allowed rate
         integer,    intent(IN)  :: pc_k                 ! pc_k gives the order of the timestepping scheme (pc_k=2 for FE-SBE, pc_k=3 for AB-SAM)
         character(len=*), intent(IN) :: controller      ! Adaptive controller to use [PI42, H312b, H312PID]
 
         ! Local variables
-        real(wp) :: dt_n, dt_nm1, dt_nm2          ! [yr]   Timesteps (n:n-2)
-        real(wp) :: eta_n, eta_nm1, eta_nm2       ! [X/yr] Maximum truncation error (n:n-2)
+        real(wp) :: df_n, df_nm1, df_nm2          ! [f/yr] Forcing rates (n:n-2)
+        real(wp) :: eta_n, eta_nm1, eta_nm2       ! [X/yr] Error signal (n:n-2)
         real(wp) :: rho_n, rho_nm1, rho_nm2
         real(wp) :: rhohat_n
         real(wp) :: k_i
-        real(wp) :: k_p, k_d 
+        real(wp) :: k_p, k_d
 
         ! Smoothing parameter; Söderlind and Wang (2006) method, Eq. 10
-        ! Values on the order of [0.7,2.0] are reasonable. Higher kappa slows variation in dt
-        real(wp), parameter :: kappa = 2.0_wp 
-        
-        ! Step 1: Save information needed for adapative controller algorithms 
+        ! Values on the order of [0.7,2.0] are reasonable. Higher kappa slows variation in df
+        real(wp), parameter :: kappa = 2.0_wp
 
-        ! Save dt from several timesteps (potentially more available)
-        dt_n    = max(dt(1),dtmin) 
-        dt_nm1  = max(dt(2),dtmin) 
-        dt_nm2  = max(dt(3),dtmin)
+        ! Step 1: Save information needed for adapative controller algorithms
 
-        ! Save eta from several timesteps (potentially more available)
+        ! Save df from several steps (potentially more available)
+        df_n    = max(df(1),df_min)
+        df_nm1  = max(df(2),df_min)
+        df_nm2  = max(df(3),df_min)
+
+        ! Save eta from several steps (potentially more available)
         eta_n   = eta(1)
         eta_nm1 = eta(2)
         eta_nm2 = eta(3)
 
-        ! Calculate rho from several timesteps 
-        rho_nm1 = (dt_n   / dt_nm1) 
-        rho_nm2 = (dt_nm1 / dt_nm2) 
+        ! Calculate rho from several steps
+        rho_nm1 = (df_n   / df_nm1)
+        rho_nm2 = (df_nm1 / df_nm2)
 
-        ! Step 2: calculate scaling for the next timestep (dt,n+1)
+        ! Step 2: calculate scaling for the next rate (df,n+1)
         select case(trim(controller))
 
             case("PI42")
@@ -573,7 +495,7 @@ contains
                 k_i = 0.1  / real(pc_k,wp)
                 k_p = 0.45 / real(pc_k,wp) 
 
-                rho_n = calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,dt_n,dt_nm1,eps,k_i,k_p)
+                rho_n = calc_pi_rho_H321PID(eta_n,eta_nm1,eta_nm2,df_n,df_nm1,eps,k_i,k_p)
                 
             case("PID1")
 
@@ -585,27 +507,27 @@ contains
                 
             case DEFAULT 
 
-                write(*,*) "set_adaptive_timestep_pc:: Error: controller not recognized."
-                write(*,*) "controller = ", trim(controller) 
-                stop 
+                write(*,*) "calc_forcing_rate_pc:: Error: controller not recognized."
+                write(*,*) "controller = ", trim(controller)
+                stop
 
-        end select 
+        end select
 
-        ! Scale rho_n for smoothness 
+        ! Scale rho_n for smoothness
         rhohat_n = rho_n
         !rhohat_n = min(rho_n,1.1)
         !rhohat_n = 1.0_wp + kappa * atan((rho_n-1.0_wp)/kappa) ! Söderlind and Wang, 2006, Eq. 10
-        
-        ! Step 3: calculate the next time timestep (dt,n+1)
-        dt_new = rhohat_n * dt_n
 
-        ! Ensure timestep is also within parameter limits 
-        dt_new = max(dtmin,dt_new)  ! dt >= dtmin
-        dt_new = min(dtmax,dt_new)  ! dt <= dtmax
+        ! Step 3: calculate the next forcing rate (df,n+1)
+        df_new = rhohat_n * df_n
 
-        return 
+        ! Ensure rate is also within parameter limits
+        df_new = max(df_min,df_new)  ! df >= df_min
+        df_new = min(df_max,df_new)  ! df <= df_max
 
-    end subroutine set_adaptive_timestep_pc
+        return
+
+    end subroutine calc_forcing_rate_pc
 
     function calc_pi_rho_pi42(eta_n,eta_nm1,rho_nm1,eps,k_i,k_p,alpha_2) result(rho_n)
 
