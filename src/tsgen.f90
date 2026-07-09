@@ -60,8 +60,10 @@ module tsgen
 
     private
     public :: tsgen_class
-    public :: tsgen_init 
+    public :: tsgen_init
     public :: tsgen_update
+    public :: tsgen_tabulate
+    public :: tsgen_write
 
 contains
 
@@ -403,6 +405,87 @@ contains
         return
 
     end subroutine calc_df_dt_feedback
+
+    subroutine tsgen_tabulate(ts,time,f,df_dt,verbose)
+        ! Sample the analytic (time-driven) forcing series over a caller-supplied
+        ! time axis, for validation / diagnostics / output. Only valid for
+        ! time-driven methods; feedback methods have no closed form and must be
+        ! stepped online via tsgen_update.
+
+        type(tsgen_class),  intent(IN)  :: ts
+        real(wp),           intent(IN)  :: time(:)      ! [yr] simulation-time axis
+        real(wp),           intent(OUT) :: f(:)         ! [f]  mean forcing at each time
+        real(wp), optional, intent(OUT) :: df_dt(:)     ! [f/yr] finite-difference rate
+        logical,  optional, intent(IN)  :: verbose      ! print a short summary
+
+        ! Local variables
+        integer  :: i, n
+        logical  :: verb
+
+        verb = .FALSE.
+        if (present(verbose)) verb = verbose
+
+        if (ts%par%feedback) then
+            write(*,*) "tsgen_tabulate:: Error: method '"//trim(ts%par%method)// &
+                "' is response-driven and has no analytic series. Step it with tsgen_update."
+            stop
+        end if
+
+        n = size(time,1)
+
+        do i = 1, n
+            f(i) = eval_open(ts%par, time(i) - ts%time_init)
+        end do
+
+        if (present(df_dt)) then
+            ! Central finite differences (one-sided at the ends)
+            if (n .gt. 1) then
+                df_dt(1) = (f(2)-f(1)) / (time(2)-time(1))
+                do i = 2, n-1
+                    df_dt(i) = (f(i+1)-f(i-1)) / (time(i+1)-time(i-1))
+                end do
+                df_dt(n) = (f(n)-f(n-1)) / (time(n)-time(n-1))
+            else
+                df_dt = 0.0_wp
+            end if
+        end if
+
+        if (verb) then
+            write(*,"(a)")        "tsgen_tabulate:: "//trim(ts%par%label)// &
+                                    " (method="//trim(ts%par%method)//")"
+            write(*,"(a,i0)")     "  n points       = ", n
+            write(*,"(a,2g14.6)") "  time range     = ", time(1), time(n)
+            write(*,"(a,3g14.6)") "  f min/mean/max = ", minval(f), sum(f)/real(n,wp), maxval(f)
+        end if
+
+        return
+
+    end subroutine tsgen_tabulate
+
+    subroutine tsgen_write(filename,ts,time,f,df_dt)
+        ! Write a tabulated forcing series (from tsgen_tabulate) to a netCDF file.
+
+        character(len=*),   intent(IN) :: filename
+        type(tsgen_class),  intent(IN) :: ts
+        real(wp),           intent(IN) :: time(:)
+        real(wp),           intent(IN) :: f(:)
+        real(wp), optional, intent(IN) :: df_dt(:)
+
+        call nc_create(filename)
+        call nc_write_attr(filename,"tsgen_label", trim(ts%par%label))
+        call nc_write_attr(filename,"tsgen_method",trim(ts%par%method))
+
+        call nc_write_dim(filename,"time",x=time,units="yr")
+        call nc_write(filename,"f",f,dim1="time", &
+                        long_name="Transient forcing value")
+        if (present(df_dt)) then
+            call nc_write(filename,"df_dt",df_dt,dim1="time", &
+                        long_name="Forcing rate of change",units="1/yr")
+        end if
+
+        return
+
+    end subroutine tsgen_write
 
     subroutine calc_forcing_rate_pc(df_new,df,eta,eps,df_min,df_max,pc_k,controller)
         ! Adaptive forcing-rate update following the general predictor-corrector
