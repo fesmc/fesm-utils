@@ -6,54 +6,54 @@ module tsgen
 
     use precision, only: wp
     use constants, only: mv, pi, TOL
-    implicit none 
+    implicit none
 
+    ! Minimum forcing-rate magnitude [f/yr]: small but strictly nonzero, so the
+    ! PI-controller methods never divide by (or take the log of) zero.
+    real(wp), parameter :: DF_DT_MIN = 1e-9_wp
 
-
-    
-    type tsgen_par_class  
-        character(len=56) :: label 
-        character(len=56) :: method 
-        logical  :: with_kill  
-        real(wp) :: dt_init 
+    type tsgen_par_class
+        ! Configuration (read from namelist)
+        character(len=56) :: label
+        character(len=56) :: method
+        logical  :: with_kill
+        real(wp) :: dt_init
         real(wp) :: dt_ramp
         real(wp) :: dt_conv
-        real(wp) :: dt_ave 
+        real(wp) :: dt_ave
         real(wp) :: df_sign
         real(wp) :: eps
         real(wp) :: df_dt_max
-        real(wp) :: sigma 
-        real(wp) :: f_min 
+        real(wp) :: sigma
+        real(wp) :: f_min
         real(wp) :: f_max
         real(wp) :: f_conv
-        
-        ! Internal parameters 
-        real(wp) :: df_dt_min    
-        logical  :: after_step
+    end type
 
-    end type 
-    
     type tsgen_class
 
-        type(tsgen_par_class) :: par 
+        type(tsgen_par_class) :: par
 
-        ! variables 
+        ! History buffers over the time-averaging window
         real(wp), allocatable :: time(:)
         real(wp), allocatable :: var(:)
         real(wp), allocatable :: dv_dt(:)
 
-        real(wp) :: dt 
-        real(wp) :: dv_dt_ave
-        real(wp) :: df_dt
-        
+        ! PI-controller history (n:n-2)
         real(wp) :: pi_df(3)
         real(wp) :: pi_eta(3)
 
+        ! Runtime state
+        real(wp) :: dt
+        real(wp) :: dv_dt_ave
+        real(wp) :: df_dt
         real(wp) :: f_now
-        real(wp) :: f_mean_now, eta_now 
+        real(wp) :: f_mean_now
+        real(wp) :: eta_now
         logical  :: kill
-        real(wp) :: time_init 
-    end type 
+        real(wp) :: time_init
+        logical  :: after_step      ! ramp-time-step: on the return leg of the triangle
+    end type
 
     private
     public :: tsgen_class
@@ -101,12 +101,8 @@ contains
             stop
         end if 
 
-        ! Prescribe a very small, but nonzero minimum value 
-        ! (important to be nonzero for the pi controller methods)
-        ts%par%df_dt_min = 1e-9_wp   ! [f/yr]
-
         ! Set after_step false to start, since the first step is the initial ramp
-        ts%par%after_step = .FALSE. 
+        ts%after_step = .FALSE.
 
         ! Define label for this tsgen object
         ts%par%label = "tsgen"
@@ -130,8 +126,8 @@ contains
         ts%dv_dt_ave = 0.0_wp
         ts%df_dt     = 0.0_wp
 
-        ts%pi_df  = ts%par%df_dt_min 
-        ts%pi_eta = ts%par%eps 
+        ts%pi_df  = DF_DT_MIN
+        ts%pi_eta = ts%par%eps
 
         ! Override above choice for sin forcing 
         if (trim(ts%par%method) .eq. "sin") then 
@@ -275,7 +271,7 @@ contains
                     ! Then maintain a constant anomaly (independent of dv_dt). 
 
                         if (trim(ts%par%method) .eq. "ramp-time-step" .and. &
-                                (.not. ts%par%after_step) ) then
+                                (.not. ts%after_step) ) then
                             ! When first extreme value is reached, 
                             ! new extreme value should be imposed and 
                             ! df_sign possibly reversed.
@@ -298,7 +294,7 @@ contains
                                 ts%par%dt_ramp = ts%par%dt_conv 
                                 
                                 ! Set switch to know we are on the return part of the triangle
-                                ts%par%after_step = .TRUE.
+                                ts%after_step = .TRUE.
 
                             else if ( (ts%par%df_sign .gt. 0.0 .and.&
                                     ts%f_mean_now .ge. ts%par%f_max) ) then  
@@ -318,7 +314,7 @@ contains
                                 ts%par%dt_ramp = ts%par%dt_conv 
                                 
                                 ! Set switch to know we are on the return part of the triangle
-                                ts%par%after_step = .TRUE.
+                                ts%after_step = .TRUE.
 
                             end if
                             
@@ -393,7 +389,7 @@ contains
                         f_scale  = exp(-dvdt_fac)
 
                         ! Get forcing rate of change magnitude
-                        ts%df_dt = ( ts%par%df_dt_min + f_scale*(ts%par%df_dt_max-ts%par%df_dt_min) )
+                        ts%df_dt = ( DF_DT_MIN + f_scale*(ts%par%df_dt_max-DF_DT_MIN) )
 
                     end if 
 
@@ -410,7 +406,7 @@ contains
 
                         ! Calculate adaptive dfdt value using proportional-integral (PI) methods
                         call set_adaptive_timestep_pc(pi_df_now,ts%pi_df,ts%pi_eta,ts%par%eps, &
-                                            ts%par%df_dt_min,ts%par%df_dt_max,pi_order,ts%par%method)
+                                            DF_DT_MIN,ts%par%df_dt_max,pi_order,ts%par%method)
 
                         ! Remove oldest point from the end and insert latest point in beginning
                         ts%pi_eta = eoshift(ts%pi_eta,-1,boundary=abs(ts%dv_dt_ave))
