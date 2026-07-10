@@ -1,13 +1,16 @@
 name: Publish docs
 
 # Render the Quarto site in docs/ and publish it to the gh-pages branch.
-# Publishing is driven by the dedicated `docs` branch, decoupled from `main`:
-# push doc changes to `docs` to (re)publish the site. Figures are committed
-# PNGs, so the build needs only Quarto — no Julia, Fortran, or netCDF toolchain.
+# Publishing is driven by `dev`: any push that touches docs/ (or this workflow)
+# re-renders and publishes the site. Figures are committed PNGs, so the build
+# needs only Quarto — no Julia, Fortran, or netCDF toolchain.
 
 on:
   push:
-    branches: [docs]
+    branches: [dev]
+    paths:
+      - "docs/**"
+      - ".github/workflows/publish-docs.yml"
   workflow_dispatch:
 
 permissions:
