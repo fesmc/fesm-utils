@@ -1,6 +1,16 @@
 module staggering
 
-    use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit    
+    ! STATUS: work-in-progress, NOT ready for use and not currently used by
+    ! any other unit. Do not treat as a finished API.
+    !   - The module declares `private` but exports nothing (no `public ::`
+    !     list), so none of the routines below are callable from outside.
+    !   - `calc_magnitude_from_staggered` calls `get_neighbor_indices`, which
+    !     is not defined here nor imported via `use`; it would fail to link (or
+    !     silently bind to an unintended external).
+    ! Before wiring this in: add a `public ::` list and provide/import a
+    ! boundaries-aware neighbor-index routine.
+
+    use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit
     use precision
     use constants, only: TOL_UNDERFLOW
 
