@@ -1,0 +1,273 @@
+---
+title: "timing"
+subtitle: "Timers, output scheduling, and timestep management"
+---
+
+The `fesm-utils` library provides three small, independent modules that together
+handle the "time" bookkeeping of a model run: `timer` profiles how long code
+sections take, `timeout` decides which timesteps get written to output, and
+`timestepping` manages the model's time axis and advances it each iteration.
+They are unrelated in implementation and can be used separately, but a typical
+main loop uses all three at once.
+
+## timer
+
+`timer` measures wall-clock (or CPU) time spent in labelled sections of code so
+that a run can be profiled — how much time went to isostasy vs. ice dynamics
+vs. I/O — and reports both an end-of-run summary and an appendable timing-log
+table. Internally it prefers `omp_get_wtime()` when compiled with OpenMP and
+falls back to `cpu_time()` otherwise.
+
+### Public API
+
+```fortran
+type timer_class
+    ! Accumulates timing for up to ncomp_max = 100 components.
+    ! All fields are managed internally; only the derived type is public.
+end type
+```
+
+```fortran
+! Generic interface (dispatches on the optional time_mod argument type):
+call timer_step(timer, comp [, time_mod] [, label])
+
+  type(timer_class), intent(INOUT) :: timer
+  integer,           intent(IN)    :: comp        ! component index; see below
+  real(4|8),         intent(IN)    :: time_mod(2) ! optional [t_start, t_end] in model units
+  character(len=*),  intent(IN)    :: label       ! optional name for this component
+```
+
+`comp` controls the action:
+
+- `comp < 0` — reset all accumulated totals and start the clock.
+- `comp == 0` — restart the clock without recording (marks the start of the next interval).
+- `comp > 0` — record the elapsed time since the last call into component `comp`,
+  optionally tagging it with `label` and the model-time span `time_mod`.
+
+```fortran
+! Print a formatted per-component summary to standard output:
+call timer_print_summary(timer, units, units_mod, time_mod)
+
+  type(timer_class), intent(INOUT) :: timer
+  character(len=1),  intent(IN)    :: units      ! "s", "m", or "h"
+  character(len=*),  intent(IN)    :: units_mod  ! model time units label, e.g. "kyr"
+  real(4|8),         intent(IN)    :: time_mod   ! current model time (scalar)
+```
+
+```fortran
+! Initialize (or overwrite) a timing-log table file with a header row:
+call timer_write_table_init(timer, filename)
+
+! Append one timing row (time, dt, per-component times, total, rate) to the file:
+call timer_write_table(timer, time, units, filename [, init])
+
+  type(timer_class), intent(IN) :: timer
+  real(4|8),         intent(IN) :: time(2)   ! [time_now, dt_now] in model units
+  character(len=1),  intent(IN) :: units     ! "s", "m", or "h"
+  character(len=*),  intent(IN) :: filename
+  logical,           intent(IN) :: init      ! optional; if .TRUE. (re)initialize the file first
+```
+
+The rate column is CPU-time per unit model-time (`units/units_mod`). Timing units
+`"s"`, `"m"`, `"h"` are seconds, minutes, hours; any other value yields `-1`.
+
+### Usage
+
+Wrap each section of the loop between `timer_step` calls, then summarize at the end:
+
+```fortran
+type(timer_class) :: tmr, tmrs
+
+call timer_step(tmr, comp=-1)                        ! reset outer timer, start clock
+! ... initialization ...
+call timer_step(tmr, comp=1, label="initialization")
+
+call timer_step(tmrs, comp=-1)                       ! reset inner (per-step) timer
+do while (.not. ts%is_finished)
+    call timer_step(tmrs, comp=0)                    ! restart clock for this step
+    ! ... isostasy ...
+    call timer_step(tmrs, comp=1, time_mod=[t0,t1], label="isostasy")
+    ! ... ice dynamics ...
+    call timer_step(tmrs, comp=2, time_mod=[t0,t1], label="yelmo")
+    ! ... I/O ...
+    call timer_step(tmrs, comp=3, time_mod=[t0,t1], label="io")
+
+    call timer_write_table(tmrs, [ts%time, dtt]*1e-3, "m", tmr_file, &
+                           init=ts%time_elapsed .eq. 0.0)
+end do
+
+call timer_step(tmr, comp=2, time_mod=[t_init,ts%time]*1e-3, label="timeloop")
+call timer_print_summary(tmr, units="m", units_mod="kyr", time_mod=ts%time*1e-3)
+```
+
+## timeout
+
+`timeout` answers the question "should output be written at this timestep?" It
+builds, once at initialization, a list of target output times from a namelist
+group, and then `timeout_check` returns `.TRUE.` on any step whose time matches
+one of those targets (within a tolerance of `1e-6`). This decouples the output
+schedule from the integration timestep, so a model can step at fine resolution
+but write 2D fields only at coarse, configurable intervals.
+
+### Public API
+
+```fortran
+type timeout_class
+    character(len=56)     :: method     ! "none", "const", "file", or "times"
+    character(len=56)     :: label
+    real(wp), allocatable :: times(:)   ! resolved list of output times
+    logical               :: active     ! .FALSE. when method="none"
+    ! plus optional helper fields (filename, filenames, vnms) for caller use
+end type
+```
+
+```fortran
+! Build the output-time list from a namelist group:
+call timeout_init(tm, filename, group, label, time_init, time_end)
+
+  type(timeout_class), intent(INOUT) :: tm
+  character(len=*),    intent(IN)    :: filename   ! namelist file
+  character(len=*),    intent(IN)    :: group      ! namelist group name
+  character(len=*),    intent(IN)    :: label      ! label for log messages
+  real(wp),            intent(IN)    :: time_init  ! start of run
+  real(wp),            intent(IN)    :: time_end   ! end of run
+```
+
+```fortran
+! Test whether the current time is an output time:
+out_now = timeout_check(tm, time)
+
+  type(timeout_class), intent(IN) :: tm
+  real(wp),            intent(IN) :: time
+  logical                         :: out_now
+```
+
+The namelist group is read for a `method` and its parameters:
+
+- `method = "none"` — output disabled; `tm%active = .FALSE.`.
+- `method = "const"` — reads `dt`; emits `time_init, time_init+dt, ...` up to `time_end`.
+- `method = "times"` — reads an explicit `times` list; keeps those within `[time_init, time_end]`.
+- `method = "file"` — reads `file`, an ASCII file of times; each line is either a
+  single value or a `t0:dt:t1` range that expands to a vector.
+
+In every active case `time_end` is guaranteed to be included, and duplicate
+times are removed. The number of output times is capped at `nmax = 100000`.
+
+### Usage
+
+```fortran
+type(timeout_class) :: tm_2D, tm_1D
+
+! Configure two independent schedules from namelist groups "tm_2D" / "tm_1D":
+call timeout_init(tm_2D, path_par, "tm_2D", "heavy", ts%time_init, ts%time_end)
+call timeout_init(tm_1D, path_par, "tm_1D", "small", ts%time_init, ts%time_end)
+
+do while (.not. ts%is_finished)
+    call tstep_update(ts, dtt)
+    ! ... model update ...
+
+    if (tm_2D%active .and. timeout_check(tm_2D, ts%time)) then
+        call domain_write_step(dom, outfldr, ts%time)   ! coarse 2D snapshots
+    end if
+    if (tm_1D%active .and. timeout_check(tm_1D, ts%time)) then
+        call domain_write_1D(dom, outfldr, ts%time)      ! frequent 1D timeseries
+    end if
+end do
+```
+
+with a namelist group such as:
+
+```fortran
+&tm_2D
+    method = "const"    ! "none", "const", "file", "times"
+    dt     = 1e3
+    file   = "input/timeout_ramp_100kyr.txt"
+    times  = 0
+/
+```
+
+## timestepping
+
+`timestepping` owns the model's time axis: it initializes the start/end times,
+advances the clock by `dt` each iteration, and tracks several parallel "time
+keepers" — an elapsed counter and calendar/relative times — using Kahan
+summation to avoid drift over many small steps. It also flags when the run is
+finished. It does not decide *when* to do anything (that is `timeout`); it only
+holds and advances the current time.
+
+### Public API
+
+```fortran
+type tstep_class
+    character(len=56) :: units         ! time units label
+    character(len=56) :: method        ! "const"/"cal"/"rel" (see below)
+    real(wp) :: time_init, time_end
+    real(wp) :: time                   ! current output time (method-dependent)
+    real(wp) :: time_elapsed           ! time since time_init
+    real(wp) :: time_cal               ! calendar time
+    real(wp) :: time_rel               ! relative time
+    integer  :: n                      ! iteration counter
+    logical  :: is_finished            ! .TRUE. once time >= time_end
+    ! ... plus internal compensation/reference fields ...
+end type
+```
+
+```fortran
+! Initialize the time axis:
+call tstep_init(ts, time_init, time_end, method, units [, time_ref] [, const_cal] [, const_rel])
+
+  type(tstep_class), intent(INOUT) :: ts
+  real(wp),          intent(IN)    :: time_init, time_end
+  character(len=*),  intent(IN)    :: method   ! see the three methods below
+  character(len=*),  intent(IN)    :: units
+  real(wp),          intent(IN)    :: time_ref    ! optional; reference for cal<->rel conversion
+  real(wp),          intent(IN)    :: const_cal   ! optional; fixed calendar time
+  real(wp),          intent(IN)    :: const_rel   ! optional; fixed relative time
+```
+
+The `method` selects which time keeper drives `ts%time`:
+
+- `"const"` / `"constant"` — `time = time_init + time_elapsed`; `time_cal` and
+  `time_rel` are held fixed (a pure spin-up clock).
+- `"cal"` / `"calendar"` — `time = time_cal` evolves; `time_rel = time_cal - time_ref`.
+- `"rel"` / `"relative"` — `time = time_rel` evolves; `time_cal = time_rel + time_ref`.
+
+```fortran
+! Advance one step by dt (updates all time keepers and is_finished):
+call tstep_update(ts, dt [, verbose])
+
+  type(tstep_class), intent(INOUT) :: ts
+  real(wp),          intent(IN)    :: dt
+  logical,           intent(IN)    :: verbose  ! optional; print a row each step
+
+! Print a status row / header (iter, time, time_cal, time_rel, time_elapsed):
+call tstep_print(ts)
+call tstep_print_header(ts)
+```
+
+Note `tstep_init` requires `time_end > time_init` and stops otherwise. The first
+`tstep_update` only increments the counter (`n`); accumulation begins from the
+second call.
+
+### Usage
+
+Drive the main loop off `ts%is_finished`, advancing at the top of each iteration:
+
+```fortran
+type(tstep_class) :: ts
+
+call tstep_init(ts, time_init, time_end, method="cal", time_ref=1950.0_wp, units="yr")
+
+call tstep_print_header(ts)
+do while (.not. ts%is_finished)
+    call tstep_update(ts, dtt)
+    call tstep_print(ts)
+
+    ! ... perform model updates here, using ts%time / ts%time_rel / ts%time_cal ...
+end do
+```
+
+## See also
+
+- [tsgen](tsgen.qmd) — time-series forcing generator, which consumes the
+  `ts%time` produced here to drive a model's boundary forcing.

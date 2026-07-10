@@ -1,0 +1,56 @@
+---
+title: "SHTns"
+subtitle: "Fast Spherical Harmonic Transforms"
+---
+
+[SHTns](https://nschaeff.bitbucket.io/shtns/) is a high-performance C library
+for Spherical Harmonic Transforms — the forward and inverse transforms between
+values on a sphere and their spherical-harmonic coefficients. It provides a
+Fortran interface and is optimized with vectorized kernels.
+
+**Version vendored:** 3.7.5 (`SHTns/shtns-3.7.5/`).
+
+## Role in fesm-utils
+
+SHTns supplies the spherical-harmonic machinery used by downstream models (e.g.
+spectral transforms on the sphere). It **links against the [FFTW](fftw.qmd)
+built in this repository**, so FFTW must be installed first.
+
+## Building
+
+SHTns is built by its own autotools through the root `Makefile`:
+
+```bash
+make fftw  openmp=0        # prerequisite: build FFTW first
+make shtns openmp=0        # serial -> SHTns/shtns-serial
+make shtns openmp=1        # OpenMP -> SHTns/shtns-omp
+```
+
+The target runs, in `SHTns/shtns-3.7.5/`, pointing SHTns at the FFTW prefix:
+
+```bash
+./configure --prefix=<repo>/SHTns/shtns-<variant> [--enable-openmp] \
+    CPPFLAGS='-I<repo>/fftw/fftw-<variant>/include' \
+    LDFLAGS='-L<repo>/fftw/fftw-<variant>/lib'
+make && make install
+```
+
+The serial and OpenMP variants install side by side into `SHTns/shtns-serial`
+and `SHTns/shtns-omp`. Machine/compiler specifics — the kernel-compiler choice
+and `-march` handling — live in
+[`config/libs.mk`](https://github.com/fesmc/fesm-utils/blob/main/config/libs.mk).
+
+## Using it downstream
+
+Reference the install prefix directly:
+
+```
+fesm-utils/SHTns/shtns-serial/include    # shtns.h, shtns.f03
+fesm-utils/SHTns/shtns-serial/lib        # libshtns.a
+```
+
+## Notes
+
+- SHTns is the last of the three external libraries to build, because of its
+  FFTW link dependency. `make libs` builds `fftw`, `lis`, `shtns` in that order.
+- Build the external libraries serially (do not pass `-j` to `make libs`).

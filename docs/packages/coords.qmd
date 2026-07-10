@@ -1,0 +1,221 @@
+---
+title: "coords"
+subtitle: "Coordinates, projections, and grid-to-grid remapping"
+---
+
+## Overview
+
+`coords` is the geometry and remapping core of `fesm-utils`. It is a clean
+rebuild of the older `coordinates` library, keeping the user-facing API
+(`points_class` / `grid_class` / `map_class`, `*_init`, `map_field`) while
+replacing the internal storage, neighbour search and conservative remapping with
+a single design. Everything is reached through one umbrella module:
+
+```fortran
+use coords
+```
+
+The package covers:
+
+- **Coordinate and grid definition** — point sets (`points_class`) and regular
+  grids (`grid_class`), each carrying a shared coordinate-system descriptor
+  (`coord_system`: map type, units, planet, projection).
+- **Map projections** — the oblimap2 oblique stereographic forward/inverse
+  transforms, driven by projection parameters `(lambda, phi, alpha, x_e, y_n)`.
+- **Gaussian-latitude grids** — quadrature latitudes for spectral/atmospheric
+  grids (non-uniform y-axis).
+- **k-d tree nearest-neighbour search** — the fast neighbour engine underneath
+  distance-based maps.
+- **Weight-map remapping** — one sparse source→target store applied with
+  nearest-neighbour, Shepard (inverse-distance), quadrant, bilinear or
+  conservative (area-weighted) kernels.
+- **SCRIP-superset weight-map file I/O** — maps are cached as valid SCRIP
+  remapping files, interoperable with `cdo` and other tools.
+- **CDO grid-description interop and cached map generation** — read/write `cdo`
+  griddes files, generate weights online (in-package or via an external `cdo`
+  call), and load-if-exists / save-on-generate caching.
+- **The multigrid coupler** — a thin registry + lazy map-cache layer for
+  remapping fields between many named grids.
+
+## Key derived types
+
+All types are defined in `coordinates.f90` (geometry) and `mapping.f90` (maps),
+and re-exported by `use coords`.
+
+| Type | Role |
+|------|------|
+| `coord_system` | Coordinate-reference metadata (`mtype`, `units`, `planet`, `proj`, `xy_conv`, `is_cartesian`, `is_projection`, `is_lon180`). Defined once and embedded as `%cs` in every geometry type. |
+| `points_class` | An unstructured set of points: `npts`, 1D arrays `x, y, lon, lat, area`, and `%cs`. |
+| `grid_axis_class` | Regular axis description: `nx, ny, x0, dx, y0, dy` and the axis vectors `x(:), y(:)` (supports explicit non-uniform axes, e.g. Gaussian latitudes). |
+| `grid_class` | A regular grid: `name`, axis block `%G` (`grid_axis_class`), 2D arrays `x, y, lon, lat, area`, and `%cs`. |
+| `map_class` | Public map wrapper: source/target names (`name1`, `name2`), target coordinate system `%cs`, target axes `%G`, fixed interpolation `method`, and the internal weight store `%wm`. |
+| `weight_map_t` | The single sparse source→target store (link-centric, SCRIP-style). Usually accessed only through `map_class`; see below. |
+| `coupler_class` | A registry of named grids plus a lazily-built cache of grid→grid maps (`coupler.f90`). |
+
+### The weight store
+
+`weight_map_t` (module `weight_map`) is one sparse matrix with two payload
+flavours, selected by `%kind`:
+
+- `MAP_DISTANCE` — links carry the neighbour distance, position (`xn`, `yn`) and
+  quadrant; the per-link weight is built at *apply* time from the chosen kernel.
+  One cached distance map therefore serves `nn` / `quadrant` / `shepard` /
+  `bilinear` and adapts to a time-varying source mask.
+- `MAP_WEIGHT` — links carry a final baked weight `w(:)`; apply just reduces it
+  (conservative maps, imported SCRIP maps, or precomputed bilinear).
+
+Links are grouped by destination; `dst_off(:)` is a CSR offset array. The
+type is rarely handled directly — `map_init` / `map_field` wrap it — but the
+low-level API (`weight_map_alloc`, `weight_map_index`, `weight_map_apply`,
+`weight_map_prune`, `weight_map_free`) is public for building custom maps.
+
+## Core workflow
+
+The typical use is: define a source and target grid, generate (or load) a weight
+map between them, then apply that map to remap one or more fields.
+
+```fortran
+use coords
+
+type(grid_class) :: gsrc, gtgt
+type(map_class)  :: map
+real(dp), allocatable :: field_src(:,:), field_tgt(:,:)
+
+! 1. Define source and target grids (here two Cartesian grids in km).
+call grid_init(gsrc, name="src", mtype="cartesian", units="kilometers", &
+               x0=0.0_dp,   dx=100.0_dp, nx=10, y0=0.0_dp,   dy=100.0_dp, ny=10)
+call grid_init(gtgt, name="tgt", mtype="cartesian", units="kilometers", &
+               x0=150.0_dp, dx=100.0_dp, nx=7,  y0=150.0_dp, dy=100.0_dp, ny=7)
+
+! 2. Generate (or load) a weight map. `method` fixes the kernel; the map is
+!    cached under `fldr` and reloaded next time when load=.true. (the default).
+call map_init(map, gsrc, gtgt, method="shepard", max_neighbors=8, fldr="maps")
+
+! 3. Apply it. var1 is the source field; var2 is sized to the target grid.
+allocate(field_src(10,10), field_tgt(7,7))
+! ... fill field_src ...
+call map_field(map, "myfield", field_src, field_tgt, stat="mean")
+```
+
+`grid_init` is generic and also accepts explicit axis vectors (`x=`, `y=`), an
+existing grid/points object, or a file (`grid_init(grid, filename, ...)` reads a
+`.nc` grid or a `/map/` namelist). Point sets are built the same way with
+`points_init(pts, name=, mtype=, units=, x=, y=, ...)`.
+
+`map_init` is overloaded for grid→grid, grid→points, points→grid,
+points→points, and grid→grid *by name* (`map_init(map, name1, name2, ...)`,
+which reads both grid descriptions from `grid_<name>.txt`). Key optional
+arguments to the grid→grid form:
+
+- `method` — interpolation kernel: `"con"` (conservative) or a distance kernel
+  `"nn"` / `"shepard"` / `"quadrant"` / `"bilin"` (default `"nn"`).
+- `gen` — generator used when weights must actually be built: `"coords"`
+  (in-package, default) or `"cdo"` (external `cdo` system call).
+- `fldr` — map cache directory (default `"maps"`).
+- `load` — if `.true.` (default) an existing cache file is loaded instead of
+  regenerated; freshly generated maps are always saved.
+- `max_neighbors`, `dist_max` — neighbour-search controls for distance maps.
+- `precompute_weights` — collapse a distance store to baked weights at init for
+  `shepard`/`bilinear` (default `.true.`); the on-disk cache stays
+  distance-format either way.
+- `weight_cutoff` — relative cutoff for pruning sliver links from baked
+  (`con`/bilinear) maps before caching (default `1e-4`; `0.0` keeps all links).
+
+`map_field` is generic over the field element type (`integer`, `sp`, `dp`) and
+over grid/points sources and targets. Beyond `stat` it accepts `method` (kernel
+override for distance maps), `missing_value`, `radius`, `mask2`, `reset`,
+`mask_pack`, and optional fill/filter post-processing (`fill_method`,
+`filt_method`, `filt_par`). The `stat` argument selects the reduction over each
+target's links: `"mean"` (default), `"count"` (weighted mode), or `"stdev"`.
+
+## Remapping kernels
+
+The kernel is fixed when the map is generated (it is part of the cache key) and
+selected via `method`:
+
+- **`nn` (nearest)** — copies the single nearest valid source value. Use for
+  categorical/index fields, masks, and where no smoothing is wanted.
+- **`shepard`** — inverse-distance-squared weighting over the neighbours within
+  `radius`. A good general-purpose smooth interpolation for scattered or
+  point-set sources.
+- **`quadrant`** — nearest valid neighbour in each of the four quadrants, IDW
+  combined; more isotropic than plain Shepard near data gaps.
+- **`bilin` (bilinear)** — for structured source→target pairs, exact index-space
+  bilinear interpolation (matches `cdo genbil`). Best for smooth fields on
+  regular grids; bakes to a `MAP_WEIGHT` map.
+- **`con` (conservative)** — area-weighted overlap via analytic polygon
+  clipping. Conserves the area integral, so it is the right choice for fluxes and
+  for aggregating a fine grid onto a coarse one. Built as a `MAP_WEIGHT` map.
+
+Distance kernels (`nn`/`shepard`/`quadrant`) share a single `MAP_DISTANCE`
+store, so the kernel can also be overridden per call in `map_field(method=)`
+without rebuilding the map. Conservative and bilinear are baked weights and are
+fixed at generation.
+
+## CDO interop and map caching
+
+Grids round-trip through `cdo` griddes text files (module `grid_cdo`):
+
+- `grid_cdo_write_desc_short(grid, fldr)` writes `grid_<name>.txt`, a
+  `cdo`-compliant description with a `#`-comment header carrying the full
+  `coord_system` so the grid can be reconstructed exactly.
+- `grid_cdo_read_desc(grid, name, fldr)` rebuilds a `grid_class` from such a
+  file (the reader falls back on the CF `grid_mapping_name` for files stripped of
+  the `fesm-utils` header, e.g. native `cdo` descriptions).
+
+Map caching is handled inside `map_init`. The cache filename is derived from the
+two grid names, the folder and the method (`gen_map_filename`), and:
+
+1. if `load=.true.` (default) and the file exists, the map is loaded, with the
+   file format auto-detected — an in-package cache (carries a `meta` variable) vs
+   a standard/`cdo` SCRIP file;
+2. otherwise the weights are generated (in-package for `gen="coords"`, or by an
+   external `cdo gen<method>` call for `gen="cdo"`) and saved to the cache.
+
+Because the cache is always a valid SCRIP remapping file, a `cdo`-generated map
+and an in-package `coords` map interoperate at the same filename. The file I/O
+primitives are public as `weight_map_write` / `weight_map_read` (module
+`map_io`); `map_read(map, src_name, dst_name, fldr, method)` loads a pre-existing
+SCRIP map directly into a `map_class`.
+
+## Coupler
+
+The `coupler` module (module `coupler`, `use coupler`) sits on top of the mapping
+core and manages many grids at once. A `coupler_class` holds a registry of named
+grids and a lazily populated cache of grid→grid maps: grids are nodes, maps are
+directed, method-typed edges.
+
+```fortran
+use coords
+use coupler
+
+type(coupler_class)   :: cpl
+type(grid_class)      :: gcoarse, gfine
+real(dp), allocatable :: fs(:,:), ft(:,:)
+
+call coupler_init(cpl, map_fldr="maps")          ! empty registry + cache
+call coupler_add_grid(cpl, "coarse", gcoarse)    ! register grids by name
+call coupler_add_grid(cpl, "fine",   gfine)
+
+! remap sizes the destination itself; the (src,dst,method) map is built on first
+! use and reused thereafter. method defaults to "con".
+call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
+```
+
+- `coupler_add_grid(cpl, name, grid)` registers a grid; unregistered names are
+  resolved on demand from `grid_<name>.txt` in the map folder.
+- `remap(cpl, var_src, src, var_dst, dst, method, stat)` finds-or-builds the map
+  for `(src, dst, method)`, allocates `var_dst` to the target size, and applies
+  it. It is overloaded for `dp` / `sp` / `int` and 2D / 3D fields. `method` is
+  part of the cache key; `stat` is forwarded per call and is not.
+- `coupler_prime(cpl, src, dst, method, gen)` eagerly builds a map up front
+  (fail-fast at init rather than mid-timestep) and is the point at which a map's
+  generator can be overridden via `gen=`.
+
+Each map is built once, stored once in fixed-capacity storage, and shared across
+all callers, so adding a map never reallocates or deep-copies the large weight
+arrays already built.
+
+## See also
+
+Related pages: [varslice](varslice.qmd), [ncio](ncio.qmd).

@@ -1,0 +1,225 @@
+---
+title: "gaussian_quadrature"
+subtitle: "Finite-element Gaussian quadrature (3D hexahedral elements)"
+---
+
+## Overview
+
+`gaussian_quadrature` provides the finite-element machinery for numerically
+integrating fields over structured grid cells treated as finite elements. The
+module is built around **3D hexahedral elements** (8 nodes per element) and
+their **2D quadrilateral faces** (4 nodes per element), the natural elements for
+a regular ice-sheet / ESM grid.
+
+Numerical integration over an element is approximated by a weighted sum of the
+integrand evaluated at a small set of **quadrature points**. For these elements
+the module uses the standard 2×2×2 (3D) and 2×2 (2D) Gauss rule, with quadrature
+points located at $\pm 1/\sqrt{3}$ in each direction of the reference element and
+unit weights. Each element carries **trilinear** (3D) or **bilinear** (2D)
+**shape/basis functions** `N`, together with their derivatives with respect to
+the reference coordinates, which map nodal (corner) values to values at the
+quadrature points and support Jacobian-based mapping to physical coordinates.
+
+The reference hexahedron spans $x,y,z \in (-1,1)$, indexed counter-clockwise
+from the SW corner with nodes 1–4 on the lower surface and 5–8 on the upper
+surface:
+
+```
+N4----N3        N8----N7
+|     |  lower  |     |  upper
+N1----N2        N5----N6
+```
+
+The intended use is finite-element integration and interpolation over ice-sheet
+model fields: staggering a variable from grid nodes to element corners, then
+evaluating it at the element's quadrature points for integration.
+
+## Public API
+
+The module exports two derived types and their associated procedures:
+
+```fortran
+public :: gq2D_class
+public :: gq2D_init
+public :: gq2D_to_nodes_aa
+public :: gq2D_to_nodes_ab
+public :: gq2D_to_nodes_acx
+public :: gq2D_to_nodes_acy
+
+public :: gq3D_class
+public :: gq3D_init
+public :: gq3D_to_nodes_aa
+public :: gq3D_to_nodes_ab
+public :: gq3D_to_nodes_acx
+public :: gq3D_to_nodes_acy
+public :: gq3D_to_nodes_acz
+```
+
+### Derived types (element setup)
+
+`gq2D_class` and `gq3D_class` hold the fixed reference-element geometry (filled
+once by the `*_init` routines) together with per-call working storage.
+
+`gq2D_class` (4-node quadrilateral face):
+
+```fortran
+type gq2D_class
+    integer :: n_qp            ! number of quadrature points (4)
+    integer :: n_nodes         ! number of nodes / corners (4)
+    real(8) :: xr(4)           ! quadrature-point x in reference element
+    real(8) :: yr(4)           ! quadrature-point y in reference element
+    real(8) :: wt(4)           ! quadrature-point weights
+    real(8) :: wt_tot          ! total weight (reference area = 4)
+    real(8) :: N(4,4)          ! shape functions N(node, qp)
+    real(8) :: dNdxr(4,4)      ! dN/dx in reference element
+    real(8) :: dNdyr(4,4)      ! dN/dy in reference element
+    real(8) :: v_ab(4)         ! variable value at cell corners
+    real(8) :: dNdx(4)         ! at nodes
+    real(8) :: dNdy(4)         ! at nodes
+    real(8) :: detJ(4)         ! at nodes
+    real(8) :: v(4)            ! variable value at quadrature points
+end type
+```
+
+`gq3D_class` (8-node hexahedron) has the analogous fields extended to 8 nodes /
+quadrature points, plus the third dimension:
+
+```fortran
+type gq3D_class
+    integer :: n_qp            ! number of quadrature points (8)
+    integer :: n_nodes         ! number of nodes / corners (8)
+    real(8) :: xr(8), yr(8), zr(8)   ! quadrature-point reference coordinates
+    real(8) :: wt(8)                 ! quadrature-point weights
+    real(8) :: wt_tot                ! total weight (reference volume = 8)
+    real(8) :: N(8,8)                ! shape functions N(node, qp)
+    real(8) :: dNdxr(8,8)            ! dN/dx in reference element
+    real(8) :: dNdyr(8,8)            ! dN/dy in reference element
+    real(8) :: dNdzr(8,8)            ! dN/dz in reference element
+    real(8) :: vol0                  ! volume scale
+    real(8) :: v_ab(8)               ! variable value at cell corners
+    real(8) :: dNdx(8), dNdy(8), dNdz(8)   ! at nodes
+    real(8) :: detJ(8)               ! at nodes
+    real(8) :: v(8)                  ! variable value at quadrature points
+end type
+```
+
+### Initialization (quadrature points and shape functions)
+
+Each `*_init` routine populates the reference-element geometry: it sets `n_qp`
+and `n_nodes`, places the quadrature points at $\pm 1/\sqrt{3}$, assigns the
+weights, and evaluates the shape functions `N` and their reference derivatives
+`dNdxr`, `dNdyr` (and `dNdzr` in 3D) at every quadrature point.
+
+```fortran
+subroutine gq2D_init(gq, verbose)
+    type(gq2D_class), intent(OUT)          :: gq
+    logical,          intent(IN), optional :: verbose
+
+subroutine gq3D_init(gq, verbose)
+    type(gq3D_class), intent(OUT)          :: gq
+    logical,          intent(IN), optional :: verbose
+```
+
+The optional `verbose` flag prints the computed basis functions and derivatives
+for each quadrature point (including checks that `sum(N) = 1` and the derivative
+sums vanish).
+
+### Evaluation at quadrature points (staggering and interpolation)
+
+The `*_to_nodes_*` routines stagger a gridded variable `var` to the element
+corners (`gq%v_ab`) and then evaluate it at the element's quadrature points via
+the shape functions, returning the quadrature-point values in `v_qp` (and also
+storing them in `gq%v`). The suffix denotes the grid on which the input variable
+`var` lives:
+
+- `_aa` — cell-centred (aa) grid
+- `_ab` — corner (ab) grid
+- `_acx` — x-staggered (acx) grid
+- `_acy` — y-staggered (acy) grid
+- `_acz` — z-staggered (acz) grid (3D only)
+
+**2D** (integration over a quadrilateral face):
+
+```fortran
+subroutine gq2D_to_nodes_aa (gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+subroutine gq2D_to_nodes_ab (gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+subroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+subroutine gq2D_to_nodes_acy(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+```
+
+with the common argument set:
+
+```fortran
+    type(gq2D_class), intent(INOUT) :: gq          ! Gaussian Quadrature 2D object
+    real(wp),         intent(INOUT) :: v_qp(4)     ! variable values at quadrature points
+    real(wp),         intent(IN)    :: var(:,:)    ! variable to be interpolated
+    real(wp),         intent(IN)    :: dx, dy      ! horizontal grid spacing
+    integer,          intent(IN)    :: i, j        ! [x,y] indices of current cell
+    integer,          intent(IN)    :: im1, ip1, jm1, jp1  ! neighbor indices
+```
+
+**3D** (integration over a hexahedral element):
+
+```fortran
+subroutine gq3D_to_nodes_aa (gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+subroutine gq3D_to_nodes_ab (gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+subroutine gq3D_to_nodes_acx(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+subroutine gq3D_to_nodes_acy(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+subroutine gq3D_to_nodes_acz(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+```
+
+with the common argument set:
+
+```fortran
+    type(gq3D_class), intent(INOUT) :: gq          ! Gaussian Quadrature 3D object
+    real(wp),         intent(INOUT) :: v_qp(8)     ! variable values at quadrature points
+    real(wp),         intent(IN)    :: var(:,:,:)  ! variable to be interpolated
+    real(wp),         intent(IN)    :: dx, dy      ! horizontal grid spacing (const)
+    real(wp),         intent(IN)    :: dz0         ! dz to cell below
+    real(wp),         intent(IN)    :: dz1         ! dz to cell above
+    integer,          intent(IN)    :: i, j, k     ! [x,y,z] indices of current cell
+    integer,          intent(IN)    :: im1, ip1, jm1, jp1, km1, kp1  ! neighbor indices
+```
+
+Here `dz0` and `dz1` are the vertical distances to the cell below and above,
+allowing non-uniform vertical spacing while the horizontal grid is assumed
+regular.
+
+## Usage example
+
+The typical pattern is: initialise an element once, then loop over grid cells,
+staggering the field to corners and evaluating it at the quadrature points. The
+quadrature-point values in `v_qp` (weighted by `gq%wt`) are then used to
+approximate the element integral.
+
+```fortran
+use gaussian_quadrature
+
+type(gq3D_class) :: gq
+real(wp) :: v_qp(8)
+real(wp) :: var(nx,ny,nz)      ! field on the aa (cell-centred) grid
+real(wp) :: dx, dy, dz0, dz1
+integer  :: i, j, k
+real(wp) :: elem_integral
+
+! 1. Set up the reference hexahedron: quadrature points, weights, shape functions
+call gq3D_init(gq)
+
+! 2. For a given cell (i,j,k), evaluate var at the element's quadrature points.
+!    Neighbor indices im1/ip1/... would normally respect the model's
+!    boundary conditions; interior points are shown here.
+call gq3D_to_nodes_aa(gq, v_qp, var, dx, dy, dz0, dz1, &
+                      i, j, k, i-1, i+1, j-1, j+1, k-1, k+1)
+
+! 3. Approximate the element integral as a weighted sum over quadrature points.
+!    (For a full integral, multiply by the Jacobian determinant gq%detJ.)
+elem_integral = sum(gq%wt(1:gq%n_qp) * v_qp(1:gq%n_qp))
+```
+
+The 2D routines follow the same pattern with `gq2D_class`, `gq2D_init`, the
+`gq2D_to_nodes_*` calls, and 4-element arrays, integrating over a quadrilateral
+face instead of a hexahedron.
+
+## See also
+
+- [coords](coords.qmd)

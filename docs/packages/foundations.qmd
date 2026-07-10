@@ -1,0 +1,95 @@
+---
+title: "foundations"
+subtitle: "Precision kinds and package-wide constants"
+---
+
+## Overview
+
+The `precision` and `constants` modules are the shared base that every other
+`fesm-utils` module builds on. `precision` defines the real kinds used
+throughout the library — the working precision `wp`, plus explicit single
+(`sp`) and double (`dp`) kinds. `constants` defines the package-wide domain
+values: the missing value, error sentinels, mathematical constants, and
+tolerances.
+
+The two concerns are kept separate on purpose. Floating-point kinds live in
+`precision`; domain values live in `constants`. As the `constants` header
+notes, precision kinds must be sourced directly from `precision` — they are
+**not** re-exported from `constants`.
+
+## precision
+
+`precision` defines three integer kind parameters:
+
+| Name | Definition | Meaning |
+|------|-----------|---------|
+| `dp` | `kind(1.d0)` | Double-precision real kind |
+| `sp` | `kind(1.0)` | Single-precision real kind |
+| `wp` | `sp` | Working precision (the default kind for library reals) |
+
+The working precision `wp` is selected by aliasing one of the explicit kinds.
+It is currently set to single precision (`wp = sp`); changing that one line
+retargets the working precision of the whole library.
+
+```fortran
+use precision, only: wp
+
+real(wp) :: x
+```
+
+Use `sp` or `dp` directly when a routine must pin a variable to a specific
+precision regardless of the working precision.
+
+## constants
+
+`constants` uses `wp` and `dp` from `precision` for its own declarations but
+keeps them `private`, so they are not re-exported — source kinds from
+`precision`. Values default to working precision (`wp`) except where a
+double-precision form is explicitly required (geometry, weights, and other
+double-only internals).
+
+| Name | Meaning |
+|------|---------|
+| `mv` | Missing value, working precision (`-9999.0_wp`) |
+| `mv_dp` | Missing value, double precision (`-9999.0_dp`) |
+| `ERR_DIST` | Error distance sentinel — a very large distance (`1E8_dp`) |
+| `ERR_IND` | Error index sentinel (`-1`) |
+| `pi` | Pi, computed as `2*acos(0)` in double precision |
+| `degrees_to_radians` | Conversion factor `pi / 180` |
+| `radians_to_degrees` | Conversion factor `180 / pi` |
+| `TOL` | General tolerance (`1e-8_wp`) |
+| `TOL_UNDERFLOW` | Underflow tolerance (`1e-15`, cast to `wp`) |
+
+The missing value `mv` (`-9999.0`) is the library-wide flag for absent or
+invalid data, with `mv_dp` supplying the same sentinel at double precision for
+the double-only internals. The error sentinels `ERR_DIST` and `ERR_IND` mark
+failed distance and index lookups: `ERR_DIST` is a deliberately huge distance
+(`1E8`) so that a bad match never wins a nearest-neighbour comparison, and
+`ERR_IND = -1` is an out-of-range index.
+
+The mathematical constants are all double precision. `pi` is computed as
+`2*acos(0)` rather than hard-coded, and `degrees_to_radians` /
+`radians_to_degrees` are derived from it for angle conversions. The tolerances
+`TOL` (`1e-8`) and `TOL_UNDERFLOW` (`1e-15`) are working precision; `TOL` is the
+general comparison tolerance and `TOL_UNDERFLOW` guards against underflow.
+
+## Usage note
+
+A module that needs both the working kind and the domain constants pulls each
+from its own module:
+
+```fortran
+use precision, only: wp
+use constants, only: mv, pi, TOL
+
+real(wp) :: value
+
+if (abs(value - mv) < TOL) then
+    ! value is the missing-value flag
+end if
+```
+
+## See also
+
+- [coords](coords.qmd)
+- [tsgen](tsgen.qmd)

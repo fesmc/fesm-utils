@@ -1,0 +1,61 @@
+---
+title: "LIS"
+subtitle: "Library of Iterative Solvers for linear systems"
+---
+
+[LIS](https://www.ssisc.org/lis/) (Library of Iterative Solvers) is a parallel
+C/Fortran library for solving large, sparse systems of linear equations and
+eigenvalue problems with iterative methods (a wide range of Krylov-subspace
+solvers and preconditioners, including algebraic multigrid).
+
+**Version vendored:** 2.1.11 (`lis/lis-2.1.11/`).
+
+## Role in fesm-utils
+
+LIS provides the sparse iterative linear solvers used by downstream Earth system
+models. It is built with the Fortran 90 interface and the SA-AMG (smoothed
+aggregation algebraic multigrid) preconditioner enabled.
+
+## Building
+
+LIS is built by its own autotools through the root `Makefile`:
+
+```bash
+make lis openmp=0        # serial -> lis/lis-serial
+make lis openmp=1        # OpenMP -> lis/lis-omp
+```
+
+The target runs, in `lis/lis-2.1.11/`:
+
+```bash
+./configure --prefix=<repo>/lis/lis-<variant> --enable-f90 --enable-saamg [--enable-omp]
+make && make install
+```
+
+The serial and OpenMP variants install side by side into `lis/lis-serial` and
+`lis/lis-omp`. Machine/compiler specifics (compiler pick, C-standard pins, Intel
+runtime-library fixes) live in
+[`config/libs.mk`](https://github.com/fesmc/fesm-utils/blob/main/config/libs.mk);
+the vendored 2.1.11 autotools were modernized to build cleanly with recent
+`icx`/`ifx`.
+
+## Using it downstream
+
+Reference the install prefix directly:
+
+```
+fesm-utils/lis/lis-serial/include     # lis.h, lisf.h, the lis Fortran module
+fesm-utils/lis/lis-serial/lib         # liblis.a
+```
+
+## Updating the vendored source
+
+To try a different upstream version, unpack it into the `lis/` container folder
+and rebuild:
+
+```bash
+wget https://www.ssisc.org/lis/dl/lis-2.1.11.zip
+unzip lis-2.1.11.zip -d lis/
+rm lis-2.1.11.zip
+make lis openmp=0
+```

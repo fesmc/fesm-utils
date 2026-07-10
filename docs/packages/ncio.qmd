@@ -1,0 +1,102 @@
+---
+title: "ncio"
+subtitle: "High-level netCDF input/output for Fortran"
+---
+
+## Overview
+
+`ncio` is a high-level Fortran wrapper over the netCDF library (Robinson & Perrette). It reduces netCDF I/O to a handful of generic calls: create a file, define dimensions, and read or write variables and attributes without managing file IDs, variable IDs, dimension IDs, or data types by hand. The generic interfaces dispatch automatically on the rank (point through 6D) and type (`integer`, `single`, `double`, `logical`, `character`) of the array passed, and dimensions are referred to by name rather than by numeric ID.
+
+The library is self-contained: it depends only on the netCDF Fortran library and standard intrinsics. All routines live in the `ncio` module (`src/ncio.f90`), with an optional companion module `ncio_transpose` (`src/ncio_transpose.f90`).
+
+## Core routines
+
+All public entities are exported from `module ncio`. The main generic interfaces and subroutines are grouped below.
+
+### File
+
+- `nc_create` — create a new netCDF file, optionally with `overwrite`, `netcdf4`, and global metadata (`author`, `creation_date`, `institution`, `description`).
+- `nc_open` — open an existing file, returning `ncid`; optional `writable` flag.
+- `nc_close` — close an open file given its `ncid`.
+
+### Dimensions
+
+- `nc_write_dim` — define and write a coordinate dimension variable from its axis values `x`, with optional `units`, etc. (generic over `integer`/`single`/`double`, point or 1D).
+- `nc_write_map` — write a CRS / grid-mapping variable describing a projection.
+- `nc_write_attr_std_dim` — attach standard CF attributes to conventional dimension variables.
+
+### Variables
+
+- `nc_write` — write a variable of any supported type and rank (point–6D). Dimensions are given by name via `dim1`, `dim2`, … (or a `dims(:)` array); optional metadata includes `long_name`, `standard_name`, `units`, `grid_mapping`, `missing_value`, plus `start`/`count` for hyperslab writes.
+- `nc_read` — read a variable into an array of matching type and rank, with optional `start`, `count`, `missing_value`, `ncid`, `iostat`.
+
+### Attributes
+
+- `nc_write_attr` — write a variable-level or global attribute (character, integer, single, double; scalar or 1D vector).
+- `nc_read_attr` — read a variable-level or global attribute (same type coverage, including 1D vector attributes).
+
+### Queries
+
+- `nc_size` — return the length of a named dimension/variable.
+- `nc_dims` — return the dimension names and sizes of a variable.
+- `nc_ndims` — return the number of dimensions of a variable.
+- `nc_exists_var` — test whether a variable exists in a file.
+- `nc_exists_attr` — test whether an attribute exists (global or variable-level).
+- `nc_size_attr` — return the length of an attribute (global or variable-level).
+- `nc_time_index` — find the index of a given time value in a file's time coordinate (single or double).
+
+## Usage example
+
+The canonical pattern is: create the file, write coordinate dimensions, write variables referencing those dimensions by name, then read data back.
+
+```fortran
+use ncio
+
+character(len=*), parameter :: filename = "output.nc"
+real(8) :: time(100), f(100)
+real(8) :: f_in(100)
+integer :: i
+
+do i = 1, 100
+    time(i) = real(i, 8)
+    f(i)    = sin(time(i))
+end do
+
+! Create the file and define the time dimension
+call nc_create(filename)
+call nc_write_dim(filename, "time", x=time, units="yr")
+
+! Write a variable along the "time" dimension, with metadata
+call nc_write(filename, "f", f, dim1="time", &
+              long_name="Transient forcing value", units="1")
+
+! Add a global attribute
+call nc_write_attr(filename, "title", "ncio usage example")
+
+! Read the variable back
+call nc_read(filename, "f", f_in)
+```
+
+Multi-dimensional variables list additional dimensions with `dim2`, `dim3`, …:
+
+```fortran
+call nc_write_dim(filename, "time",  x=time,  units="yr")
+call nc_write_dim(filename, "month", x=month)
+call nc_write(filename, "dTmon", dTmon, dim1="time", dim2="month")
+```
+
+## ncio_transpose
+
+`module ncio_transpose` provides the generic interfaces `nc_write_t` and `nc_read_t` for reading and writing arrays in transposed dimension order (2D and 3D, double precision). They wrap the ordinary `nc_write` / `nc_read` calls: the data is transposed in memory before writing (e.g. `[j,i]` to on-disk `[i,j]`, `[k,j,i]` to `[i,j,k]`) and transposed back on read. This is convenient when the in-memory array layout differs from the desired on-disk axis ordering. All the usual optional arguments (`dim1…dim6`, `dims`, `start`, `count`, `long_name`, `units`, `missing_value`, etc.) are forwarded.
+
+## Notes
+
+- **Compression.** netCDF4 output defaults to deflate level 1, lowering memory use for compressed files.
+- **Error messages.** I/O operations are threaded with a context (filename, variable, dimension, attribute) so that failures report exactly which file/variable/dimension/attribute led to the error.
+- **Vector attributes.** Both `nc_write_attr` and `nc_read_attr` support scalar and 1D (vector) numeric attributes for integer, single, and double types, at both variable and global level.
+
+## See also
+
+- [series](series.qmd)
+- [varslice](varslice.qmd)
+- [nml](nml.qmd)

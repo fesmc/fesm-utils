@@ -1,0 +1,163 @@
+---
+title: "fesm-utils"
+subtitle: "Shared Fortran utilities and vendored libraries for fast Earth system models"
+toc: false
+---
+
+**fesm-utils** is a convenience repository holding a self-contained Fortran
+utility library together with the external C/Fortran libraries needed to build
+and run fast Earth system models such as
+[CLIMBER-X](https://github.com/cxesmc/climber-x) and
+[yelmox](https://github.com/palma-ice/yelmox).
+
+Everything is driven from a single root `Makefile`, generated per machine by
+[configme](https://github.com/fesmc/configme). A serial and an OpenMP variant
+build side by side (`openmp=0` / `openmp=1`).
+
+## What's inside
+
+The repository bundles the local **utils library** (`src/`, compiled into
+`libfesmutils.a`) plus three vendored **external libraries**, each in its own
+container folder with the upstream source and compiled `serial`/`omp` install
+prefixes.
+
+### Local packages
+
+::: {.pkg-grid}
+
+::: {.pkg-card}
+### [coords](packages/coords.qmd)
+Coordinate geometry, map projections, Gaussian grids, kdtree, and grid-to-grid
+weight-map remapping (nearest-neighbour / bilinear / conservative) with CDO
+interop and map caching.
+:::
+
+::: {.pkg-card}
+### [tsgen](packages/tsgen.qmd)
+Transient scalar forcing from time (ramps, sinusoids), tabulated files, or
+model-response feedback controllers.
+:::
+
+::: {.pkg-card}
+### [series](packages/series.qmd)
+Lightweight tabulated time-series reader (ASCII/netCDF), scalar or
+multi-channel, with clamped-linear interpolation.
+:::
+
+::: {.pkg-card}
+### [varslice](packages/varslice.qmd)
+Slice gridded (x-y-z-time) variables out of netCDF files, with sub-annual axes,
+multi-file matching, and unit scaling.
+:::
+
+::: {.pkg-card}
+### [ncio](packages/ncio.qmd)
+High-level netCDF input/output for Fortran — create files, dimensions,
+variables, and attributes with minimal boilerplate.
+:::
+
+::: {.pkg-card}
+### [nml](packages/nml.qmd)
+Read and write Fortran namelist parameter files, with a defaults overlay and
+validation.
+:::
+
+::: {.pkg-card}
+### [root_finder](packages/root_finder.qmd)
+Scalar root finding via Newton and secant iterations.
+:::
+
+::: {.pkg-card}
+### [timing](packages/timing.qmd)
+Wall-clock timers, output-write scheduling, and timestep management.
+:::
+
+::: {.pkg-card}
+### [grid operations](packages/gridops.qmd)
+Arakawa-grid staggering, spatial derivatives, distances, and subgrid
+interpolation.
+:::
+
+::: {.pkg-card}
+### [gaussian_quadrature](packages/gaussian_quadrature.qmd)
+Finite-element Gaussian quadrature over 3D hexahedral elements.
+:::
+
+::: {.pkg-card}
+### [foundations](packages/foundations.qmd)
+Precision kinds (`wp`/`sp`/`dp`) and package-wide constants every module builds
+on.
+:::
+
+:::
+
+### External libraries
+
+Three vendored upstream libraries, each built by its own autotools
+`configure`/`make`/`make install` into `<lib>/<lib>-{serial,omp}`:
+
+- **[FFTW](external/fftw.qmd)** — the Fastest Fourier Transform in the West.
+- **[LIS](external/lis.qmd)** — Library of Iterative Solvers for linear systems.
+- **[SHTns](external/shtns.qmd)** — fast Spherical Harmonic Transforms.
+
+## Installation
+
+fesm-utils is built through [configme](https://github.com/fesmc/configme), which
+is the single source of machine/compiler truth (Fortran flags, netCDF
+autodetection) and generates the root `Makefile`.
+
+### 1. Install configme
+
+```bash
+pip install configme      # or: pipx install configme
+```
+
+### 2. Install fesm-utils
+
+Clone, configure, and build in one step — select your machine and compiler:
+
+```bash
+configme install fesm-utils -m macbook -c gfortran
+```
+
+In an existing checkout, just (re)generate the `Makefile`:
+
+```bash
+configme config fesm-utils -m macbook -c gfortran
+```
+
+### 3. Build with make
+
+One consistent interface, selecting the variant with `openmp=`:
+
+```bash
+make fesmutils-static openmp=0    # the utils library -> include-serial/libfesmutils.a
+make fftw   openmp=0              # serial FFTW  -> fftw/fftw-serial
+make lis    openmp=1             # OpenMP LIS   -> lis/lis-omp
+make shtns  openmp=0             # serial SHTns -> SHTns/shtns-serial
+make libs   openmp=0             # fftw + lis + shtns, one variant
+make usage                       # list the main targets
+```
+
+::: {.callout-tip}
+Build the external libraries **serially** (a one-time autotools build — do not
+pass `-j` to `make libs`). SHTns links the FFTW built here, so `fftw` must be
+installed before `shtns`. On clusters, `module load` your compiler + netCDF
+toolchain first — the builds and netCDF autodetection use the environment
+already loaded in your shell.
+:::
+
+## Using the libraries downstream
+
+Symlink the repository into a downstream model and reference the install
+prefixes directly:
+
+```bash
+cd climber-x/
+ln -s /path/to/fesm-utils ./
+```
+
+- utils: `fesm-utils/include-serial` (or `include-omp`)
+- FFTW: `fesm-utils/fftw/fftw-serial`
+- LIS: `fesm-utils/lis/lis-serial`
+- SHTns: `fesm-utils/SHTns/shtns-serial`

@@ -35,6 +35,12 @@ maps_cdo_test/
 *.x
 __pycache__/
 
+# --- Quarto documentation site (docs/) ---------------------------------------
+# Rendered output and Quarto caches are generated; the .qmd sources, committed
+# figure PNGs, and the Julia figure env (Project.toml/Manifest.toml) are tracked.
+/docs/_site/
+/docs/.quarto/
+
 # --- configme / local machinery ----------------------------------------------
 .claude
 .configme-build.toml

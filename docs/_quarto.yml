@@ -1,0 +1,98 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - "index.qmd"
+    - "external/*.qmd"
+    - "packages/*.qmd"
+
+website:
+  title: "fesm-utils"
+  description: "Shared Fortran utilities and vendored libraries for fast Earth system models."
+  site-url: "https://fesmc.github.io/fesm-utils/"
+  repo-url: "https://github.com/fesmc/fesm-utils"
+  repo-actions: [source, issue]
+  page-navigation: true
+  navbar:
+    background: primary
+    search: true
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Packages"
+        menu:
+          - text: "coords — grids & remapping"
+            href: packages/coords.qmd
+          - text: "tsgen — time-series generator"
+            href: packages/tsgen.qmd
+          - text: "series — tabulated series"
+            href: packages/series.qmd
+          - text: "varslice — gridded slices"
+            href: packages/varslice.qmd
+          - text: "ncio — netCDF I/O"
+            href: packages/ncio.qmd
+          - text: "nml — namelists"
+            href: packages/nml.qmd
+          - text: "root_finder"
+            href: packages/root_finder.qmd
+          - text: "timing"
+            href: packages/timing.qmd
+          - text: "grid operations"
+            href: packages/gridops.qmd
+          - text: "gaussian_quadrature"
+            href: packages/gaussian_quadrature.qmd
+          - text: "foundations"
+            href: packages/foundations.qmd
+      - text: "External libraries"
+        menu:
+          - text: "FFTW"
+            href: external/fftw.qmd
+          - text: "LIS"
+            href: external/lis.qmd
+          - text: "SHTns"
+            href: external/shtns.qmd
+    right:
+      - icon: github
+        href: "https://github.com/fesmc/fesm-utils"
+        aria-label: GitHub
+  sidebar:
+    style: floating
+    collapse-level: 1
+    contents:
+      - text: "Overview"
+        href: index.qmd
+      - section: "Local packages"
+        contents:
+          - packages/coords.qmd
+          - packages/tsgen.qmd
+          - packages/series.qmd
+          - packages/varslice.qmd
+          - packages/ncio.qmd
+          - packages/nml.qmd
+          - packages/root_finder.qmd
+          - packages/timing.qmd
+          - packages/gridops.qmd
+          - packages/gaussian_quadrature.qmd
+          - packages/foundations.qmd
+      - section: "External libraries"
+        contents:
+          - external/fftw.qmd
+          - external/lis.qmd
+          - external/shtns.qmd
+  page-footer:
+    left: "fesm-utils · MIT License"
+    right: "Built with [Quarto](https://quarto.org)"
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles.scss]
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    anchor-sections: true
+    smooth-scroll: true
+    grid:
+      sidebar-width: 280px
+      body-width: 900px

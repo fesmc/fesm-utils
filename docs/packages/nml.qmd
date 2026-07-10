@@ -1,0 +1,146 @@
+---
+title: "nml"
+subtitle: "Reading and writing Fortran namelist parameter files"
+---
+
+## Overview
+
+`nml` reads Fortran namelist-style parameter files through a single generic
+interface: `nml_read(filename, group, name, value)`. It locates a parameter by
+its group and key, then converts the stored text into the caller's variable,
+dispatching automatically on the type and rank of `value`. The supported types
+are `integer`, single- and double-precision `real`, `logical` and `character`,
+as scalars and as 1D vectors. The reader is robust to the usual namelist
+quirks: quoted strings, inline `!` comments, and whitespace.
+
+The parser accepts both the classic `&group ... /` block form and flat
+`group.param = value` lines (single- or multi-parameter per line). All public
+entities live in `module nml` (`src/nml.f90`); the module depends only on
+standard intrinsics.
+
+A recent addition (CHANGELOG: "nml defaults overlay + validation") layers a
+schema/defaults file underneath the user file: `nml_read` can take an optional
+`defaults_file`, so a value is first taken from the defaults and then overlaid
+by the user file when present, and `nml_validate` checks that every key in a
+user group is declared in the defaults.
+
+## Reading parameters
+
+`nml_read` is a generic interface resolving to type-specific routines. The
+mandatory signature is:
+
+```fortran
+call nml_read(filename, group, name, value)
+```
+
+- `filename` — path to the namelist parameter file.
+- `group`    — group (block) name, without the leading `&`.
+- `name`     — parameter key to look up within the group.
+- `value`    — variable to receive the parsed value (its declared type and rank
+  select the routine).
+
+Supported `value` kinds are `character(len=*)`, `real` (single),
+`double precision`, `integer` and `logical`, each as a scalar or a 1D vector
+(`nml_read_string`, `nml_read_double`, `nml_read_float`, `nml_read_integer`,
+`nml_read_logical`, and their `*_vector` counterparts).
+
+Each routine also accepts optional arguments: `comment` (returns the inline
+comment attached to the parameter), `init` (a logical that resets `value`
+before reading), and `defaults_file` / `defaults_group` (see below).
+
+Real examples from the library:
+
+```fortran
+! Scalars of assorted types
+call nml_read(par_filename, "series1", "filename",  filename)   ! character
+call nml_read(par_filename, "series1", "varname",   varname)    ! character
+call nml_read(filename,     "tsgen_sin", "sigma",   sigma)      ! real
+call nml_read(filename,     "tsgen_sin", "with_kill", with_kill) ! logical
+call nml_read(filename,     "tsgen_sin", "f_max",    f_max)     ! real
+```
+
+By default a freshly read parameter is echoed to screen (module flag
+`VERBOSE`, toggled via `nml_set_verbose`), and a missing parameter raises an
+error (module flag `ERROR_NO_PARAM`).
+
+## Writing and printing
+
+`nml_write` is a generic interface (currently `nml_write_string`) with the
+signature:
+
+```fortran
+call nml_write(filename, group, name, value, comment)
+```
+
+where `value` is a `character` string and `comment` is optional.
+
+`nml_print` is a public generic interface that formats a parameter as an
+echoed line; it is what `nml_read` uses internally when `VERBOSE` is set. It
+covers the same scalar and vector types as `nml_read`. Vector printing is
+capped: at most `nml_print_vector_max` (50) elements are echoed, and longer
+vectors are truncated with a `... (n total)` note to avoid overflowing the
+fixed-length print line.
+
+## Defaults overlay and validation
+
+Every `nml_read` routine accepts optional `defaults_file` and `defaults_group`
+arguments. When `defaults_file` is present, the parameter *must* exist in that
+file (it acts as the schema): the value is taken from the defaults and then
+overlaid by `filename` when the key is also present there. `defaults_group`
+lets the caller map a user group name onto a differently named group in the
+defaults file (used, for example, for group aliasing where a user group
+`ydyn_north` resolves to defaults group `ydyn`).
+
+```fortran
+call nml_read(user_file, "ydyn_north", "beta_method", beta_method, &
+              defaults_file="ydyn_defaults.nml", defaults_group="ydyn")
+```
+
+`nml_validate` checks a user file against the defaults schema:
+
+```fortran
+call nml_validate(filename, defaults_file, group, defaults_group, halt_on_error)
+```
+
+It collects every key present in `group` of `filename` and reports any that are
+not declared in the defaults file (under `defaults_group`, or `group` if that
+optional is absent). `halt_on_error` defaults to `.TRUE.`, in which case the
+program stops after reporting all unknown parameters.
+
+The helper `nml_replace(s, text, rep, outs)` performs substring replacement on
+a string (optionally writing to `outs` rather than in place) and is also
+public.
+
+## File format
+
+A namelist file is one or more `&group ... /` blocks. Keys are `name = value`;
+strings are quoted, `!` begins an inline comment, and vectors are space- or
+comma-separated lists on the value side.
+
+```fortran
+&tsgen_sin
+    method    = "sin"        ! generator method
+    with_kill = .FALSE.
+    dt_ave    = 100.0
+    sigma     = 0.0
+    f_min     = 0.0
+    f_max     = 10.0
+/
+
+&series1
+    filename  = "data/forcing.nc"
+    varname   = "temp"
+    time_name = "time"
+    levels    = 0.0, 500.0, 1000.0, 2000.0   ! a vector value
+/
+```
+
+The parser also accepts equivalent flat lines, e.g.
+`tsgen_sin.f_max = 10.0`, with one or several `group.param = value` assignments
+per line.
+
+## See also
+
+- [ncio](ncio.qmd) — netCDF input/output.
+- [tsgen](tsgen.qmd) — time-series generator (reads its configuration via `nml`).
+- [series](series.qmd) — tabulated time-series reader (reads its configuration via `nml`).

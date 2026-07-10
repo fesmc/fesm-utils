@@ -1,0 +1,206 @@
+---
+title: "varslice"
+subtitle: "Slicing gridded netCDF variables in space and time"
+---
+
+## Overview
+
+`varslice` loads and slices gridded variables (up to four dimensions: `x`, `y`,
+`z`, `time`) out of one or more netCDF files. It is the gridded cousin of the
+lightweight [series](series.qmd) module: where `series` handles 0-D time series,
+`varslice` handles full spatial fields that evolve over time.
+
+The problem it solves is reading a *slice* of a large field without holding the
+whole thing in memory or writing bespoke `nc_read` calls at every call site:
+
+- **Time slicing** — given a target time (or time range), it reads only the
+  required timesteps from disk and reduces them to the requested output via a
+  configurable `slice_method` (exact match, range, interpolation, extrapolation,
+  or a range statistic such as mean/min/max/standard deviation).
+- **Sub-annual (subgrid) time** — a variable may carry a fractional sub-axis
+  (e.g. 12 monthly values per year). `varslice` builds the sub-annual time axis
+  and lets a range statistic repeat over it (e.g. produce a 12-month climatology
+  by applying a mean to every 12th index).
+- **Multi-file matching** — a single `filename` may be a glob pattern spanning
+  many files; `varslice` expands it, concatenates the time dimension across
+  files, and reads a contiguous span transparently.
+- **Unit handling** — an input variable is rescaled on read via `unit_scale`
+  and `unit_offset`, with missing values preserved.
+
+The variable is configured once (from a namelist or from arguments), then
+updated repeatedly to whatever time the calling model currently needs.
+
+## Derived types
+
+### `varslice_param_class`
+
+Static configuration for one variable, mostly loaded from the namelist.
+
+| Component | Type | Meaning |
+|---|---|---|
+| `filename` | `character(len=1024)` | Source file or glob pattern (may contain `{domain}` / `{grid_name}`) |
+| `filenames(:)` | `character(len=1024)`, alloc. | Expanded list of matching files |
+| `name` | `character(len=56)` | netCDF variable name |
+| `units_in` | `character(len=56)` | Units in the file (metadata) |
+| `units_out` | `character(len=56)` | Units after scaling (metadata) |
+| `unit_scale` | `real(wp)` | Multiplicative factor applied on read |
+| `unit_offset` | `real(wp)` | Additive offset applied on read |
+| `with_time` | `logical` | Whether the variable has a time dimension |
+| `with_time_sub` | `logical` | Whether a sub-annual axis is used (derived from `time_par(4)`) |
+| `ndim` | `integer` | Number of dimensions of the variable (set on init) |
+| `time_par(4)` | `real(dp)` | Time-axis definition `[x0, x1, dx, n_sub]` |
+
+### `varslice_class`
+
+The main object: parameters plus the loaded coordinates, time axis and data.
+
+| Component | Type | Meaning |
+|---|---|---|
+| `par` | `varslice_param_class` | Configuration (above) |
+| `time_range(2)` | `real(dp)` | Current requested time range (set by update) |
+| `slice_method` | `character(len=56)` | Current slice method (set by update) |
+| `range_rep` | `integer` | Current repetition frequency (set by update) |
+| `dim(:)` | `integer`, alloc. | Size of each dimension of the variable |
+| `x(:)`, `y(:)`, `z(:)` | `real(wp)`, alloc. | Spatial coordinate axes |
+| `time(:)`, `time_sub(:)` | `real(dp)`/`real(wp)`, alloc. | Full time axis and sub-annual index |
+| `idx(:)` | `integer`, alloc. | Indices selected on the last update |
+| `var(:,:,:,:)` | `real(wp)`, alloc. | The sliced data field `(x,y,z,time)` |
+
+`var` is always allocated rank-4; unused trailing dimensions have size 1.
+
+## Public API
+
+| Procedure | Description |
+|---|---|
+| `varslice_init_nml` | Initialize a variable from a namelist group |
+| `varslice_init_arg` | Initialize a variable from explicit arguments |
+| `varslice_init_data` | (Re)load coordinates and time axis for an already-configured variable |
+| `varslice_update` | Read/slice the field to match a given time or time range |
+| `varslice_map_to_grid` | Remap a `varslice` field from a source grid to a target grid |
+| `varslice_end` | Deallocate all data arrays in the object |
+| `get_matching_files` | Expand a glob pattern into a sorted list of filenames |
+| `print_var_range` | Print the min/max of a field (skipping missing values) |
+
+The types `varslice_param_class` and `varslice_class` are also public.
+
+### Signatures
+
+```fortran
+! Initialize from a namelist group
+subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose)
+    type(varslice_class), intent(INOUT) :: vs
+    character(len=*),     intent(IN)    :: filename        ! namelist file
+    character(len=*),     intent(IN)    :: group           ! namelist group name
+    character(len=*),     intent(IN), optional :: domain    ! substitutes {domain}
+    character(len=*),     intent(IN), optional :: grid_name ! substitutes {grid_name}
+    logical,              intent(IN), optional :: verbose
+
+! Initialize from explicit arguments (no namelist)
+subroutine varslice_init_arg(vs, filename, name, units_in, units_out, &
+                             scale, offset, with_time, time_par)
+    type(varslice_class), intent(INOUT) :: vs
+    character(len=*),     intent(IN)    :: filename, name, units_in, units_out
+    real(wp), optional,   intent(IN)    :: scale, offset
+    logical,  optional,   intent(IN)    :: with_time
+    real(wp), optional,   intent(IN)    :: time_par(:)
+
+! Update the field to a given time or time range
+subroutine varslice_update(vs, time, method, fill, rep, print_summary)
+    type(varslice_class),       intent(INOUT) :: vs
+    real(wp),         optional, intent(IN)    :: time(:)       ! time or [t0,t1]
+    character(len=*), optional, intent(IN)    :: method        ! slice_method
+    character(len=*), optional, intent(IN)    :: fill          ! only "none" supported
+    integer,          optional, intent(IN)    :: rep           ! repetition frequency
+    logical,          optional, intent(IN)    :: print_summary
+```
+
+**`method` (slice_method)** selects how the read timesteps are reduced:
+
+- `"exact"` — the timestep matching `time` exactly (missing if unavailable).
+- `"range"` — all timesteps within `[t0,t1]`, kept along the time dimension.
+- `"interp"` — linear interpolation to `time` from the two bracketing
+  timesteps; missing if `time` is out of bounds.
+- `"extrap"` — like `"interp"`, but clamps to the first/last timestep when out
+  of bounds.
+- `"range_mean"`, `"range_min"`, `"range_max"`, `"range_sd"`, `"range_sum"` —
+  a single slice computed as the mean / min / max / standard deviation / sum
+  over `[t0,t1]`.
+
+**`rep`** (stored as `range_rep`) is the frequency at which a range method is
+applied. `rep=1` reduces the whole range to one value; `rep=12` applies the
+statistic to every 12th index, yielding 12 values along the time dimension
+(e.g. a monthly climatology).
+
+**`fill`** currently only accepts `"none"`; other values abort (not yet
+implemented).
+
+## Namelist configuration
+
+`varslice_init_nml` reads the following keys from the given group (via
+`nml_read` in `varslice_par_load`):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `filename` | string | Source file or glob pattern; supports `{domain}` and `{grid_name}` placeholders |
+| `name` | string | netCDF variable name |
+| `units_in` | string | Units in the file (metadata only) |
+| `units_out` | string | Units after scaling (metadata only) |
+| `unit_scale` | real | Multiplicative factor applied on read |
+| `unit_offset` | real | Additive offset applied on read |
+| `with_time` | logical | `.TRUE.` if the variable has a time dimension |
+| `time_par` | real(4) | Time axis `[x0, x1, dx, n_sub]` |
+
+Notes on `time_par = [x0, x1, dx, n_sub]`:
+
+- `x0`, `x1`, `dx` define the file's time axis; the generated axis must match
+  the netCDF time length or init aborts.
+- If `dx == 0`, `x1` is forced to `x0` (single timestep).
+- If `n_sub > 1`, a sub-annual axis is built with `n_sub` steps per major unit
+  (e.g. `n_sub = 12` for monthly data) and `with_time_sub` is set `.TRUE.`.
+
+Example namelist group:
+
+```fortran
+&ts_series
+    filename    = "input/{domain}/{grid_name}_climate.nc"
+    name        = "t2m"
+    units_in    = "K"
+    units_out   = "degC"
+    unit_scale  = 1.0
+    unit_offset = -273.15
+    with_time   = .TRUE.
+    time_par    = -22000.0, 0.0, 1.0, 12.0    ! x0, x1, dx, n_sub (monthly)
+/
+```
+
+## Usage example
+
+```fortran
+use varslice, only : varslice_class, varslice_init_nml, varslice_update
+
+type(varslice_class) :: vs
+real(wp) :: time_now
+
+! 1. Configure the variable from a namelist group (loads coords + time axis).
+call varslice_init_nml(vs, "input_par.nml", group="ts_series", &
+                       domain="Greenland", grid_name="GRL-16KM")
+
+! 2. Update to a given time. Here: a 12-month climatology (mean over a
+!    2000-year window, applied to every 12th sub-annual index).
+time_now = -8000.0_wp
+call varslice_update(vs, time=[time_now-1000.0_wp, time_now+1000.0_wp], &
+                     method="range_mean", rep=12, print_summary=.TRUE.)
+
+! 3. Use the result. vs%var is rank-4 (x, y, z, time); here z=1, time=1..12.
+!    e.g. the January field:
+!        vs%var(:,:,1,1)
+!    or a single interpolated snapshot instead:
+call varslice_update(vs, time=[time_now], method="interp")
+!        vs%var(:,:,1,1)   ! interpolated 2-D field at time_now
+```
+
+## See also
+
+- [series](series.qmd) — 0-D time-series reader (the non-gridded analogue)
+- [ncio](ncio.qmd) — the underlying netCDF read/write layer
+- [coords](coords.qmd) — grids and mapping used by `varslice_map_to_grid`
