@@ -389,6 +389,20 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The grid-operations utilities collect the low-level array kernels used to work with fields defined on a regular 2D (and, for derivatives, 1D) grid: moving quantities between the nodes of an Arakawa staggered grid, taking spatial derivatives, measuring distances to a masked feature, and refining a coarse cell onto a finer subgrid. All routines operate on plain Fortran arrays and take the working precision <code>wp</code> from the <a href="../packages/foundations.html">precision</a> module (except <code>subgrid</code>, which computes internally in double precision — see below).</p>
 <section id="staggering" class="level2">
 <h2 class="anchored" data-anchor-id="staggering">staggering</h2>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>Work in progress — not yet callable
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>staggering</code> is a stub and is <strong>not used by any other unit</strong>. The module declares <code>private</code> and has no <code>public ::</code> list, so none of the routines below are exported; additionally <code>calc_magnitude_from_staggered</code> calls <code>get_neighbor_indices</code>, which is neither defined in the module nor imported via <code>use</code>.</p>
+<p>What follows documents the <em>intended</em> API. Before the module can be wired in it needs a <code>public ::</code> list and a boundaries-aware neighbour-index routine.</p>
+</div>
+</div>
 <p>The <code>staggering</code> module moves fields between the nodes of an Arakawa C-grid. Scalar (cell-centred) quantities live on the <strong>aa-nodes</strong>; the two components of a vector live on the staggered <strong>ac-nodes</strong> at the cell edges (<code>acx</code> on the x-edge, <code>acy</code> on the y-edge); corner values live on the <strong>ab-nodes</strong>. Each procedure is a <code>function</code> of one or more <code>real(wp)</code> arrays that returns a new <code>real(wp)</code> array of the same shape. Averaging kernels apply periodic boundary conditions at the domain edges. Two <code>*_ice</code> variants restrict the averaging to neighbours that satisfy an ice mask (<code>f_ice</code>, <code>H_ice</code>), falling back to the plain four-point average when no masked neighbour is available.</p>
 <div id="fig-cgrid" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
@@ -426,7 +440,7 @@ Figure&nbsp;1: Arakawa C-grid staggering: scalar quantities live on the centred 
 <span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> stagger_acy_aa(u) <span class="kw">result</span>(ustag)     <span class="co">! acy -&gt; aa</span></span>
 <span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> stagger_ab_acx(u) <span class="kw">result</span>(ustag)     <span class="co">! ab  -&gt; acx</span></span>
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> stagger_ab_acy(u) <span class="kw">result</span>(ustag)     <span class="co">! ab  -&gt; acy</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Typical usage — interpolate cell-centred data onto the x- and y-edges, or recover a centred vector magnitude from staggered velocity components:</p>
+<p>Once the routines are exported, typical usage would be to interpolate cell-centred data onto the x- and y-edges, or recover a centred vector magnitude from staggered velocity components. (This does not compile against the module as it currently stands — see the note above.)</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">use</span> <span class="fu">precision</span>,  <span class="kw">only</span>: wp</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">use</span> staggering, <span class="kw">only</span>: stagger_aa_acx, stagger_aa_acy, stagger_ac_aa</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
