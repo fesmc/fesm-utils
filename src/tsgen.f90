@@ -86,6 +86,9 @@ module tsgen
     public :: tsgen_update
     public :: tsgen_tabulate
     public :: tsgen_write
+    public :: tsgen_write_step
+    public :: tsgen_restart_write
+    public :: tsgen_restart_read
 
 contains
 
@@ -624,6 +627,144 @@ contains
         return
 
     end subroutine tsgen_write
+
+    subroutine tsgen_write_step(filename,ts,time,label)
+        ! Append the current forcing state (f_now, df_dt, dv_dt_ave) to an
+        ! existing 1D timeseries file at the time index for `time`. The file must
+        ! already carry a "time" dimension (the caller's own timeseries file); the
+        ! variable names are prefixed by the tsgen label (or `label`, if given) so
+        ! several tsgen objects can share one file without clashing.
+
+        character(len=*),  intent(IN) :: filename
+        type(tsgen_class), intent(IN) :: ts
+        real(wp),          intent(IN) :: time
+        character(len=*),  intent(IN), optional :: label
+
+        integer            :: ncid, n
+        character(len=64)  :: pre
+
+        pre = trim(ts%par%label)
+        if (present(label)) pre = trim(label)
+
+        call nc_open(filename, ncid, writable=.TRUE.)
+        n = nc_time_index(filename, "time", time, ncid)
+
+        call nc_write(filename,"time",time,dim1="time",start=[n],count=[1],ncid=ncid)
+        call nc_write(filename,trim(pre)//"_f",ts%f_now,dim1="time", &
+                        start=[n],count=[1],ncid=ncid, &
+                        long_name="Transient forcing value")
+        call nc_write(filename,trim(pre)//"_df_dt",ts%df_dt,dim1="time", &
+                        start=[n],count=[1],ncid=ncid,units="1/yr", &
+                        long_name="Forcing rate of change")
+        call nc_write(filename,trim(pre)//"_dv_dt",ts%dv_dt_ave,dim1="time", &
+                        start=[n],count=[1],ncid=ncid, &
+                        long_name="Windowed response rate of change")
+
+        call nc_close(ncid)
+
+        return
+
+    end subroutine tsgen_write_step
+
+    subroutine tsgen_restart_write(filename,ts,time)
+        ! Write the prognostic state of a tsgen object to a self-contained restart
+        ! file. Time-driven methods (ramp/sin/const) resume exactly from time_init;
+        ! feedback methods (exp, PI/PID) additionally need the integrated forcing
+        ! (f_mean_now), the PI-controller history (pi_df/pi_eta) and the response
+        ! history buffers, which are written when allocated. "series" carries no
+        ! prognostic state (it interpolates the file on the absolute axis).
+
+        character(len=*),  intent(IN) :: filename
+        type(tsgen_class), intent(IN) :: ts
+        real(wp),          intent(IN) :: time
+
+        integer  :: ncid
+        real(wp) :: kill_r
+
+        kill_r = 0.0_wp
+        if (ts%kill) kill_r = 1.0_wp
+
+        call nc_create(filename)
+        call nc_write_attr(filename,"tsgen_label", trim(ts%par%label))
+        call nc_write_attr(filename,"tsgen_method",trim(ts%par%method))
+
+        call nc_write_dim(filename,"time",x=time,dx=1.0_wp,nx=1,units="year",unlimited=.TRUE.)
+        call nc_write_dim(filename,"pt3", x=1,dx=1,nx=3)
+
+        call nc_open(filename, ncid, writable=.TRUE.)
+
+        call nc_write(filename,"time",       time,           dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"time_init",  ts%time_init,   dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"time_prev",  ts%time_prev,   dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"f_mean_now", ts%f_mean_now,  dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"f_now",      ts%f_now,       dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"eps",        ts%eps,         dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"df_dt",      ts%df_dt,       dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"dv_dt_ave",  ts%dv_dt_ave,   dim1="time",start=[1],count=[1],ncid=ncid)
+        call nc_write(filename,"kill",       kill_r,         dim1="time",start=[1],count=[1],ncid=ncid)
+
+        call nc_write(filename,"pi_df",  ts%pi_df,  dim1="pt3",ncid=ncid)
+        call nc_write(filename,"pi_eta", ts%pi_eta, dim1="pt3",ncid=ncid)
+
+        ! Response history buffers (feedback / kill switch only)
+        if (allocated(ts%time)) then
+            call nc_write_dim(filename,"hist",x=1,dx=1,nx=size(ts%time),ncid=ncid)
+            call nc_write(filename,"hist_time", ts%time, dim1="hist",ncid=ncid)
+            call nc_write(filename,"hist_var",  ts%var,  dim1="hist",ncid=ncid)
+            call nc_write(filename,"hist_dv_dt",ts%dv_dt,dim1="hist",ncid=ncid)
+        end if
+
+        call nc_close(ncid)
+
+        write(*,*) "tsgen_restart_write:: wrote "//trim(filename)
+
+        return
+
+    end subroutine tsgen_restart_write
+
+    subroutine tsgen_restart_read(ts,filename)
+        ! Restore tsgen state written by tsgen_restart_write. Must be called AFTER
+        ! tsgen_init (which reads the namelist, classifies the method and allocates
+        ! the history buffers); this routine overwrites the runtime state so the
+        ! series continues from where it stopped. Missing variables are tolerated
+        ! (older restart files, or a method that never wrote buffers).
+
+        type(tsgen_class), intent(INOUT) :: ts
+        character(len=*),  intent(IN)    :: filename
+
+        real(wp) :: kill_r
+
+        if (.not. nc_exists_var(filename,"f_mean_now")) then
+            write(*,*) "tsgen_restart_read:: WARNING: no tsgen state in "// &
+                trim(filename)//"; keeping cold-start values."
+            return
+        end if
+
+        call nc_read(filename,"time_init",  ts%time_init,  start=[1],count=[1])
+        call nc_read(filename,"time_prev",  ts%time_prev,  start=[1],count=[1])
+        call nc_read(filename,"f_mean_now", ts%f_mean_now, start=[1],count=[1])
+        call nc_read(filename,"f_now",      ts%f_now,      start=[1],count=[1])
+        call nc_read(filename,"eps",        ts%eps,        start=[1],count=[1])
+        call nc_read(filename,"df_dt",      ts%df_dt,      start=[1],count=[1])
+        call nc_read(filename,"dv_dt_ave",  ts%dv_dt_ave,  start=[1],count=[1])
+
+        call nc_read(filename,"kill",       kill_r,        start=[1],count=[1])
+        ts%kill = (kill_r .gt. 0.5_wp)
+
+        if (nc_exists_var(filename,"pi_df"))  call nc_read(filename,"pi_df", ts%pi_df)
+        if (nc_exists_var(filename,"pi_eta")) call nc_read(filename,"pi_eta",ts%pi_eta)
+
+        if (allocated(ts%time) .and. nc_exists_var(filename,"hist_time")) then
+            call nc_read(filename,"hist_time", ts%time, start=[1],count=[size(ts%time)])
+            call nc_read(filename,"hist_var",  ts%var,  start=[1],count=[size(ts%var)])
+            call nc_read(filename,"hist_dv_dt",ts%dv_dt,start=[1],count=[size(ts%dv_dt)])
+        end if
+
+        write(*,*) "tsgen_restart_read:: restored f_now = ", ts%f_now, " from "//trim(filename)
+
+        return
+
+    end subroutine tsgen_restart_read
 
     subroutine tsgen_par_defaults(par)
         ! Neutral values for the ramp/feedback parameters, used by methods (e.g.
