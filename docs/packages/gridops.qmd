@@ -13,6 +13,19 @@ working precision `wp` from the [precision](foundations.qmd) module (except
 
 ## staggering
 
+::: {.callout-warning}
+## Work in progress — not yet callable
+
+`staggering` is a stub and is **not used by any other unit**. The module declares
+`private` and has no `public ::` list, so none of the routines below are
+exported; additionally `calc_magnitude_from_staggered` calls
+`get_neighbor_indices`, which is neither defined in the module nor imported via
+`use`.
+
+What follows documents the *intended* API. Before the module can be wired in it
+needs a `public ::` list and a boundaries-aware neighbour-index routine.
+:::
+
 The `staggering` module moves fields between the nodes of an Arakawa C-grid.
 Scalar (cell-centred) quantities live on the **aa-nodes**; the two components of
 a vector live on the staggered **ac-nodes** at the cell edges (`acx` on the
@@ -55,8 +68,10 @@ function stagger_ab_acx(u) result(ustag)     ! ab  -> acx
 function stagger_ab_acy(u) result(ustag)     ! ab  -> acy
 ```
 
-Typical usage — interpolate cell-centred data onto the x- and y-edges, or
-recover a centred vector magnitude from staggered velocity components:
+Once the routines are exported, typical usage would be to interpolate
+cell-centred data onto the x- and y-edges, or recover a centred vector magnitude
+from staggered velocity components. (This does not compile against the module as
+it currently stands — see the note above.)
 
 ```fortran
 use precision,  only: wp

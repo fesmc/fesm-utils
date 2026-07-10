@@ -74,8 +74,8 @@ Wall-clock timers, output-write scheduling, and timestep management.
 
 ::: {.pkg-card}
 ### [grid operations](packages/gridops.qmd)
-Arakawa-grid staggering, spatial derivatives, distances, and subgrid
-interpolation.
+Spatial derivatives, distances, and subgrid interpolation — plus Arakawa-grid
+staggering (work in progress).
 :::
 
 ::: {.pkg-card}
