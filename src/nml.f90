@@ -132,7 +132,7 @@ contains
                 write(io_unit_err,*) "  Parameter:     ", trim(name)
                 write(io_unit_err,*) "  (Requested via user file: ", trim(filename), &
                                      ", group: ", trim(group), ")"
-                stop "Program stopped."
+                error stop "Program stopped."
             end if
 
             value = trim(value_def)
@@ -158,7 +158,7 @@ contains
                 write(io_unit_err,*) "Filename:  ", trim(filename)
                 write(io_unit_err,*) "Group:     ", trim(group)
                 write(io_unit_err,*) "Parameter: ", trim(name)
-                stop "Program stopped."
+                error stop "Program stopped."
             end if
         end if
 
@@ -198,7 +198,7 @@ contains
             open(unit=newunit(io),file=trim(filename),status="old",iostat=iostat)
             if (iostat /= 0) then
                 write(io_unit_err,*) "nml:: namelist file could not be opened: "//trim(filename)
-                stop
+                error stop
             end if
         else
             io = file_unit
@@ -503,7 +503,7 @@ contains
             open(unit=newunit(io),file=trim(filename),status="old",iostat=iostat)
             if (iostat /= 0) then
                 write(io_unit_err,*) "nml:: namelist file could not be opened: "//trim(filename)
-                stop
+                error stop
             end if
         else
             io = file_unit
@@ -600,7 +600,7 @@ contains
             end if
         end do
 
-        if (any_err .and. halt) stop "Program stopped."
+        if (any_err .and. halt) error stop "Program stopped."
 
         return
 
@@ -1224,7 +1224,7 @@ contains
             if (stat .ne. 0) then 
                 write(*,*) "nml:: Error converting string to number!"
                 write(*,*) "|",trim(tmpstr),"|",n,stat,x
-                stop
+                error stop
             else
                 value = x 
             end if 
@@ -1254,7 +1254,7 @@ contains
                 value = .FALSE. 
             case DEFAULT
                 write(*,*) "nml:: Error reading logical parameter."
-                stop 
+                error stop
         end select  
 
         return 
@@ -1354,7 +1354,7 @@ contains
                 write(*,*) "nml:: Error reading namelist file."
                 write(*,*) "No '=' found on parameter line."
                 write(*,*) "line: ", trim(line1)
-                stop 
+                error stop
             end if 
 
             name = trim(adjustl(line1(1:q-1)))
