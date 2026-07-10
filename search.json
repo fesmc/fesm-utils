@@ -1,0 +1,1102 @@
+[
+  {
+    "objectID": "packages/varslice.html",
+    "href": "packages/varslice.html",
+    "title": "varslice",
+    "section": "",
+    "text": "varslice loads and slices gridded variables (up to four dimensions: x, y, z, time) out of one or more netCDF files. It is the gridded cousin of the lightweight series module: where series handles 0-D time series, varslice handles full spatial fields that evolve over time.\nThe problem it solves is reading a slice of a large field without holding the whole thing in memory or writing bespoke nc_read calls at every call site:\n\nTime slicing — given a target time (or time range), it reads only the required timesteps from disk and reduces them to the requested output via a configurable slice_method (exact match, range, interpolation, extrapolation, or a range statistic such as mean/min/max/standard deviation).\nSub-annual (subgrid) time — a variable may carry a fractional sub-axis (e.g. 12 monthly values per year). varslice builds the sub-annual time axis and lets a range statistic repeat over it (e.g. produce a 12-month climatology by applying a mean to every 12th index).\nMulti-file matching — a single filename may be a glob pattern spanning many files; varslice expands it, concatenates the time dimension across files, and reads a contiguous span transparently.\nUnit handling — an input variable is rescaled on read via unit_scale and unit_offset, with missing values preserved.\n\nThe variable is configured once (from a namelist or from arguments), then updated repeatedly to whatever time the calling model currently needs.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#overview",
+    "href": "packages/varslice.html#overview",
+    "title": "varslice",
+    "section": "",
+    "text": "varslice loads and slices gridded variables (up to four dimensions: x, y, z, time) out of one or more netCDF files. It is the gridded cousin of the lightweight series module: where series handles 0-D time series, varslice handles full spatial fields that evolve over time.\nThe problem it solves is reading a slice of a large field without holding the whole thing in memory or writing bespoke nc_read calls at every call site:\n\nTime slicing — given a target time (or time range), it reads only the required timesteps from disk and reduces them to the requested output via a configurable slice_method (exact match, range, interpolation, extrapolation, or a range statistic such as mean/min/max/standard deviation).\nSub-annual (subgrid) time — a variable may carry a fractional sub-axis (e.g. 12 monthly values per year). varslice builds the sub-annual time axis and lets a range statistic repeat over it (e.g. produce a 12-month climatology by applying a mean to every 12th index).\nMulti-file matching — a single filename may be a glob pattern spanning many files; varslice expands it, concatenates the time dimension across files, and reads a contiguous span transparently.\nUnit handling — an input variable is rescaled on read via unit_scale and unit_offset, with missing values preserved.\n\nThe variable is configured once (from a namelist or from arguments), then updated repeatedly to whatever time the calling model currently needs.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#derived-types",
+    "href": "packages/varslice.html#derived-types",
+    "title": "varslice",
+    "section": "Derived types",
+    "text": "Derived types\n\nvarslice_param_class\nStatic configuration for one variable, mostly loaded from the namelist.\n\n\n\n\n\n\n\n\nComponent\nType\nMeaning\n\n\n\n\nfilename\ncharacter(len=1024)\nSource file or glob pattern (may contain {domain} / {grid_name})\n\n\nfilenames(:)\ncharacter(len=1024), alloc.\nExpanded list of matching files\n\n\nname\ncharacter(len=56)\nnetCDF variable name\n\n\nunits_in\ncharacter(len=56)\nUnits in the file (metadata)\n\n\nunits_out\ncharacter(len=56)\nUnits after scaling (metadata)\n\n\nunit_scale\nreal(wp)\nMultiplicative factor applied on read\n\n\nunit_offset\nreal(wp)\nAdditive offset applied on read\n\n\nwith_time\nlogical\nWhether the variable has a time dimension\n\n\nwith_time_sub\nlogical\nWhether a sub-annual axis is used (derived from time_par(4))\n\n\nndim\ninteger\nNumber of dimensions of the variable (set on init)\n\n\ntime_par(4)\nreal(dp)\nTime-axis definition [x0, x1, dx, n_sub]\n\n\n\n\n\nvarslice_class\nThe main object: parameters plus the loaded coordinates, time axis and data.\n\n\n\n\n\n\n\n\nComponent\nType\nMeaning\n\n\n\n\npar\nvarslice_param_class\nConfiguration (above)\n\n\ntime_range(2)\nreal(dp)\nCurrent requested time range (set by update)\n\n\nslice_method\ncharacter(len=56)\nCurrent slice method (set by update)\n\n\nrange_rep\ninteger\nCurrent repetition frequency (set by update)\n\n\ndim(:)\ninteger, alloc.\nSize of each dimension of the variable\n\n\nx(:), y(:), z(:)\nreal(wp), alloc.\nSpatial coordinate axes\n\n\ntime(:), time_sub(:)\nreal(dp)/real(wp), alloc.\nFull time axis and sub-annual index\n\n\nidx(:)\ninteger, alloc.\nIndices selected on the last update\n\n\nvar(:,:,:,:)\nreal(wp), alloc.\nThe sliced data field (x,y,z,time)\n\n\n\nvar is always allocated rank-4; unused trailing dimensions have size 1.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#public-api",
+    "href": "packages/varslice.html#public-api",
+    "title": "varslice",
+    "section": "Public API",
+    "text": "Public API\n\n\n\n\n\n\n\nProcedure\nDescription\n\n\n\n\nvarslice_init_nml\nInitialize a variable from a namelist group\n\n\nvarslice_init_arg\nInitialize a variable from explicit arguments\n\n\nvarslice_init_data\n(Re)load coordinates and time axis for an already-configured variable\n\n\nvarslice_update\nRead/slice the field to match a given time or time range\n\n\nvarslice_map_to_grid\nRemap a varslice field from a source grid to a target grid\n\n\nvarslice_end\nDeallocate all data arrays in the object\n\n\nget_matching_files\nExpand a glob pattern into a sorted list of filenames\n\n\nprint_var_range\nPrint the min/max of a field (skipping missing values)\n\n\n\nThe types varslice_param_class and varslice_class are also public.\n\nSignatures\n! Initialize from a namelist group\nsubroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose)\n    type(varslice_class), intent(INOUT) :: vs\n    character(len=*),     intent(IN)    :: filename        ! namelist file\n    character(len=*),     intent(IN)    :: group           ! namelist group name\n    character(len=*),     intent(IN), optional :: domain    ! substitutes {domain}\n    character(len=*),     intent(IN), optional :: grid_name ! substitutes {grid_name}\n    logical,              intent(IN), optional :: verbose\n\n! Initialize from explicit arguments (no namelist)\nsubroutine varslice_init_arg(vs, filename, name, units_in, units_out, &\n                             scale, offset, with_time, time_par)\n    type(varslice_class), intent(INOUT) :: vs\n    character(len=*),     intent(IN)    :: filename, name, units_in, units_out\n    real(wp), optional,   intent(IN)    :: scale, offset\n    logical,  optional,   intent(IN)    :: with_time\n    real(wp), optional,   intent(IN)    :: time_par(:)\n\n! Update the field to a given time or time range\nsubroutine varslice_update(vs, time, method, fill, rep, print_summary)\n    type(varslice_class),       intent(INOUT) :: vs\n    real(wp),         optional, intent(IN)    :: time(:)       ! time or [t0,t1]\n    character(len=*), optional, intent(IN)    :: method        ! slice_method\n    character(len=*), optional, intent(IN)    :: fill          ! only \"none\" supported\n    integer,          optional, intent(IN)    :: rep           ! repetition frequency\n    logical,          optional, intent(IN)    :: print_summary\nmethod (slice_method) selects how the read timesteps are reduced:\n\n\"exact\" — the timestep matching time exactly (missing if unavailable).\n\"range\" — all timesteps within [t0,t1], kept along the time dimension.\n\"interp\" — linear interpolation to time from the two bracketing timesteps; missing if time is out of bounds.\n\"extrap\" — like \"interp\", but clamps to the first/last timestep when out of bounds.\n\"range_mean\", \"range_min\", \"range_max\", \"range_sd\", \"range_sum\" — a single slice computed as the mean / min / max / standard deviation / sum over [t0,t1].\n\nrep (stored as range_rep) is the frequency at which a range method is applied. rep=1 reduces the whole range to one value; rep=12 applies the statistic to every 12th index, yielding 12 values along the time dimension (e.g. a monthly climatology).\nfill currently only accepts \"none\"; other values abort (not yet implemented).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#namelist-configuration",
+    "href": "packages/varslice.html#namelist-configuration",
+    "title": "varslice",
+    "section": "Namelist configuration",
+    "text": "Namelist configuration\nvarslice_init_nml reads the following keys from the given group (via nml_read in varslice_par_load):\n\n\n\n\n\n\n\n\nKey\nType\nMeaning\n\n\n\n\nfilename\nstring\nSource file or glob pattern; supports {domain} and {grid_name} placeholders\n\n\nname\nstring\nnetCDF variable name\n\n\nunits_in\nstring\nUnits in the file (metadata only)\n\n\nunits_out\nstring\nUnits after scaling (metadata only)\n\n\nunit_scale\nreal\nMultiplicative factor applied on read\n\n\nunit_offset\nreal\nAdditive offset applied on read\n\n\nwith_time\nlogical\n.TRUE. if the variable has a time dimension\n\n\ntime_par\nreal(4)\nTime axis [x0, x1, dx, n_sub]\n\n\n\nNotes on time_par = [x0, x1, dx, n_sub]:\n\nx0, x1, dx define the file’s time axis; the generated axis must match the netCDF time length or init aborts.\nIf dx == 0, x1 is forced to x0 (single timestep).\nIf n_sub &gt; 1, a sub-annual axis is built with n_sub steps per major unit (e.g. n_sub = 12 for monthly data) and with_time_sub is set .TRUE..\n\nExample namelist group:\n&ts_series\n    filename    = \"input/{domain}/{grid_name}_climate.nc\"\n    name        = \"t2m\"\n    units_in    = \"K\"\n    units_out   = \"degC\"\n    unit_scale  = 1.0\n    unit_offset = -273.15\n    with_time   = .TRUE.\n    time_par    = -22000.0, 0.0, 1.0, 12.0    ! x0, x1, dx, n_sub (monthly)\n/",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#usage-example",
+    "href": "packages/varslice.html#usage-example",
+    "title": "varslice",
+    "section": "Usage example",
+    "text": "Usage example\nuse varslice, only : varslice_class, varslice_init_nml, varslice_update\n\ntype(varslice_class) :: vs\nreal(wp) :: time_now\n\n! 1. Configure the variable from a namelist group (loads coords + time axis).\ncall varslice_init_nml(vs, \"input_par.nml\", group=\"ts_series\", &\n                       domain=\"Greenland\", grid_name=\"GRL-16KM\")\n\n! 2. Update to a given time. Here: a 12-month climatology (mean over a\n!    2000-year window, applied to every 12th sub-annual index).\ntime_now = -8000.0_wp\ncall varslice_update(vs, time=[time_now-1000.0_wp, time_now+1000.0_wp], &\n                     method=\"range_mean\", rep=12, print_summary=.TRUE.)\n\n! 3. Use the result. vs%var is rank-4 (x, y, z, time); here z=1, time=1..12.\n!    e.g. the January field:\n!        vs%var(:,:,1,1)\n!    or a single interpolated snapshot instead:\ncall varslice_update(vs, time=[time_now], method=\"interp\")\n!        vs%var(:,:,1,1)   ! interpolated 2-D field at time_now",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/varslice.html#see-also",
+    "href": "packages/varslice.html#see-also",
+    "title": "varslice",
+    "section": "See also",
+    "text": "See also\n\nseries — 0-D time-series reader (the non-gridded analogue)\nncio — the underlying netCDF read/write layer\ncoords — grids and mapping used by varslice_map_to_grid",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "varslice"
+    ]
+  },
+  {
+    "objectID": "packages/timing.html",
+    "href": "packages/timing.html",
+    "title": "timing",
+    "section": "",
+    "text": "The fesm-utils library provides three small, independent modules that together handle the “time” bookkeeping of a model run: timer profiles how long code sections take, timeout decides which timesteps get written to output, and timestepping manages the model’s time axis and advances it each iteration. They are unrelated in implementation and can be used separately, but a typical main loop uses all three at once.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "timing"
+    ]
+  },
+  {
+    "objectID": "packages/timing.html#timer",
+    "href": "packages/timing.html#timer",
+    "title": "timing",
+    "section": "timer",
+    "text": "timer\ntimer measures wall-clock (or CPU) time spent in labelled sections of code so that a run can be profiled — how much time went to isostasy vs. ice dynamics vs. I/O — and reports both an end-of-run summary and an appendable timing-log table. Internally it prefers omp_get_wtime() when compiled with OpenMP and falls back to cpu_time() otherwise.\n\nPublic API\ntype timer_class\n    ! Accumulates timing for up to ncomp_max = 100 components.\n    ! All fields are managed internally; only the derived type is public.\nend type\n! Generic interface (dispatches on the optional time_mod argument type):\ncall timer_step(timer, comp [, time_mod] [, label])\n\n  type(timer_class), intent(INOUT) :: timer\n  integer,           intent(IN)    :: comp        ! component index; see below\n  real(4|8),         intent(IN)    :: time_mod(2) ! optional [t_start, t_end] in model units\n  character(len=*),  intent(IN)    :: label       ! optional name for this component\ncomp controls the action:\n\ncomp &lt; 0 — reset all accumulated totals and start the clock.\ncomp == 0 — restart the clock without recording (marks the start of the next interval).\ncomp &gt; 0 — record the elapsed time since the last call into component comp, optionally tagging it with label and the model-time span time_mod.\n\n! Print a formatted per-component summary to standard output:\ncall timer_print_summary(timer, units, units_mod, time_mod)\n\n  type(timer_class), intent(INOUT) :: timer\n  character(len=1),  intent(IN)    :: units      ! \"s\", \"m\", or \"h\"\n  character(len=*),  intent(IN)    :: units_mod  ! model time units label, e.g. \"kyr\"\n  real(4|8),         intent(IN)    :: time_mod   ! current model time (scalar)\n! Initialize (or overwrite) a timing-log table file with a header row:\ncall timer_write_table_init(timer, filename)\n\n! Append one timing row (time, dt, per-component times, total, rate) to the file:\ncall timer_write_table(timer, time, units, filename [, init])\n\n  type(timer_class), intent(IN) :: timer\n  real(4|8),         intent(IN) :: time(2)   ! [time_now, dt_now] in model units\n  character(len=1),  intent(IN) :: units     ! \"s\", \"m\", or \"h\"\n  character(len=*),  intent(IN) :: filename\n  logical,           intent(IN) :: init      ! optional; if .TRUE. (re)initialize the file first\nThe rate column is CPU-time per unit model-time (units/units_mod). Timing units \"s\", \"m\", \"h\" are seconds, minutes, hours; any other value yields -1.\n\n\nUsage\nWrap each section of the loop between timer_step calls, then summarize at the end:\ntype(timer_class) :: tmr, tmrs\n\ncall timer_step(tmr, comp=-1)                        ! reset outer timer, start clock\n! ... initialization ...\ncall timer_step(tmr, comp=1, label=\"initialization\")\n\ncall timer_step(tmrs, comp=-1)                       ! reset inner (per-step) timer\ndo while (.not. ts%is_finished)\n    call timer_step(tmrs, comp=0)                    ! restart clock for this step\n    ! ... isostasy ...\n    call timer_step(tmrs, comp=1, time_mod=[t0,t1], label=\"isostasy\")\n    ! ... ice dynamics ...\n    call timer_step(tmrs, comp=2, time_mod=[t0,t1], label=\"yelmo\")\n    ! ... I/O ...\n    call timer_step(tmrs, comp=3, time_mod=[t0,t1], label=\"io\")\n\n    call timer_write_table(tmrs, [ts%time, dtt]*1e-3, \"m\", tmr_file, &\n                           init=ts%time_elapsed .eq. 0.0)\nend do\n\ncall timer_step(tmr, comp=2, time_mod=[t_init,ts%time]*1e-3, label=\"timeloop\")\ncall timer_print_summary(tmr, units=\"m\", units_mod=\"kyr\", time_mod=ts%time*1e-3)",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "timing"
+    ]
+  },
+  {
+    "objectID": "packages/timing.html#timeout",
+    "href": "packages/timing.html#timeout",
+    "title": "timing",
+    "section": "timeout",
+    "text": "timeout\ntimeout answers the question “should output be written at this timestep?” It builds, once at initialization, a list of target output times from a namelist group, and then timeout_check returns .TRUE. on any step whose time matches one of those targets (within a tolerance of 1e-6). This decouples the output schedule from the integration timestep, so a model can step at fine resolution but write 2D fields only at coarse, configurable intervals.\n\nPublic API\ntype timeout_class\n    character(len=56)     :: method     ! \"none\", \"const\", \"file\", or \"times\"\n    character(len=56)     :: label\n    real(wp), allocatable :: times(:)   ! resolved list of output times\n    logical               :: active     ! .FALSE. when method=\"none\"\n    ! plus optional helper fields (filename, filenames, vnms) for caller use\nend type\n! Build the output-time list from a namelist group:\ncall timeout_init(tm, filename, group, label, time_init, time_end)\n\n  type(timeout_class), intent(INOUT) :: tm\n  character(len=*),    intent(IN)    :: filename   ! namelist file\n  character(len=*),    intent(IN)    :: group      ! namelist group name\n  character(len=*),    intent(IN)    :: label      ! label for log messages\n  real(wp),            intent(IN)    :: time_init  ! start of run\n  real(wp),            intent(IN)    :: time_end   ! end of run\n! Test whether the current time is an output time:\nout_now = timeout_check(tm, time)\n\n  type(timeout_class), intent(IN) :: tm\n  real(wp),            intent(IN) :: time\n  logical                         :: out_now\nThe namelist group is read for a method and its parameters:\n\nmethod = \"none\" — output disabled; tm%active = .FALSE..\nmethod = \"const\" — reads dt; emits time_init, time_init+dt, ... up to time_end.\nmethod = \"times\" — reads an explicit times list; keeps those within [time_init, time_end].\nmethod = \"file\" — reads file, an ASCII file of times; each line is either a single value or a t0:dt:t1 range that expands to a vector.\n\nIn every active case time_end is guaranteed to be included, and duplicate times are removed. The number of output times is capped at nmax = 100000.\n\n\nUsage\ntype(timeout_class) :: tm_2D, tm_1D\n\n! Configure two independent schedules from namelist groups \"tm_2D\" / \"tm_1D\":\ncall timeout_init(tm_2D, path_par, \"tm_2D\", \"heavy\", ts%time_init, ts%time_end)\ncall timeout_init(tm_1D, path_par, \"tm_1D\", \"small\", ts%time_init, ts%time_end)\n\ndo while (.not. ts%is_finished)\n    call tstep_update(ts, dtt)\n    ! ... model update ...\n\n    if (tm_2D%active .and. timeout_check(tm_2D, ts%time)) then\n        call domain_write_step(dom, outfldr, ts%time)   ! coarse 2D snapshots\n    end if\n    if (tm_1D%active .and. timeout_check(tm_1D, ts%time)) then\n        call domain_write_1D(dom, outfldr, ts%time)      ! frequent 1D timeseries\n    end if\nend do\nwith a namelist group such as:\n&tm_2D\n    method = \"const\"    ! \"none\", \"const\", \"file\", \"times\"\n    dt     = 1e3\n    file   = \"input/timeout_ramp_100kyr.txt\"\n    times  = 0\n/",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "timing"
+    ]
+  },
+  {
+    "objectID": "packages/timing.html#timestepping",
+    "href": "packages/timing.html#timestepping",
+    "title": "timing",
+    "section": "timestepping",
+    "text": "timestepping\ntimestepping owns the model’s time axis: it initializes the start/end times, advances the clock by dt each iteration, and tracks several parallel “time keepers” — an elapsed counter and calendar/relative times — using Kahan summation to avoid drift over many small steps. It also flags when the run is finished. It does not decide when to do anything (that is timeout); it only holds and advances the current time.\n\nPublic API\ntype tstep_class\n    character(len=56) :: units         ! time units label\n    character(len=56) :: method        ! \"const\"/\"cal\"/\"rel\" (see below)\n    real(wp) :: time_init, time_end\n    real(wp) :: time                   ! current output time (method-dependent)\n    real(wp) :: time_elapsed           ! time since time_init\n    real(wp) :: time_cal               ! calendar time\n    real(wp) :: time_rel               ! relative time\n    integer  :: n                      ! iteration counter\n    logical  :: is_finished            ! .TRUE. once time &gt;= time_end\n    ! ... plus internal compensation/reference fields ...\nend type\n! Initialize the time axis:\ncall tstep_init(ts, time_init, time_end, method, units [, time_ref] [, const_cal] [, const_rel])\n\n  type(tstep_class), intent(INOUT) :: ts\n  real(wp),          intent(IN)    :: time_init, time_end\n  character(len=*),  intent(IN)    :: method   ! see the three methods below\n  character(len=*),  intent(IN)    :: units\n  real(wp),          intent(IN)    :: time_ref    ! optional; reference for cal&lt;-&gt;rel conversion\n  real(wp),          intent(IN)    :: const_cal   ! optional; fixed calendar time\n  real(wp),          intent(IN)    :: const_rel   ! optional; fixed relative time\nThe method selects which time keeper drives ts%time:\n\n\"const\" / \"constant\" — time = time_init + time_elapsed; time_cal and time_rel are held fixed (a pure spin-up clock).\n\"cal\" / \"calendar\" — time = time_cal evolves; time_rel = time_cal - time_ref.\n\"rel\" / \"relative\" — time = time_rel evolves; time_cal = time_rel + time_ref.\n\n! Advance one step by dt (updates all time keepers and is_finished):\ncall tstep_update(ts, dt [, verbose])\n\n  type(tstep_class), intent(INOUT) :: ts\n  real(wp),          intent(IN)    :: dt\n  logical,           intent(IN)    :: verbose  ! optional; print a row each step\n\n! Print a status row / header (iter, time, time_cal, time_rel, time_elapsed):\ncall tstep_print(ts)\ncall tstep_print_header(ts)\nNote tstep_init requires time_end &gt; time_init and stops otherwise. The first tstep_update only increments the counter (n); accumulation begins from the second call.\n\n\nUsage\nDrive the main loop off ts%is_finished, advancing at the top of each iteration:\ntype(tstep_class) :: ts\n\ncall tstep_init(ts, time_init, time_end, method=\"cal\", time_ref=1950.0_wp, units=\"yr\")\n\ncall tstep_print_header(ts)\ndo while (.not. ts%is_finished)\n    call tstep_update(ts, dtt)\n    call tstep_print(ts)\n\n    ! ... perform model updates here, using ts%time / ts%time_rel / ts%time_cal ...\nend do",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "timing"
+    ]
+  },
+  {
+    "objectID": "packages/timing.html#see-also",
+    "href": "packages/timing.html#see-also",
+    "title": "timing",
+    "section": "See also",
+    "text": "See also\n\ntsgen — time-series forcing generator, which consumes the ts%time produced here to drive a model’s boundary forcing.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "timing"
+    ]
+  },
+  {
+    "objectID": "packages/root_finder.html",
+    "href": "packages/root_finder.html",
+    "title": "root_finder",
+    "section": "",
+    "text": "root_finder locates a zero of a scalar function \\(f(x)\\), i.e. a value x for which f(x) = 0. Two iterative methods are provided:\n\nNewton’s method (solve_newton) — uses the function f and its analytic derivative fp. From the current guess it steps along the tangent to that line’s x-intercept, giving quadratic convergence near a simple root.\nSecant method (solve_secant) — a derivative-free fallback that approximates the slope from two successive iterates, so only f is needed. It is seeded internally from a single initial guess.\n\n\n\n\n\n\n\nFigure 1: Newton’s method converging to a root: each iteration steps along the tangent at the current guess to its x-intercept.\n\n\n\nBoth routines share the same convergence controls. Iteration stops as soon as either the residual abs(f(x)) &lt; tol or the step size falls below tol; the step-size test also catches flat roots (e.g. multiple roots) where the residual stays above tol even though x has effectively stopped moving. At most n_max iterations are taken. Each routine guards against its degenerate case — a zero derivative in Newton, equal successive function values in the secant — and exits without dividing by zero. The optional converged flag reports success; on failure a warning is written and converged is set .false..\nNote: the tolerance argument was renamed eps → tol (see CHANGELOG).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "root_finder"
+    ]
+  },
+  {
+    "objectID": "packages/root_finder.html#overview",
+    "href": "packages/root_finder.html#overview",
+    "title": "root_finder",
+    "section": "",
+    "text": "root_finder locates a zero of a scalar function \\(f(x)\\), i.e. a value x for which f(x) = 0. Two iterative methods are provided:\n\nNewton’s method (solve_newton) — uses the function f and its analytic derivative fp. From the current guess it steps along the tangent to that line’s x-intercept, giving quadratic convergence near a simple root.\nSecant method (solve_secant) — a derivative-free fallback that approximates the slope from two successive iterates, so only f is needed. It is seeded internally from a single initial guess.\n\n\n\n\n\n\n\nFigure 1: Newton’s method converging to a root: each iteration steps along the tangent at the current guess to its x-intercept.\n\n\n\nBoth routines share the same convergence controls. Iteration stops as soon as either the residual abs(f(x)) &lt; tol or the step size falls below tol; the step-size test also catches flat roots (e.g. multiple roots) where the residual stays above tol even though x has effectively stopped moving. At most n_max iterations are taken. Each routine guards against its degenerate case — a zero derivative in Newton, equal successive function values in the secant — and exits without dividing by zero. The optional converged flag reports success; on failure a warning is written and converged is set .false..\nNote: the tolerance argument was renamed eps → tol (see CHANGELOG).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "root_finder"
+    ]
+  },
+  {
+    "objectID": "packages/root_finder.html#public-api",
+    "href": "packages/root_finder.html#public-api",
+    "title": "root_finder",
+    "section": "Public API",
+    "text": "Public API\nThe module exports two subroutines:\npublic :: solve_newton\npublic :: solve_secant\n\nsolve_newton\nsubroutine solve_newton(x, n_iter, x_init, tol, n_max, f, fp, debug, converged)\n\n    real(wp), intent(OUT) :: x          ! Best guess of root\n    integer,  intent(OUT) :: n_iter     ! Number of iterations taken\n    real(wp), intent(IN)  :: x_init     ! Initial guess\n    real(wp), intent(IN)  :: tol        ! Tolerance to convergence\n    integer,  intent(IN)  :: n_max      ! Maximum iterations allowed\n    real(wp), external    :: f          ! Function to find root of\n    real(wp), external    :: fp         ! Derivative of the function\n    logical,  intent(IN)  :: debug      ! Print iteration information?\n    logical,  intent(OUT), optional :: converged  ! Did the method converge?\nThe functions f and fp are passed as external procedures, each taking a single real(wp) argument and returning a real(wp) value. x returns the best estimate of the root and n_iter the number of iterations used.\n\n\nsolve_secant\nsubroutine solve_secant(x, n_iter, x_init, tol, n_max, f, debug, converged)\n\n    real(wp), intent(OUT) :: x          ! Best guess of root\n    integer,  intent(OUT) :: n_iter     ! Number of iterations taken\n    real(wp), intent(IN)  :: x_init     ! Initial guess\n    real(wp), intent(IN)  :: tol        ! Tolerance to convergence\n    integer,  intent(IN)  :: n_max      ! Maximum iterations allowed\n    real(wp), external    :: f          ! Function to find root of\n    logical,  intent(IN)  :: debug      ! Print iteration information?\n    logical,  intent(OUT), optional :: converged  ! Did the method converge?\nIdentical to solve_newton but without the fp argument: the slope is estimated from two iterates. The second seed point is derived internally from x_init.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "root_finder"
+    ]
+  },
+  {
+    "objectID": "packages/root_finder.html#usage-example",
+    "href": "packages/root_finder.html#usage-example",
+    "title": "root_finder",
+    "section": "Usage example",
+    "text": "Usage example\nDefine the objective function and its derivative as external functions, then call solve_newton. This finds \\(\\sqrt{2}\\) as the positive root of \\(f(x) = x^2 - 2\\):\nprogram example_root\n    use precision,   only: wp\n    use root_finder, only: solve_newton\n\n    implicit none\n\n    real(wp) :: x\n    integer  :: n_iter\n    logical  :: converged\n\n    call solve_newton(x, n_iter, x_init=1.5_wp, tol=1e-6_wp, n_max=100, &\n                      f=f_sq, fp=fp_sq, debug=.false., converged=converged)\n\n    if (converged) then\n        write(*,*) \"root = \", x, \" after \", n_iter, \" iterations\"\n    else\n        write(*,*) \"no convergence\"\n    end if\n\ncontains\n\n    real(wp) function f_sq(x)\n        real(wp) :: x\n        f_sq = x*x - 2.0_wp\n    end function f_sq\n\n    real(wp) function fp_sq(x)\n        real(wp) :: x\n        fp_sq = 2.0_wp*x\n    end function fp_sq\n\nend program example_root\nThe derivative-free variant is called the same way, omitting fp:\ncall solve_secant(x, n_iter, x_init=2.0_wp, tol=1e-6_wp, n_max=100, &\n                  f=f_sq, debug=.false., converged=converged)",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "root_finder"
+    ]
+  },
+  {
+    "objectID": "packages/root_finder.html#see-also",
+    "href": "packages/root_finder.html#see-also",
+    "title": "root_finder",
+    "section": "See also",
+    "text": "See also\n\ntsgen",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "root_finder"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html",
+    "href": "packages/ncio.html",
+    "title": "ncio",
+    "section": "",
+    "text": "ncio is a high-level Fortran wrapper over the netCDF library (Robinson & Perrette). It reduces netCDF I/O to a handful of generic calls: create a file, define dimensions, and read or write variables and attributes without managing file IDs, variable IDs, dimension IDs, or data types by hand. The generic interfaces dispatch automatically on the rank (point through 6D) and type (integer, single, double, logical, character) of the array passed, and dimensions are referred to by name rather than by numeric ID.\nThe library is self-contained: it depends only on the netCDF Fortran library and standard intrinsics. All routines live in the ncio module (src/ncio.f90), with an optional companion module ncio_transpose (src/ncio_transpose.f90).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#overview",
+    "href": "packages/ncio.html#overview",
+    "title": "ncio",
+    "section": "",
+    "text": "ncio is a high-level Fortran wrapper over the netCDF library (Robinson & Perrette). It reduces netCDF I/O to a handful of generic calls: create a file, define dimensions, and read or write variables and attributes without managing file IDs, variable IDs, dimension IDs, or data types by hand. The generic interfaces dispatch automatically on the rank (point through 6D) and type (integer, single, double, logical, character) of the array passed, and dimensions are referred to by name rather than by numeric ID.\nThe library is self-contained: it depends only on the netCDF Fortran library and standard intrinsics. All routines live in the ncio module (src/ncio.f90), with an optional companion module ncio_transpose (src/ncio_transpose.f90).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#core-routines",
+    "href": "packages/ncio.html#core-routines",
+    "title": "ncio",
+    "section": "Core routines",
+    "text": "Core routines\nAll public entities are exported from module ncio. The main generic interfaces and subroutines are grouped below.\n\nFile\n\nnc_create — create a new netCDF file, optionally with overwrite, netcdf4, and global metadata (author, creation_date, institution, description).\nnc_open — open an existing file, returning ncid; optional writable flag.\nnc_close — close an open file given its ncid.\n\n\n\nDimensions\n\nnc_write_dim — define and write a coordinate dimension variable from its axis values x, with optional units, etc. (generic over integer/single/double, point or 1D).\nnc_write_map — write a CRS / grid-mapping variable describing a projection.\nnc_write_attr_std_dim — attach standard CF attributes to conventional dimension variables.\n\n\n\nVariables\n\nnc_write — write a variable of any supported type and rank (point–6D). Dimensions are given by name via dim1, dim2, … (or a dims(:) array); optional metadata includes long_name, standard_name, units, grid_mapping, missing_value, plus start/count for hyperslab writes.\nnc_read — read a variable into an array of matching type and rank, with optional start, count, missing_value, ncid, iostat.\n\n\n\nAttributes\n\nnc_write_attr — write a variable-level or global attribute (character, integer, single, double; scalar or 1D vector).\nnc_read_attr — read a variable-level or global attribute (same type coverage, including 1D vector attributes).\n\n\n\nQueries\n\nnc_size — return the length of a named dimension/variable.\nnc_dims — return the dimension names and sizes of a variable.\nnc_ndims — return the number of dimensions of a variable.\nnc_exists_var — test whether a variable exists in a file.\nnc_exists_attr — test whether an attribute exists (global or variable-level).\nnc_size_attr — return the length of an attribute (global or variable-level).\nnc_time_index — find the index of a given time value in a file’s time coordinate (single or double).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#usage-example",
+    "href": "packages/ncio.html#usage-example",
+    "title": "ncio",
+    "section": "Usage example",
+    "text": "Usage example\nThe canonical pattern is: create the file, write coordinate dimensions, write variables referencing those dimensions by name, then read data back.\nuse ncio\n\ncharacter(len=*), parameter :: filename = \"output.nc\"\nreal(8) :: time(100), f(100)\nreal(8) :: f_in(100)\ninteger :: i\n\ndo i = 1, 100\n    time(i) = real(i, 8)\n    f(i)    = sin(time(i))\nend do\n\n! Create the file and define the time dimension\ncall nc_create(filename)\ncall nc_write_dim(filename, \"time\", x=time, units=\"yr\")\n\n! Write a variable along the \"time\" dimension, with metadata\ncall nc_write(filename, \"f\", f, dim1=\"time\", &\n              long_name=\"Transient forcing value\", units=\"1\")\n\n! Add a global attribute\ncall nc_write_attr(filename, \"title\", \"ncio usage example\")\n\n! Read the variable back\ncall nc_read(filename, \"f\", f_in)\nMulti-dimensional variables list additional dimensions with dim2, dim3, …:\ncall nc_write_dim(filename, \"time\",  x=time,  units=\"yr\")\ncall nc_write_dim(filename, \"month\", x=month)\ncall nc_write(filename, \"dTmon\", dTmon, dim1=\"time\", dim2=\"month\")",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#ncio_transpose",
+    "href": "packages/ncio.html#ncio_transpose",
+    "title": "ncio",
+    "section": "ncio_transpose",
+    "text": "ncio_transpose\nmodule ncio_transpose provides the generic interfaces nc_write_t and nc_read_t for reading and writing arrays in transposed dimension order (2D and 3D, double precision). They wrap the ordinary nc_write / nc_read calls: the data is transposed in memory before writing (e.g. [j,i] to on-disk [i,j], [k,j,i] to [i,j,k]) and transposed back on read. This is convenient when the in-memory array layout differs from the desired on-disk axis ordering. All the usual optional arguments (dim1…dim6, dims, start, count, long_name, units, missing_value, etc.) are forwarded.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#notes",
+    "href": "packages/ncio.html#notes",
+    "title": "ncio",
+    "section": "Notes",
+    "text": "Notes\n\nCompression. netCDF4 output defaults to deflate level 1, lowering memory use for compressed files.\nError messages. I/O operations are threaded with a context (filename, variable, dimension, attribute) so that failures report exactly which file/variable/dimension/attribute led to the error.\nVector attributes. Both nc_write_attr and nc_read_attr support scalar and 1D (vector) numeric attributes for integer, single, and double types, at both variable and global level.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/ncio.html#see-also",
+    "href": "packages/ncio.html#see-also",
+    "title": "ncio",
+    "section": "See also",
+    "text": "See also\n\nseries\nvarslice\nnml",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "ncio"
+    ]
+  },
+  {
+    "objectID": "packages/gaussian_quadrature.html",
+    "href": "packages/gaussian_quadrature.html",
+    "title": "gaussian_quadrature",
+    "section": "",
+    "text": "gaussian_quadrature provides the finite-element machinery for numerically integrating fields over structured grid cells treated as finite elements. The module is built around 3D hexahedral elements (8 nodes per element) and their 2D quadrilateral faces (4 nodes per element), the natural elements for a regular ice-sheet / ESM grid.\nNumerical integration over an element is approximated by a weighted sum of the integrand evaluated at a small set of quadrature points. For these elements the module uses the standard 2×2×2 (3D) and 2×2 (2D) Gauss rule, with quadrature points located at \\(\\pm 1/\\sqrt{3}\\) in each direction of the reference element and unit weights. Each element carries trilinear (3D) or bilinear (2D) shape/basis functions N, together with their derivatives with respect to the reference coordinates, which map nodal (corner) values to values at the quadrature points and support Jacobian-based mapping to physical coordinates.\nThe reference hexahedron spans \\(x,y,z \\in (-1,1)\\), indexed counter-clockwise from the SW corner with nodes 1–4 on the lower surface and 5–8 on the upper surface:\nN4----N3        N8----N7\n|     |  lower  |     |  upper\nN1----N2        N5----N6\nThe intended use is finite-element integration and interpolation over ice-sheet model fields: staggering a variable from grid nodes to element corners, then evaluating it at the element’s quadrature points for integration.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "gaussian_quadrature"
+    ]
+  },
+  {
+    "objectID": "packages/gaussian_quadrature.html#overview",
+    "href": "packages/gaussian_quadrature.html#overview",
+    "title": "gaussian_quadrature",
+    "section": "",
+    "text": "gaussian_quadrature provides the finite-element machinery for numerically integrating fields over structured grid cells treated as finite elements. The module is built around 3D hexahedral elements (8 nodes per element) and their 2D quadrilateral faces (4 nodes per element), the natural elements for a regular ice-sheet / ESM grid.\nNumerical integration over an element is approximated by a weighted sum of the integrand evaluated at a small set of quadrature points. For these elements the module uses the standard 2×2×2 (3D) and 2×2 (2D) Gauss rule, with quadrature points located at \\(\\pm 1/\\sqrt{3}\\) in each direction of the reference element and unit weights. Each element carries trilinear (3D) or bilinear (2D) shape/basis functions N, together with their derivatives with respect to the reference coordinates, which map nodal (corner) values to values at the quadrature points and support Jacobian-based mapping to physical coordinates.\nThe reference hexahedron spans \\(x,y,z \\in (-1,1)\\), indexed counter-clockwise from the SW corner with nodes 1–4 on the lower surface and 5–8 on the upper surface:\nN4----N3        N8----N7\n|     |  lower  |     |  upper\nN1----N2        N5----N6\nThe intended use is finite-element integration and interpolation over ice-sheet model fields: staggering a variable from grid nodes to element corners, then evaluating it at the element’s quadrature points for integration.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "gaussian_quadrature"
+    ]
+  },
+  {
+    "objectID": "packages/gaussian_quadrature.html#public-api",
+    "href": "packages/gaussian_quadrature.html#public-api",
+    "title": "gaussian_quadrature",
+    "section": "Public API",
+    "text": "Public API\nThe module exports two derived types and their associated procedures:\npublic :: gq2D_class\npublic :: gq2D_init\npublic :: gq2D_to_nodes_aa\npublic :: gq2D_to_nodes_ab\npublic :: gq2D_to_nodes_acx\npublic :: gq2D_to_nodes_acy\n\npublic :: gq3D_class\npublic :: gq3D_init\npublic :: gq3D_to_nodes_aa\npublic :: gq3D_to_nodes_ab\npublic :: gq3D_to_nodes_acx\npublic :: gq3D_to_nodes_acy\npublic :: gq3D_to_nodes_acz\n\nDerived types (element setup)\ngq2D_class and gq3D_class hold the fixed reference-element geometry (filled once by the *_init routines) together with per-call working storage.\ngq2D_class (4-node quadrilateral face):\ntype gq2D_class\n    integer :: n_qp            ! number of quadrature points (4)\n    integer :: n_nodes         ! number of nodes / corners (4)\n    real(8) :: xr(4)           ! quadrature-point x in reference element\n    real(8) :: yr(4)           ! quadrature-point y in reference element\n    real(8) :: wt(4)           ! quadrature-point weights\n    real(8) :: wt_tot          ! total weight (reference area = 4)\n    real(8) :: N(4,4)          ! shape functions N(node, qp)\n    real(8) :: dNdxr(4,4)      ! dN/dx in reference element\n    real(8) :: dNdyr(4,4)      ! dN/dy in reference element\n    real(8) :: v_ab(4)         ! variable value at cell corners\n    real(8) :: dNdx(4)         ! at nodes\n    real(8) :: dNdy(4)         ! at nodes\n    real(8) :: detJ(4)         ! at nodes\n    real(8) :: v(4)            ! variable value at quadrature points\nend type\ngq3D_class (8-node hexahedron) has the analogous fields extended to 8 nodes / quadrature points, plus the third dimension:\ntype gq3D_class\n    integer :: n_qp            ! number of quadrature points (8)\n    integer :: n_nodes         ! number of nodes / corners (8)\n    real(8) :: xr(8), yr(8), zr(8)   ! quadrature-point reference coordinates\n    real(8) :: wt(8)                 ! quadrature-point weights\n    real(8) :: wt_tot                ! total weight (reference volume = 8)\n    real(8) :: N(8,8)                ! shape functions N(node, qp)\n    real(8) :: dNdxr(8,8)            ! dN/dx in reference element\n    real(8) :: dNdyr(8,8)            ! dN/dy in reference element\n    real(8) :: dNdzr(8,8)            ! dN/dz in reference element\n    real(8) :: vol0                  ! volume scale\n    real(8) :: v_ab(8)               ! variable value at cell corners\n    real(8) :: dNdx(8), dNdy(8), dNdz(8)   ! at nodes\n    real(8) :: detJ(8)               ! at nodes\n    real(8) :: v(8)                  ! variable value at quadrature points\nend type\n\n\nInitialization (quadrature points and shape functions)\nEach *_init routine populates the reference-element geometry: it sets n_qp and n_nodes, places the quadrature points at \\(\\pm 1/\\sqrt{3}\\), assigns the weights, and evaluates the shape functions N and their reference derivatives dNdxr, dNdyr (and dNdzr in 3D) at every quadrature point.\nsubroutine gq2D_init(gq, verbose)\n    type(gq2D_class), intent(OUT)          :: gq\n    logical,          intent(IN), optional :: verbose\n\nsubroutine gq3D_init(gq, verbose)\n    type(gq3D_class), intent(OUT)          :: gq\n    logical,          intent(IN), optional :: verbose\nThe optional verbose flag prints the computed basis functions and derivatives for each quadrature point (including checks that sum(N) = 1 and the derivative sums vanish).\n\n\nEvaluation at quadrature points (staggering and interpolation)\nThe *_to_nodes_* routines stagger a gridded variable var to the element corners (gq%v_ab) and then evaluate it at the element’s quadrature points via the shape functions, returning the quadrature-point values in v_qp (and also storing them in gq%v). The suffix denotes the grid on which the input variable var lives:\n\n_aa — cell-centred (aa) grid\n_ab — corner (ab) grid\n_acx — x-staggered (acx) grid\n_acy — y-staggered (acy) grid\n_acz — z-staggered (acz) grid (3D only)\n\n2D (integration over a quadrilateral face):\nsubroutine gq2D_to_nodes_aa (gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)\nsubroutine gq2D_to_nodes_ab (gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)\nsubroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)\nsubroutine gq2D_to_nodes_acy(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)\nwith the common argument set:\n    type(gq2D_class), intent(INOUT) :: gq          ! Gaussian Quadrature 2D object\n    real(wp),         intent(INOUT) :: v_qp(4)     ! variable values at quadrature points\n    real(wp),         intent(IN)    :: var(:,:)    ! variable to be interpolated\n    real(wp),         intent(IN)    :: dx, dy      ! horizontal grid spacing\n    integer,          intent(IN)    :: i, j        ! [x,y] indices of current cell\n    integer,          intent(IN)    :: im1, ip1, jm1, jp1  ! neighbor indices\n3D (integration over a hexahedral element):\nsubroutine gq3D_to_nodes_aa (gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)\nsubroutine gq3D_to_nodes_ab (gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)\nsubroutine gq3D_to_nodes_acx(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)\nsubroutine gq3D_to_nodes_acy(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)\nsubroutine gq3D_to_nodes_acz(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)\nwith the common argument set:\n    type(gq3D_class), intent(INOUT) :: gq          ! Gaussian Quadrature 3D object\n    real(wp),         intent(INOUT) :: v_qp(8)     ! variable values at quadrature points\n    real(wp),         intent(IN)    :: var(:,:,:)  ! variable to be interpolated\n    real(wp),         intent(IN)    :: dx, dy      ! horizontal grid spacing (const)\n    real(wp),         intent(IN)    :: dz0         ! dz to cell below\n    real(wp),         intent(IN)    :: dz1         ! dz to cell above\n    integer,          intent(IN)    :: i, j, k     ! [x,y,z] indices of current cell\n    integer,          intent(IN)    :: im1, ip1, jm1, jp1, km1, kp1  ! neighbor indices\nHere dz0 and dz1 are the vertical distances to the cell below and above, allowing non-uniform vertical spacing while the horizontal grid is assumed regular.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "gaussian_quadrature"
+    ]
+  },
+  {
+    "objectID": "packages/gaussian_quadrature.html#usage-example",
+    "href": "packages/gaussian_quadrature.html#usage-example",
+    "title": "gaussian_quadrature",
+    "section": "Usage example",
+    "text": "Usage example\nThe typical pattern is: initialise an element once, then loop over grid cells, staggering the field to corners and evaluating it at the quadrature points. The quadrature-point values in v_qp (weighted by gq%wt) are then used to approximate the element integral.\nuse gaussian_quadrature\n\ntype(gq3D_class) :: gq\nreal(wp) :: v_qp(8)\nreal(wp) :: var(nx,ny,nz)      ! field on the aa (cell-centred) grid\nreal(wp) :: dx, dy, dz0, dz1\ninteger  :: i, j, k\nreal(wp) :: elem_integral\n\n! 1. Set up the reference hexahedron: quadrature points, weights, shape functions\ncall gq3D_init(gq)\n\n! 2. For a given cell (i,j,k), evaluate var at the element's quadrature points.\n!    Neighbor indices im1/ip1/... would normally respect the model's\n!    boundary conditions; interior points are shown here.\ncall gq3D_to_nodes_aa(gq, v_qp, var, dx, dy, dz0, dz1, &\n                      i, j, k, i-1, i+1, j-1, j+1, k-1, k+1)\n\n! 3. Approximate the element integral as a weighted sum over quadrature points.\n!    (For a full integral, multiply by the Jacobian determinant gq%detJ.)\nelem_integral = sum(gq%wt(1:gq%n_qp) * v_qp(1:gq%n_qp))\nThe 2D routines follow the same pattern with gq2D_class, gq2D_init, the gq2D_to_nodes_* calls, and 4-element arrays, integrating over a quadrilateral face instead of a hexahedron.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "gaussian_quadrature"
+    ]
+  },
+  {
+    "objectID": "packages/gaussian_quadrature.html#see-also",
+    "href": "packages/gaussian_quadrature.html#see-also",
+    "title": "gaussian_quadrature",
+    "section": "See also",
+    "text": "See also\n\ncoords",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "gaussian_quadrature"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html",
+    "href": "packages/coords.html",
+    "title": "coords",
+    "section": "",
+    "text": "coords is the geometry and remapping core of fesm-utils. It is a clean rebuild of the older coordinates library, keeping the user-facing API (points_class / grid_class / map_class, *_init, map_field) while replacing the internal storage, neighbour search and conservative remapping with a single design. Everything is reached through one umbrella module:\nuse coords\nThe package covers:\n\nCoordinate and grid definition — point sets (points_class) and regular grids (grid_class), each carrying a shared coordinate-system descriptor (coord_system: map type, units, planet, projection).\nMap projections — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters (lambda, phi, alpha, x_e, y_n).\nGaussian-latitude grids — quadrature latitudes for spectral/atmospheric grids (non-uniform y-axis).\nk-d tree nearest-neighbour search — the fast neighbour engine underneath distance-based maps.\nWeight-map remapping — one sparse source→target store applied with nearest-neighbour, Shepard (inverse-distance), quadrant, bilinear or conservative (area-weighted) kernels.\nSCRIP-superset weight-map file I/O — maps are cached as valid SCRIP remapping files, interoperable with cdo and other tools.\nCDO grid-description interop and cached map generation — read/write cdo griddes files, generate weights online (in-package or via an external cdo call), and load-if-exists / save-on-generate caching.\nThe multigrid coupler — a thin registry + lazy map-cache layer for remapping fields between many named grids.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#overview",
+    "href": "packages/coords.html#overview",
+    "title": "coords",
+    "section": "",
+    "text": "coords is the geometry and remapping core of fesm-utils. It is a clean rebuild of the older coordinates library, keeping the user-facing API (points_class / grid_class / map_class, *_init, map_field) while replacing the internal storage, neighbour search and conservative remapping with a single design. Everything is reached through one umbrella module:\nuse coords\nThe package covers:\n\nCoordinate and grid definition — point sets (points_class) and regular grids (grid_class), each carrying a shared coordinate-system descriptor (coord_system: map type, units, planet, projection).\nMap projections — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters (lambda, phi, alpha, x_e, y_n).\nGaussian-latitude grids — quadrature latitudes for spectral/atmospheric grids (non-uniform y-axis).\nk-d tree nearest-neighbour search — the fast neighbour engine underneath distance-based maps.\nWeight-map remapping — one sparse source→target store applied with nearest-neighbour, Shepard (inverse-distance), quadrant, bilinear or conservative (area-weighted) kernels.\nSCRIP-superset weight-map file I/O — maps are cached as valid SCRIP remapping files, interoperable with cdo and other tools.\nCDO grid-description interop and cached map generation — read/write cdo griddes files, generate weights online (in-package or via an external cdo call), and load-if-exists / save-on-generate caching.\nThe multigrid coupler — a thin registry + lazy map-cache layer for remapping fields between many named grids.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#key-derived-types",
+    "href": "packages/coords.html#key-derived-types",
+    "title": "coords",
+    "section": "Key derived types",
+    "text": "Key derived types\nAll types are defined in coordinates.f90 (geometry) and mapping.f90 (maps), and re-exported by use coords.\n\n\n\n\n\n\n\nType\nRole\n\n\n\n\ncoord_system\nCoordinate-reference metadata (mtype, units, planet, proj, xy_conv, is_cartesian, is_projection, is_lon180). Defined once and embedded as %cs in every geometry type.\n\n\npoints_class\nAn unstructured set of points: npts, 1D arrays x, y, lon, lat, area, and %cs.\n\n\ngrid_axis_class\nRegular axis description: nx, ny, x0, dx, y0, dy and the axis vectors x(:), y(:) (supports explicit non-uniform axes, e.g. Gaussian latitudes).\n\n\ngrid_class\nA regular grid: name, axis block %G (grid_axis_class), 2D arrays x, y, lon, lat, area, and %cs.\n\n\nmap_class\nPublic map wrapper: source/target names (name1, name2), target coordinate system %cs, target axes %G, fixed interpolation method, and the internal weight store %wm.\n\n\nweight_map_t\nThe single sparse source→target store (link-centric, SCRIP-style). Usually accessed only through map_class; see below.\n\n\ncoupler_class\nA registry of named grids plus a lazily-built cache of grid→grid maps (coupler.f90).\n\n\n\n\nThe weight store\nweight_map_t (module weight_map) is one sparse matrix with two payload flavours, selected by %kind:\n\nMAP_DISTANCE — links carry the neighbour distance, position (xn, yn) and quadrant; the per-link weight is built at apply time from the chosen kernel. One cached distance map therefore serves nn / quadrant / shepard / bilinear and adapts to a time-varying source mask.\nMAP_WEIGHT — links carry a final baked weight w(:); apply just reduces it (conservative maps, imported SCRIP maps, or precomputed bilinear).\n\nLinks are grouped by destination; dst_off(:) is a CSR offset array. The type is rarely handled directly — map_init / map_field wrap it — but the low-level API (weight_map_alloc, weight_map_index, weight_map_apply, weight_map_prune, weight_map_free) is public for building custom maps.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#core-workflow",
+    "href": "packages/coords.html#core-workflow",
+    "title": "coords",
+    "section": "Core workflow",
+    "text": "Core workflow\nThe typical use is: define a source and target grid, generate (or load) a weight map between them, then apply that map to remap one or more fields.\nuse coords\n\ntype(grid_class) :: gsrc, gtgt\ntype(map_class)  :: map\nreal(dp), allocatable :: field_src(:,:), field_tgt(:,:)\n\n! 1. Define source and target grids (here two Cartesian grids in km).\ncall grid_init(gsrc, name=\"src\", mtype=\"cartesian\", units=\"kilometers\", &\n               x0=0.0_dp,   dx=100.0_dp, nx=10, y0=0.0_dp,   dy=100.0_dp, ny=10)\ncall grid_init(gtgt, name=\"tgt\", mtype=\"cartesian\", units=\"kilometers\", &\n               x0=150.0_dp, dx=100.0_dp, nx=7,  y0=150.0_dp, dy=100.0_dp, ny=7)\n\n! 2. Generate (or load) a weight map. `method` fixes the kernel; the map is\n!    cached under `fldr` and reloaded next time when load=.true. (the default).\ncall map_init(map, gsrc, gtgt, method=\"shepard\", max_neighbors=8, fldr=\"maps\")\n\n! 3. Apply it. var1 is the source field; var2 is sized to the target grid.\nallocate(field_src(10,10), field_tgt(7,7))\n! ... fill field_src ...\ncall map_field(map, \"myfield\", field_src, field_tgt, stat=\"mean\")\ngrid_init is generic and also accepts explicit axis vectors (x=, y=), an existing grid/points object, or a file (grid_init(grid, filename, ...) reads a .nc grid or a /map/ namelist). Point sets are built the same way with points_init(pts, name=, mtype=, units=, x=, y=, ...).\nmap_init is overloaded for grid→grid, grid→points, points→grid, points→points, and grid→grid by name (map_init(map, name1, name2, ...), which reads both grid descriptions from grid_&lt;name&gt;.txt). Key optional arguments to the grid→grid form:\n\nmethod — interpolation kernel: \"con\" (conservative) or a distance kernel \"nn\" / \"shepard\" / \"quadrant\" / \"bilin\" (default \"nn\").\ngen — generator used when weights must actually be built: \"coords\" (in-package, default) or \"cdo\" (external cdo system call).\nfldr — map cache directory (default \"maps\").\nload — if .true. (default) an existing cache file is loaded instead of regenerated; freshly generated maps are always saved.\nmax_neighbors, dist_max — neighbour-search controls for distance maps.\nprecompute_weights — collapse a distance store to baked weights at init for shepard/bilinear (default .true.); the on-disk cache stays distance-format either way.\nweight_cutoff — relative cutoff for pruning sliver links from baked (con/bilinear) maps before caching (default 1e-4; 0.0 keeps all links).\n\nmap_field is generic over the field element type (integer, sp, dp) and over grid/points sources and targets. Beyond stat it accepts method (kernel override for distance maps), missing_value, radius, mask2, reset, mask_pack, and optional fill/filter post-processing (fill_method, filt_method, filt_par). The stat argument selects the reduction over each target’s links: \"mean\" (default), \"count\" (weighted mode), or \"stdev\".",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#remapping-kernels",
+    "href": "packages/coords.html#remapping-kernels",
+    "title": "coords",
+    "section": "Remapping kernels",
+    "text": "Remapping kernels\nThe kernel is fixed when the map is generated (it is part of the cache key) and selected via method:\n\nnn (nearest) — copies the single nearest valid source value. Use for categorical/index fields, masks, and where no smoothing is wanted.\nshepard — inverse-distance-squared weighting over the neighbours within radius. A good general-purpose smooth interpolation for scattered or point-set sources.\nquadrant — nearest valid neighbour in each of the four quadrants, IDW combined; more isotropic than plain Shepard near data gaps.\nbilin (bilinear) — for structured source→target pairs, exact index-space bilinear interpolation (matches cdo genbil). Best for smooth fields on regular grids; bakes to a MAP_WEIGHT map.\ncon (conservative) — area-weighted overlap via analytic polygon clipping. Conserves the area integral, so it is the right choice for fluxes and for aggregating a fine grid onto a coarse one. Built as a MAP_WEIGHT map.\n\nDistance kernels (nn/shepard/quadrant) share a single MAP_DISTANCE store, so the kernel can also be overridden per call in map_field(method=) without rebuilding the map. Conservative and bilinear are baked weights and are fixed at generation.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#cdo-interop-and-map-caching",
+    "href": "packages/coords.html#cdo-interop-and-map-caching",
+    "title": "coords",
+    "section": "CDO interop and map caching",
+    "text": "CDO interop and map caching\nGrids round-trip through cdo griddes text files (module grid_cdo):\n\ngrid_cdo_write_desc_short(grid, fldr) writes grid_&lt;name&gt;.txt, a cdo-compliant description with a #-comment header carrying the full coord_system so the grid can be reconstructed exactly.\ngrid_cdo_read_desc(grid, name, fldr) rebuilds a grid_class from such a file (the reader falls back on the CF grid_mapping_name for files stripped of the fesm-utils header, e.g. native cdo descriptions).\n\nMap caching is handled inside map_init. The cache filename is derived from the two grid names, the folder and the method (gen_map_filename), and:\n\nif load=.true. (default) and the file exists, the map is loaded, with the file format auto-detected — an in-package cache (carries a meta variable) vs a standard/cdo SCRIP file;\notherwise the weights are generated (in-package for gen=\"coords\", or by an external cdo gen&lt;method&gt; call for gen=\"cdo\") and saved to the cache.\n\nBecause the cache is always a valid SCRIP remapping file, a cdo-generated map and an in-package coords map interoperate at the same filename. The file I/O primitives are public as weight_map_write / weight_map_read (module map_io); map_read(map, src_name, dst_name, fldr, method) loads a pre-existing SCRIP map directly into a map_class.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#coupler",
+    "href": "packages/coords.html#coupler",
+    "title": "coords",
+    "section": "Coupler",
+    "text": "Coupler\nThe coupler module (module coupler, use coupler) sits on top of the mapping core and manages many grids at once. A coupler_class holds a registry of named grids and a lazily populated cache of grid→grid maps: grids are nodes, maps are directed, method-typed edges.\nuse coords\nuse coupler\n\ntype(coupler_class)   :: cpl\ntype(grid_class)      :: gcoarse, gfine\nreal(dp), allocatable :: fs(:,:), ft(:,:)\n\ncall coupler_init(cpl, map_fldr=\"maps\")          ! empty registry + cache\ncall coupler_add_grid(cpl, \"coarse\", gcoarse)    ! register grids by name\ncall coupler_add_grid(cpl, \"fine\",   gfine)\n\n! remap sizes the destination itself; the (src,dst,method) map is built on first\n! use and reused thereafter. method defaults to \"con\".\ncall remap(cpl, fs, \"coarse\", ft, \"fine\", method=\"bilin\")\n\ncoupler_add_grid(cpl, name, grid) registers a grid; unregistered names are resolved on demand from grid_&lt;name&gt;.txt in the map folder.\nremap(cpl, var_src, src, var_dst, dst, method, stat) finds-or-builds the map for (src, dst, method), allocates var_dst to the target size, and applies it. It is overloaded for dp / sp / int and 2D / 3D fields. method is part of the cache key; stat is forwarded per call and is not.\ncoupler_prime(cpl, src, dst, method, gen) eagerly builds a map up front (fail-fast at init rather than mid-timestep) and is the point at which a map’s generator can be overridden via gen=.\n\nEach map is built once, stored once in fixed-capacity storage, and shared across all callers, so adding a map never reallocates or deep-copies the large weight arrays already built.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "packages/coords.html#see-also",
+    "href": "packages/coords.html#see-also",
+    "title": "coords",
+    "section": "See also",
+    "text": "See also\nRelated pages: varslice, ncio.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "coords"
+    ]
+  },
+  {
+    "objectID": "external/lis.html",
+    "href": "external/lis.html",
+    "title": "LIS",
+    "section": "",
+    "text": "LIS (Library of Iterative Solvers) is a parallel C/Fortran library for solving large, sparse systems of linear equations and eigenvalue problems with iterative methods (a wide range of Krylov-subspace solvers and preconditioners, including algebraic multigrid).\nVersion vendored: 2.1.11 (lis/lis-2.1.11/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#role-in-fesm-utils",
+    "href": "external/lis.html#role-in-fesm-utils",
+    "title": "LIS",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nLIS provides the sparse iterative linear solvers used by downstream Earth system models. It is built with the Fortran 90 interface and the SA-AMG (smoothed aggregation algebraic multigrid) preconditioner enabled.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#building",
+    "href": "external/lis.html#building",
+    "title": "LIS",
+    "section": "Building",
+    "text": "Building\nLIS is built by its own autotools through the root Makefile:\nmake lis openmp=0        # serial -&gt; lis/lis-serial\nmake lis openmp=1        # OpenMP -&gt; lis/lis-omp\nThe target runs, in lis/lis-2.1.11/:\n./configure --prefix=&lt;repo&gt;/lis/lis-&lt;variant&gt; --enable-f90 --enable-saamg [--enable-omp]\nmake && make install\nThe serial and OpenMP variants install side by side into lis/lis-serial and lis/lis-omp. Machine/compiler specifics (compiler pick, C-standard pins, Intel runtime-library fixes) live in config/libs.mk; the vendored 2.1.11 autotools were modernized to build cleanly with recent icx/ifx.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#using-it-downstream",
+    "href": "external/lis.html#using-it-downstream",
+    "title": "LIS",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/lis/lis-serial/include     # lis.h, lisf.h, the lis Fortran module\nfesm-utils/lis/lis-serial/lib         # liblis.a",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#updating-the-vendored-source",
+    "href": "external/lis.html#updating-the-vendored-source",
+    "title": "LIS",
+    "section": "Updating the vendored source",
+    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the lis/ container folder and rebuild:\nwget https://www.ssisc.org/lis/dl/lis-2.1.11.zip\nunzip lis-2.1.11.zip -d lis/\nrm lis-2.1.11.zip\nmake lis openmp=0",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "fesm-utils",
+    "section": "",
+    "text": "fesm-utils is a convenience repository holding a self-contained Fortran utility library together with the external C/Fortran libraries needed to build and run fast Earth system models such as CLIMBER-X and yelmox.\nEverything is driven from a single root Makefile, generated per machine by configme. A serial and an OpenMP variant build side by side (openmp=0 / openmp=1).",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#whats-inside",
+    "href": "index.html#whats-inside",
+    "title": "fesm-utils",
+    "section": "What’s inside",
+    "text": "What’s inside\nThe repository bundles the local utils library (src/, compiled into libfesmutils.a) plus three vendored external libraries, each in its own container folder with the upstream source and compiled serial/omp install prefixes.\n\nLocal packages\n\n\n\ncoords\nCoordinate geometry, map projections, Gaussian grids, kdtree, and grid-to-grid weight-map remapping (nearest-neighbour / bilinear / conservative) with CDO interop and map caching.\n\n\ntsgen\nTransient scalar forcing from time (ramps, sinusoids), tabulated files, or model-response feedback controllers.\n\n\nseries\nLightweight tabulated time-series reader (ASCII/netCDF), scalar or multi-channel, with clamped-linear interpolation.\n\n\nvarslice\nSlice gridded (x-y-z-time) variables out of netCDF files, with sub-annual axes, multi-file matching, and unit scaling.\n\n\nncio\nHigh-level netCDF input/output for Fortran — create files, dimensions, variables, and attributes with minimal boilerplate.\n\n\nnml\nRead and write Fortran namelist parameter files, with a defaults overlay and validation.\n\n\nroot_finder\nScalar root finding via Newton and secant iterations.\n\n\ntiming\nWall-clock timers, output-write scheduling, and timestep management.\n\n\ngrid operations\nArakawa-grid staggering, spatial derivatives, distances, and subgrid interpolation.\n\n\ngaussian_quadrature\nFinite-element Gaussian quadrature over 3D hexahedral elements.\n\n\nfoundations\nPrecision kinds (wp/sp/dp) and package-wide constants every module builds on.\n\n\n\nExternal libraries\nThree vendored upstream libraries, each built by its own autotools configure/make/make install into &lt;lib&gt;/&lt;lib&gt;-{serial,omp}:\n\nFFTW — the Fastest Fourier Transform in the West.\nLIS — Library of Iterative Solvers for linear systems.\nSHTns — fast Spherical Harmonic Transforms.",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#installation",
+    "href": "index.html#installation",
+    "title": "fesm-utils",
+    "section": "Installation",
+    "text": "Installation\nfesm-utils is built through configme, which is the single source of machine/compiler truth (Fortran flags, netCDF autodetection) and generates the root Makefile.\n\n1. Install configme\npip install configme      # or: pipx install configme\n\n\n2. Install fesm-utils\nClone, configure, and build in one step — select your machine and compiler:\nconfigme install fesm-utils -m macbook -c gfortran\nIn an existing checkout, just (re)generate the Makefile:\nconfigme config fesm-utils -m macbook -c gfortran\n\n\n3. Build with make\nOne consistent interface, selecting the variant with openmp=:\nmake fesmutils-static openmp=0    # the utils library -&gt; include-serial/libfesmutils.a\nmake fftw   openmp=0              # serial FFTW  -&gt; fftw/fftw-serial\nmake lis    openmp=1             # OpenMP LIS   -&gt; lis/lis-omp\nmake shtns  openmp=0             # serial SHTns -&gt; SHTns/shtns-serial\nmake libs   openmp=0             # fftw + lis + shtns, one variant\nmake usage                       # list the main targets\n\n\n\n\n\n\nTip\n\n\n\nBuild the external libraries serially (a one-time autotools build — do not pass -j to make libs). SHTns links the FFTW built here, so fftw must be installed before shtns. On clusters, module load your compiler + netCDF toolchain first — the builds and netCDF autodetection use the environment already loaded in your shell.",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#using-the-libraries-downstream",
+    "href": "index.html#using-the-libraries-downstream",
+    "title": "fesm-utils",
+    "section": "Using the libraries downstream",
+    "text": "Using the libraries downstream\nSymlink the repository into a downstream model and reference the install prefixes directly:\ncd climber-x/\nln -s /path/to/fesm-utils ./\n\nutils: fesm-utils/include-serial (or include-omp)\nFFTW: fesm-utils/fftw/fftw-serial\nLIS: fesm-utils/lis/lis-serial\nSHTns: fesm-utils/SHTns/shtns-serial",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html",
+    "href": "external/fftw.html",
+    "title": "FFTW",
+    "section": "",
+    "text": "FFTW is a C library for computing discrete Fourier transforms in one or more dimensions, of arbitrary input size, in both real and complex data. It is a mature, widely used, high-performance FFT implementation.\nVersion vendored: 3.3.10 (fftw/fftw-3.3.10/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#role-in-fesm-utils",
+    "href": "external/fftw.html#role-in-fesm-utils",
+    "title": "FFTW",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nFFTW is a build-time dependency of downstream models and of SHTns, which links against the FFTW built here for its spherical-harmonic transforms. Because of that link dependency, FFTW must be installed before SHTns.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#building",
+    "href": "external/fftw.html#building",
+    "title": "FFTW",
+    "section": "Building",
+    "text": "Building\nFFTW is built by its own autotools through the root Makefile:\nmake fftw openmp=0        # serial -&gt; fftw/fftw-serial\nmake fftw openmp=1        # OpenMP -&gt; fftw/fftw-omp\nThe target runs, in fftw/fftw-3.3.10/:\n./configure --prefix=&lt;repo&gt;/fftw/fftw-&lt;variant&gt; --disable-doc [--enable-openmp]\nmake && make install\nThe serial and OpenMP variants install side by side into fftw/fftw-serial and fftw/fftw-omp. Machine/compiler specifics (the C compiler pick, C-standard pins) live in config/libs.mk.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#using-it-downstream",
+    "href": "external/fftw.html#using-it-downstream",
+    "title": "FFTW",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/fftw/fftw-serial/include    # fftw3.h, fftw3.f03\nfesm-utils/fftw/fftw-serial/lib        # libfftw3.a (+ libfftw3_omp for the omp variant)",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#updating-the-vendored-source",
+    "href": "external/fftw.html#updating-the-vendored-source",
+    "title": "FFTW",
+    "section": "Updating the vendored source",
+    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the fftw/ container folder and rebuild:\nwget https://www.fftw.org/fftw-3.3.10.tar.gz\ntar -xvf fftw-3.3.10.tar.gz -C fftw/\nrm fftw-3.3.10.tar.gz\nmake fftw openmp=0",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html",
+    "href": "external/shtns.html",
+    "title": "SHTns",
+    "section": "",
+    "text": "SHTns is a high-performance C library for Spherical Harmonic Transforms — the forward and inverse transforms between values on a sphere and their spherical-harmonic coefficients. It provides a Fortran interface and is optimized with vectorized kernels.\nVersion vendored: 3.7.5 (SHTns/shtns-3.7.5/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#role-in-fesm-utils",
+    "href": "external/shtns.html#role-in-fesm-utils",
+    "title": "SHTns",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nSHTns supplies the spherical-harmonic machinery used by downstream models (e.g. spectral transforms on the sphere). It links against the FFTW built in this repository, so FFTW must be installed first.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#building",
+    "href": "external/shtns.html#building",
+    "title": "SHTns",
+    "section": "Building",
+    "text": "Building\nSHTns is built by its own autotools through the root Makefile:\nmake fftw  openmp=0        # prerequisite: build FFTW first\nmake shtns openmp=0        # serial -&gt; SHTns/shtns-serial\nmake shtns openmp=1        # OpenMP -&gt; SHTns/shtns-omp\nThe target runs, in SHTns/shtns-3.7.5/, pointing SHTns at the FFTW prefix:\n./configure --prefix=&lt;repo&gt;/SHTns/shtns-&lt;variant&gt; [--enable-openmp] \\\n    CPPFLAGS='-I&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/include' \\\n    LDFLAGS='-L&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/lib'\nmake && make install\nThe serial and OpenMP variants install side by side into SHTns/shtns-serial and SHTns/shtns-omp. Machine/compiler specifics — the kernel-compiler choice and -march handling — live in config/libs.mk.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#using-it-downstream",
+    "href": "external/shtns.html#using-it-downstream",
+    "title": "SHTns",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/SHTns/shtns-serial/include    # shtns.h, shtns.f03\nfesm-utils/SHTns/shtns-serial/lib        # libshtns.a",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#notes",
+    "href": "external/shtns.html#notes",
+    "title": "SHTns",
+    "section": "Notes",
+    "text": "Notes\n\nSHTns is the last of the three external libraries to build, because of its FFTW link dependency. make libs builds fftw, lis, shtns in that order.\nBuild the external libraries serially (do not pass -j to make libs).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html",
+    "href": "packages/foundations.html",
+    "title": "foundations",
+    "section": "",
+    "text": "The precision and constants modules are the shared base that every other fesm-utils module builds on. precision defines the real kinds used throughout the library — the working precision wp, plus explicit single (sp) and double (dp) kinds. constants defines the package-wide domain values: the missing value, error sentinels, mathematical constants, and tolerances.\nThe two concerns are kept separate on purpose. Floating-point kinds live in precision; domain values live in constants. As the constants header notes, precision kinds must be sourced directly from precision — they are not re-exported from constants.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html#overview",
+    "href": "packages/foundations.html#overview",
+    "title": "foundations",
+    "section": "",
+    "text": "The precision and constants modules are the shared base that every other fesm-utils module builds on. precision defines the real kinds used throughout the library — the working precision wp, plus explicit single (sp) and double (dp) kinds. constants defines the package-wide domain values: the missing value, error sentinels, mathematical constants, and tolerances.\nThe two concerns are kept separate on purpose. Floating-point kinds live in precision; domain values live in constants. As the constants header notes, precision kinds must be sourced directly from precision — they are not re-exported from constants.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html#precision",
+    "href": "packages/foundations.html#precision",
+    "title": "foundations",
+    "section": "precision",
+    "text": "precision\nprecision defines three integer kind parameters:\n\n\n\nName\nDefinition\nMeaning\n\n\n\n\ndp\nkind(1.d0)\nDouble-precision real kind\n\n\nsp\nkind(1.0)\nSingle-precision real kind\n\n\nwp\nsp\nWorking precision (the default kind for library reals)\n\n\n\nThe working precision wp is selected by aliasing one of the explicit kinds. It is currently set to single precision (wp = sp); changing that one line retargets the working precision of the whole library.\nuse precision, only: wp\n\nreal(wp) :: x\nUse sp or dp directly when a routine must pin a variable to a specific precision regardless of the working precision.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html#constants",
+    "href": "packages/foundations.html#constants",
+    "title": "foundations",
+    "section": "constants",
+    "text": "constants\nconstants uses wp and dp from precision for its own declarations but keeps them private, so they are not re-exported — source kinds from precision. Values default to working precision (wp) except where a double-precision form is explicitly required (geometry, weights, and other double-only internals).\n\n\n\n\n\n\n\nName\nMeaning\n\n\n\n\nmv\nMissing value, working precision (-9999.0_wp)\n\n\nmv_dp\nMissing value, double precision (-9999.0_dp)\n\n\nERR_DIST\nError distance sentinel — a very large distance (1E8_dp)\n\n\nERR_IND\nError index sentinel (-1)\n\n\npi\nPi, computed as 2*acos(0) in double precision\n\n\ndegrees_to_radians\nConversion factor pi / 180\n\n\nradians_to_degrees\nConversion factor 180 / pi\n\n\nTOL\nGeneral tolerance (1e-8_wp)\n\n\nTOL_UNDERFLOW\nUnderflow tolerance (1e-15, cast to wp)\n\n\n\nThe missing value mv (-9999.0) is the library-wide flag for absent or invalid data, with mv_dp supplying the same sentinel at double precision for the double-only internals. The error sentinels ERR_DIST and ERR_IND mark failed distance and index lookups: ERR_DIST is a deliberately huge distance (1E8) so that a bad match never wins a nearest-neighbour comparison, and ERR_IND = -1 is an out-of-range index.\nThe mathematical constants are all double precision. pi is computed as 2*acos(0) rather than hard-coded, and degrees_to_radians / radians_to_degrees are derived from it for angle conversions. The tolerances TOL (1e-8) and TOL_UNDERFLOW (1e-15) are working precision; TOL is the general comparison tolerance and TOL_UNDERFLOW guards against underflow.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html#usage-note",
+    "href": "packages/foundations.html#usage-note",
+    "title": "foundations",
+    "section": "Usage note",
+    "text": "Usage note\nA module that needs both the working kind and the domain constants pulls each from its own module:\nuse precision, only: wp\nuse constants, only: mv, pi, TOL\n\nreal(wp) :: value\n\nif (abs(value - mv) &lt; TOL) then\n    ! value is the missing-value flag\nend if",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/foundations.html#see-also",
+    "href": "packages/foundations.html#see-also",
+    "title": "foundations",
+    "section": "See also",
+    "text": "See also\n\ncoords\ntsgen",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "foundations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html",
+    "href": "packages/gridops.html",
+    "title": "grid operations",
+    "section": "",
+    "text": "The grid-operations utilities collect the low-level array kernels used to work with fields defined on a regular 2D (and, for derivatives, 1D) grid: moving quantities between the nodes of an Arakawa staggered grid, taking spatial derivatives, measuring distances to a masked feature, and refining a coarse cell onto a finer subgrid. All routines operate on plain Fortran arrays and take the working precision wp from the precision module (except subgrid, which computes internally in double precision — see below).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html#staggering",
+    "href": "packages/gridops.html#staggering",
+    "title": "grid operations",
+    "section": "staggering",
+    "text": "staggering\nThe staggering module moves fields between the nodes of an Arakawa C-grid. Scalar (cell-centred) quantities live on the aa-nodes; the two components of a vector live on the staggered ac-nodes at the cell edges (acx on the x-edge, acy on the y-edge); corner values live on the ab-nodes. Each procedure is a function of one or more real(wp) arrays that returns a new real(wp) array of the same shape. Averaging kernels apply periodic boundary conditions at the domain edges. Two *_ice variants restrict the averaging to neighbours that satisfy an ice mask (f_ice, H_ice), falling back to the plain four-point average when no masked neighbour is available.\n\n\n\n\n\n\nFigure 1: Arakawa C-grid staggering: scalar quantities live on the centred aa-nodes; vector components live on the staggered ac-nodes at the cell edges.\n\n\n\nProcedures (all real(wp)):\n! Centred magnitude of a vector from its staggered (ac-node) components,\n! restricted to fully ice-covered cells (f_ice == 1); `boundaries` selects the\n! neighbour-indexing scheme.\nfunction calc_magnitude_from_staggered(u, v, f_ice, boundaries) result(umag)\n    real(wp), intent(IN) :: u(:,:), v(:,:)   ! acx-, acy-node components\n    real(wp), intent(IN) :: f_ice(:,:)       ! ice-fraction mask\n    character(len=*), intent(IN) :: boundaries\n    real(wp) :: umag(:,:)                     ! aa-nodes\n\n! Centred (aa-node) average of the staggered ac-node components.\nfunction stagger_ac_aa(u, v) result(umag)    ! u: acx, v: acy  -&gt; aa\n\n! Corner/centre four-point averages between aa- and ab-nodes.\nfunction stagger_aa_ab(u)     result(ustag)  ! aa -&gt; ab\nfunction stagger_ab_aa(u)     result(ustag)  ! ab -&gt; aa\nfunction stagger_aa_ab_ice(u, H_ice, f_ice) result(ustag)  ! aa -&gt; ab, masked\nfunction stagger_ab_aa_ice(u, H_ice, f_ice) result(ustag)  ! ab -&gt; aa, masked\n\n! Edge averages between aa/ab and the staggered ac-nodes.\nfunction stagger_aa_acx(u) result(ustag)     ! aa  -&gt; acx\nfunction stagger_aa_acy(u) result(ustag)     ! aa  -&gt; acy\nfunction stagger_acx_aa(u) result(ustag)     ! acx -&gt; aa\nfunction stagger_acy_aa(u) result(ustag)     ! acy -&gt; aa\nfunction stagger_ab_acx(u) result(ustag)     ! ab  -&gt; acx\nfunction stagger_ab_acy(u) result(ustag)     ! ab  -&gt; acy\nTypical usage — interpolate cell-centred data onto the x- and y-edges, or recover a centred vector magnitude from staggered velocity components:\nuse precision,  only: wp\nuse staggering, only: stagger_aa_acx, stagger_aa_acy, stagger_ac_aa\n\nreal(wp) :: H(nx,ny)              ! aa-node scalar (e.g. ice thickness)\nreal(wp) :: ux(nx,ny), uy(nx,ny)  ! ac-node velocity components\nreal(wp) :: H_acx(nx,ny), H_acy(nx,ny)\nreal(wp) :: umag(nx,ny)\n\n! Move the scalar field onto the staggered edges\nH_acx = stagger_aa_acx(H)\nH_acy = stagger_aa_acy(H)\n\n! Recover the centred speed from the staggered velocity components\numag = stagger_ac_aa(ux, uy)",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html#derivatives",
+    "href": "packages/gridops.html#derivatives",
+    "title": "grid operations",
+    "section": "derivatives",
+    "text": "derivatives\nThe derivatives module computes first spatial derivatives of a gridded field using three-point finite-difference stencils. Interior points use a centred stencil; boundary points use a one-sided (upstream/downstream) stencil unless bc == \"periodic\", in which case the centred stencil wraps around. Derivatives are evaluated only where the logical mask is .true.; an optional lim argument clamps the result to [-lim, lim]. Stencil weights are accumulated in double precision internally.\nPublic procedures:\npublic :: calc_dvdx_2D\npublic :: calc_dvdy_2D\npublic :: calc_dvdx_1D\npublic :: calc_dvdy_1D\n\n! 2D field: x- and y-derivatives\nsubroutine calc_dvdx_2D(dvdx, v, dx, mask, bc, lim)\n    real(wp), intent(OUT) :: dvdx(:,:)\n    real(wp), intent(IN)  :: v(:,:)\n    real(wp), intent(IN)  :: dx\n    logical,  intent(IN)  :: mask(:,:)\n    character(len=*), intent(IN) :: bc      ! \"periodic\" or otherwise\n    real(wp), intent(IN), optional :: lim   ! clamp |dvdx| &lt;= lim\n\nsubroutine calc_dvdy_2D(dvdy, v, dy, mask, bc, lim)   ! same shape, y-direction\n\n! 1D field\nsubroutine calc_dvdx_1D(dvdx, v, dx, mask, bc, lim)\n    real(wp), intent(OUT) :: dvdx(:)\n    real(wp), intent(IN)  :: v(:)\n    real(wp), intent(IN)  :: dx\n    logical,  intent(IN)  :: mask(:)\n    character(len=*), intent(IN) :: bc\n    real(wp), intent(IN), optional :: lim\n\nsubroutine calc_dvdy_1D(dvdy, v, dy, mask, bc)   ! delegates to calc_dvdx_1D\nNote that calc_dvdy_1D has no lim argument: in 1D it simply forwards to calc_dvdx_1D (there dvdy == dvdx).\nExample — gradient of a 2D field over its whole domain with a periodic x-boundary and a slope limit:\nuse precision,   only: wp\nuse derivatives, only: calc_dvdx_2D, calc_dvdy_2D\n\nreal(wp) :: z(nx,ny)            ! field to differentiate\nreal(wp) :: dzdx(nx,ny), dzdy(nx,ny)\nlogical  :: mask(nx,ny)\n\nmask = .true.                   ! evaluate everywhere\ncall calc_dvdx_2D(dzdx, z, dx, mask, bc=\"periodic\", lim=0.5_wp)\ncall calc_dvdy_2D(dzdy, z, dy, mask, bc=\"infinite\")",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html#distances",
+    "href": "packages/gridops.html#distances",
+    "title": "grid operations",
+    "section": "distances",
+    "text": "distances\nThe distances module measures, for every grid cell, the distance to the nearest cell of a reference feature marked in an integer mask. It uses a chamfer (weighted grid-propagation) distance transform with horizontal/vertical weight 1, diagonal weight √2, and a knight-move term √5 for accuracy. The mask convention is -1 inside the feature, 0 on the feature (distance zero), and 1 outside; the returned distance is signed accordingly (negative inside). Distances are propagated in double precision.\nPublic procedure:\npublic :: compute_distance_to_mask\n\nsubroutine compute_distance_to_mask(dist, mask, periodic_x, periodic_y)\n    real(wp), intent(OUT) :: dist(:,:)\n    integer,  intent(IN)  :: mask(:,:)     ! -1 inside, 0 at feature, 1 outside\n    logical,  intent(IN), optional :: periodic_x   ! wrap i-neighbours\n    logical,  intent(IN), optional :: periodic_y   ! wrap j-neighbours\nWhen neither axis is periodic (the default), a single forward+backward chamfer sweep is used. If either periodic_x or periodic_y is set, the forward and backward sweeps are iterated (with wrapped neighbour indices) until the distance field stops changing, so information can cross the periodic seam.\nExample — signed distance to a coastline, wrapping in x:\nuse precision, only: wp\nuse distances, only: compute_distance_to_mask\n\ninteger  :: mask(nx,ny)        ! -1 land interior, 0 coast, 1 ocean\nreal(wp) :: dist(nx,ny)\n\ncall compute_distance_to_mask(dist, mask, periodic_x=.true.)\n! dist &lt; 0 inland, 0 on the coast, &gt; 0 offshore (in grid-cell units)",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html#subgrid",
+    "href": "packages/gridops.html#subgrid",
+    "title": "grid operations",
+    "section": "subgrid",
+    "text": "subgrid\nThe subgrid module refines a single coarse cell of a 2D field onto an nxi × nxi subgrid by bilinear interpolation. It first reconstructs the four cell corners (ab-nodes) from the surrounding aa-node values, then fills the subgrid array with bilinearly interpolated values between those corners. When nxi == 1 the routine returns the cell-centre value unchanged.\nAs described in the source header, the interpolation is always performed in double precision: the *_dp procedures do the real work, and the single-precision path consists of thin wrappers that promote their real(sp) arguments, call the *_dp worker, and demote the result back to real(sp). Each operation is exposed through a generic interface so a caller built with wp = sp or wp = dp can use the generic name and have it resolve to the matching specific by argument kind.\nPublic procedures:\npublic :: calc_subgrid_array            ! generic (sp/dp)\npublic :: calc_subgrid_array_mask       ! generic (sp/dp), with mask\npublic :: calc_subgrid_array_cell       ! generic (sp/dp)\npublic :: calc_subgrid_array_dp         ! double-precision worker\npublic :: calc_subgrid_array_mask_dp    ! double-precision worker (mask)\npublic :: calc_subgrid_array_cell_dp    ! double-precision worker\n\n! Generic name calc_subgrid_array resolves to calc_subgrid_array_{sp,dp}:\nsubroutine calc_subgrid_array_dp(vint, v, nxi, i, j, im1, ip1, jm1, jp1)\n    real(dp), intent(INOUT) :: vint(:,:)          ! nxi x nxi output\n    real(dp), intent(IN)    :: v(:,:)             ! full aa-node field\n    integer,  intent(IN)    :: nxi                ! subgrid points per side\n    integer,  intent(IN)    :: i, j               ! current cell indices\n    integer,  intent(IN)    :: im1, ip1, jm1, jp1 ! neighbour indices\n\n! Masked variant: corner averages only include neighbours where mask is true.\nsubroutine calc_subgrid_array_mask_dp(vint, v, mask, nxi, i, j, im1, ip1, jm1, jp1)\n    real(dp), intent(INOUT) :: vint(:,:)\n    real(dp), intent(IN)    :: v(:,:)\n    logical,  intent(IN)    :: mask(:,:)\n    integer,  intent(IN)    :: nxi\n    integer,  intent(IN)    :: i, j, im1, ip1, jm1, jp1\n\n! Interpolate a cell directly from its four corner values (quadrants 1..4).\nsubroutine calc_subgrid_array_cell_dp(vint, v1, v2, v3, v4, nxi)\n    real(dp), intent(INOUT) :: vint(:,:)\n    real(dp), intent(IN)    :: v1, v2, v3, v4     ! v2--v1 / v3--v4\n    integer,  intent(IN)    :: nxi\nThe *_sp specifics (calc_subgrid_array_sp, calc_subgrid_array_mask_sp, calc_subgrid_array_cell_sp) have identical argument lists with real(sp) array/scalar arguments and are reached through the generic names rather than being called directly.\nExample — refine each cell of a field onto a 5×5 subgrid using the generic interface (resolves by the kind of vint/v):\nuse precision, only: wp\nuse subgrid,   only: calc_subgrid_array\n\nreal(wp) :: v(nx,ny)            ! coarse aa-node field\nreal(wp) :: vint(nxi,nxi)       ! subgrid for one cell\ninteger, parameter :: nxi = 5\n\ndo j = 1, ny\ndo i = 1, nx\n    ! (im1,ip1,jm1,jp1) computed with the caller's boundary convention\n    call calc_subgrid_array(vint, v, nxi, i, j, im1, ip1, jm1, jp1)\n    ! ... use vint (e.g. fractional area above a threshold) ...\nend do\nend do",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/gridops.html#see-also",
+    "href": "packages/gridops.html#see-also",
+    "title": "grid operations",
+    "section": "See also",
+    "text": "See also\n\ncoords",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "grid operations"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html",
+    "href": "packages/nml.html",
+    "title": "nml",
+    "section": "",
+    "text": "nml reads Fortran namelist-style parameter files through a single generic interface: nml_read(filename, group, name, value). It locates a parameter by its group and key, then converts the stored text into the caller’s variable, dispatching automatically on the type and rank of value. The supported types are integer, single- and double-precision real, logical and character, as scalars and as 1D vectors. The reader is robust to the usual namelist quirks: quoted strings, inline ! comments, and whitespace.\nThe parser accepts both the classic &group ... / block form and flat group.param = value lines (single- or multi-parameter per line). All public entities live in module nml (src/nml.f90); the module depends only on standard intrinsics.\nA recent addition (CHANGELOG: “nml defaults overlay + validation”) layers a schema/defaults file underneath the user file: nml_read can take an optional defaults_file, so a value is first taken from the defaults and then overlaid by the user file when present, and nml_validate checks that every key in a user group is declared in the defaults.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#overview",
+    "href": "packages/nml.html#overview",
+    "title": "nml",
+    "section": "",
+    "text": "nml reads Fortran namelist-style parameter files through a single generic interface: nml_read(filename, group, name, value). It locates a parameter by its group and key, then converts the stored text into the caller’s variable, dispatching automatically on the type and rank of value. The supported types are integer, single- and double-precision real, logical and character, as scalars and as 1D vectors. The reader is robust to the usual namelist quirks: quoted strings, inline ! comments, and whitespace.\nThe parser accepts both the classic &group ... / block form and flat group.param = value lines (single- or multi-parameter per line). All public entities live in module nml (src/nml.f90); the module depends only on standard intrinsics.\nA recent addition (CHANGELOG: “nml defaults overlay + validation”) layers a schema/defaults file underneath the user file: nml_read can take an optional defaults_file, so a value is first taken from the defaults and then overlaid by the user file when present, and nml_validate checks that every key in a user group is declared in the defaults.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#reading-parameters",
+    "href": "packages/nml.html#reading-parameters",
+    "title": "nml",
+    "section": "Reading parameters",
+    "text": "Reading parameters\nnml_read is a generic interface resolving to type-specific routines. The mandatory signature is:\ncall nml_read(filename, group, name, value)\n\nfilename — path to the namelist parameter file.\ngroup — group (block) name, without the leading &.\nname — parameter key to look up within the group.\nvalue — variable to receive the parsed value (its declared type and rank select the routine).\n\nSupported value kinds are character(len=*), real (single), double precision, integer and logical, each as a scalar or a 1D vector (nml_read_string, nml_read_double, nml_read_float, nml_read_integer, nml_read_logical, and their *_vector counterparts).\nEach routine also accepts optional arguments: comment (returns the inline comment attached to the parameter), init (a logical that resets value before reading), and defaults_file / defaults_group (see below).\nReal examples from the library:\n! Scalars of assorted types\ncall nml_read(par_filename, \"series1\", \"filename\",  filename)   ! character\ncall nml_read(par_filename, \"series1\", \"varname\",   varname)    ! character\ncall nml_read(filename,     \"tsgen_sin\", \"sigma\",   sigma)      ! real\ncall nml_read(filename,     \"tsgen_sin\", \"with_kill\", with_kill) ! logical\ncall nml_read(filename,     \"tsgen_sin\", \"f_max\",    f_max)     ! real\nBy default a freshly read parameter is echoed to screen (module flag VERBOSE, toggled via nml_set_verbose), and a missing parameter raises an error (module flag ERROR_NO_PARAM).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#writing-and-printing",
+    "href": "packages/nml.html#writing-and-printing",
+    "title": "nml",
+    "section": "Writing and printing",
+    "text": "Writing and printing\nnml_write is a generic interface (currently nml_write_string) with the signature:\ncall nml_write(filename, group, name, value, comment)\nwhere value is a character string and comment is optional.\nnml_print is a public generic interface that formats a parameter as an echoed line; it is what nml_read uses internally when VERBOSE is set. It covers the same scalar and vector types as nml_read. Vector printing is capped: at most nml_print_vector_max (50) elements are echoed, and longer vectors are truncated with a ... (n total) note to avoid overflowing the fixed-length print line.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#defaults-overlay-and-validation",
+    "href": "packages/nml.html#defaults-overlay-and-validation",
+    "title": "nml",
+    "section": "Defaults overlay and validation",
+    "text": "Defaults overlay and validation\nEvery nml_read routine accepts optional defaults_file and defaults_group arguments. When defaults_file is present, the parameter must exist in that file (it acts as the schema): the value is taken from the defaults and then overlaid by filename when the key is also present there. defaults_group lets the caller map a user group name onto a differently named group in the defaults file (used, for example, for group aliasing where a user group ydyn_north resolves to defaults group ydyn).\ncall nml_read(user_file, \"ydyn_north\", \"beta_method\", beta_method, &\n              defaults_file=\"ydyn_defaults.nml\", defaults_group=\"ydyn\")\nnml_validate checks a user file against the defaults schema:\ncall nml_validate(filename, defaults_file, group, defaults_group, halt_on_error)\nIt collects every key present in group of filename and reports any that are not declared in the defaults file (under defaults_group, or group if that optional is absent). halt_on_error defaults to .TRUE., in which case the program stops after reporting all unknown parameters.\nThe helper nml_replace(s, text, rep, outs) performs substring replacement on a string (optionally writing to outs rather than in place) and is also public.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#file-format",
+    "href": "packages/nml.html#file-format",
+    "title": "nml",
+    "section": "File format",
+    "text": "File format\nA namelist file is one or more &group ... / blocks. Keys are name = value; strings are quoted, ! begins an inline comment, and vectors are space- or comma-separated lists on the value side.\n&tsgen_sin\n    method    = \"sin\"        ! generator method\n    with_kill = .FALSE.\n    dt_ave    = 100.0\n    sigma     = 0.0\n    f_min     = 0.0\n    f_max     = 10.0\n/\n\n&series1\n    filename  = \"data/forcing.nc\"\n    varname   = \"temp\"\n    time_name = \"time\"\n    levels    = 0.0, 500.0, 1000.0, 2000.0   ! a vector value\n/\nThe parser also accepts equivalent flat lines, e.g. tsgen_sin.f_max = 10.0, with one or several group.param = value assignments per line.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/nml.html#see-also",
+    "href": "packages/nml.html#see-also",
+    "title": "nml",
+    "section": "See also",
+    "text": "See also\n\nncio — netCDF input/output.\ntsgen — time-series generator (reads its configuration via nml).\nseries — tabulated time-series reader (reads its configuration via nml).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "nml"
+    ]
+  },
+  {
+    "objectID": "packages/series.html",
+    "href": "packages/series.html",
+    "title": "series",
+    "section": "",
+    "text": "series is a lightweight reader for a scalar or multi-channel forcing/index curve tabulated over time. A series_class holds an ordered time axis and one or more value channels (nc), interpolated in time on demand. It is the 0-D/1-channel cousin of varslice (which handles gridded x-y-z-time fields): reach for series when you just need a scalar (nc=1) or multi-channel (nc&gt;1, e.g. 12 monthly values) curve.\nInterpolation is clamped-linear — endpoints are held flat outside the file’s time range — and is agnostic to the meaning of time: whatever axis you pass must match the file’s own axis (absolute year, year BP, elapsed time, …).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/series.html#file-formats",
+    "href": "packages/series.html#file-formats",
+    "title": "series",
+    "section": "File formats",
+    "text": "File formats\nThe format is auto-detected from the filename extension (override with the fmt argument):\n\nASCII — a whitespace-delimited table time  v1 [v2 ...]; the channel count is nc = ncols − 1. Blank lines and lines beginning with # or ! are skipped.\nnetCDF — a named value variable over a time coordinate. The variable may be 1-D (nc=1) or 2-D (nc = the non-time dimension, either axis order). An optional per-time/per-channel standard deviation is read from a companion variable named by sigma_name (only if it exists in the file).\n\n# co2.dat  — a scalar ASCII series (nc = 1)\n#   time    co2\n      0.0   280.0\n   1000.0   300.0\n   2000.0   340.0",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/series.html#public-api",
+    "href": "packages/series.html#public-api",
+    "title": "series",
+    "section": "Public API",
+    "text": "Public API\n\n\n\n\n\n\n\nProcedure\nPurpose\n\n\n\n\nseries_load(ser, filename, [varname], [time_name], [sigma_name], [fmt])\nLoad a series from filename. For netCDF, varname selects the value variable, time_name the time coordinate (default \"time\"), sigma_name an optional standard-deviation variable. ASCII input ignores the three variable-name arguments.\n\n\nseries_init_nml(ser, par_filename, group)\nConvenience initializer: read filename (and, for netCDF, varname/time_name/sigma_name) from a namelist group, then load.\n\n\nseries_interp(ser, time)\nInterpolate all channels to time; returns a length-nc vector.\n\n\nseries_interp1(ser, time)\nScalar convenience for a single-channel series (nc==1); errors otherwise.\n\n\nseries_interp_sig(ser, time)\nInterpolate the per-channel standard deviation to time; returns zeros if the series carries no sigma.\n\n\n\nThe series_class exposes filename, nt (time points), nc (channels), time(nt), var(nt,nc), and sigma(nt,nc) (unallocated when absent).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/series.html#usage",
+    "href": "packages/series.html#usage",
+    "title": "series",
+    "section": "Usage",
+    "text": "Usage\nuse series\n\ntype(series_class) :: ser\nreal(wp) :: co2\n\n! ASCII: format detected from the extension; no variable names needed\ncall series_load(ser, \"input/co2.dat\")\nco2 = series_interp1(ser, time=1500.0_wp)     ! clamped-linear at t = 1500\nFor a netCDF file, name the value variable (and optionally the time coordinate and a standard-deviation companion):\ntype(series_class) :: ser\nreal(wp) :: v(12), s(12)      ! e.g. 12 monthly channels\n\ncall series_load(ser, \"input/monthly.nc\", varname=\"pr\", &\n                 time_name=\"time\", sigma_name=\"pr_sd\")\n\nv = series_interp(ser, time=1850.0_wp)        ! all channels\ns = series_interp_sig(ser, time=1850.0_wp)    ! per-channel stddev (0 if absent)\nOr load from a namelist group:\ncall series_init_nml(ser, \"params.nml\", group=\"co2\")\n&co2\n    filename   = \"input/co2.nc\"\n    varname    = \"co2\"          ! netCDF only\n    time_name  = \"time\"         ! netCDF only\n    sigma_name = \"co2_sd\"       ! netCDF only (read if present)\n/",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/series.html#relationship-to-tsgen",
+    "href": "packages/series.html#relationship-to-tsgen",
+    "title": "series",
+    "section": "Relationship to tsgen",
+    "text": "Relationship to tsgen\ntsgen uses series directly for its method = \"series\": it loads the file at init and interpolates it on the absolute time axis at each update. Use series on its own when you only need the tabulated curve; use tsgen when you also want noise, ramps, or feedback control layered on top.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/series.html#see-also",
+    "href": "packages/series.html#see-also",
+    "title": "series",
+    "section": "See also",
+    "text": "See also\nvarslice · tsgen · ncio",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "series"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html",
+    "href": "packages/tsgen.html",
+    "title": "tsgen",
+    "section": "",
+    "text": "tsgen generates a single transient forcing value f_now at each model timestep. It replaces the former (unbuilt) hyster module and unifies three families of forcing under one namelist-configured interface:",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#quick-start",
+    "href": "packages/tsgen.html#quick-start",
+    "title": "tsgen",
+    "section": "Quick start",
+    "text": "Quick start\nuse tsgen\n\ntype(tsgen_class) :: ts\nreal(wp) :: time, var, dvdt\n\n! Read the &tsgen_&lt;label&gt; group from a namelist and set the initial value\ncall tsgen_init(ts, \"forcing.nml\", time=0.0_wp, label=\"climate\")\n\ndo            ! model time loop\n    ! var is the model response tsgen may react to (ignored by time-driven\n    ! methods); dv_dt is optional (finite-differenced from var if omitted)\n    call tsgen_update(ts, time, var, dv_dt=dvdt)\n\n    ! ts%f_now is the forcing to apply this step (mean + optional noise)\n    call apply_forcing(ts%f_now)\n\n    if (ts%kill) exit          ! optional: stop once the response equilibrates\n    time = time + dt\nend do\nThe object carries both the mean forcing (ts%f_mean_now), the realized noise sample (ts%eps), and the reported rate of change (ts%df_dt). ts%f_now = ts%f_mean_now + ts%eps.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#public-api",
+    "href": "packages/tsgen.html#public-api",
+    "title": "tsgen",
+    "section": "Public API",
+    "text": "Public API\n\n\n\n\n\n\n\nProcedure\nPurpose\n\n\n\n\ntsgen_init(ts, filename, time, [label])\nRead the namelist group tsgen[_label], classify the method, allocate state, set the initial value at simulation time time.\n\n\ntsgen_update(ts, time, var, [dv_dt])\nAdvance to time; compute ts%f_now from the method, the response var, and (optionally) its rate dv_dt.\n\n\ntsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])\nSample the forcing over a supplied time axis (analytic and series methods only — feedback methods have no closed form).\n\n\ntsgen_write(filename, ts, time(:), f(:), [df_dt(:)])\nWrite a tabulated series to netCDF (time, f, optional df_dt).\n\n\n\ntsgen_class holds the configuration (ts%par), the loaded series (if any), history buffers for feedback/kill, and the runtime outputs listed above.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#time-driven-methods",
+    "href": "packages/tsgen.html#time-driven-methods",
+    "title": "tsgen",
+    "section": "Time-driven methods",
+    "text": "Time-driven methods\nAll time-driven methods are closed-form functions of the elapsed time since initialization. A leading initialization window dt_init holds the forcing flat before anything happens; df_sign (+1/−1) sets the ramp direction, and the value is clamped to [f_min, f_max].\n\nramp-time — linear ramp over a fixed duration\nRamps from the near bound to the far bound over dt_ramp years, then holds. The rate is derived from the duration: rate = |f_max − f_min| / dt_ramp.\n\n\n\n\n\n\nFigure 2: ramp-time: the ramp spans dt_ramp years starting after dt_init, reaching f_max.\n\n\n\n\n\nramp-slope (and const) — constant rate\nRamps at a fixed rate df_dt_max and clamps at the far bound. const is the same formula (a constant-rate ramp); use df_dt_max = 0 for a truly static forcing.\n\n\n\n\n\n\nFigure 3: ramp-slope: a constant slope df_dt_max, clamped at f_max.\n\n\n\n\n\nramp-time-step — triangle waveform\nRamps to the first extreme over dt_ramp, then relaxes to the convergence value f_conv over dt_conv, and holds there.\n\n\n\n\n\n\nFigure 4: ramp-time-step: peak at f_max after dt_ramp, then down to f_conv over dt_conv.\n\n\n\n\n\nsin — periodic forcing\nA sinusoid oscillating in [f_min, f_max] with period dt_ramp. The amplitude is ½(f_max − f_min) about the mean ½(f_max + f_min). Requires df_sign = +1 (the kill switch is disabled for periodic forcing).\n\n\n\n\n\n\nFigure 5: sin: amplitude and mean set by f_min/f_max, period set by dt_ramp.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#noise",
+    "href": "packages/tsgen.html#noise",
+    "title": "tsgen",
+    "section": "Noise",
+    "text": "Noise\nWhen sigma &gt; 0, a Gaussian sample eps ~ N(0, sigma) is drawn each step (Box–Muller) and added on top of the mean: f_now = f_mean + eps. Noise is applied to every method. For a series with a companion standard-deviation variable, the per-time sigma from the file is used instead (falling back to par%sigma where absent).\n\n\n\n\n\n\nFigure 6: Noise is layered on top of the mean forcing; sigma sets its spread.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#response-driven-feedback-methods",
+    "href": "packages/tsgen.html#response-driven-feedback-methods",
+    "title": "tsgen",
+    "section": "Response-driven (feedback) methods",
+    "text": "Response-driven (feedback) methods\nFeedback methods have no analytic form — they adjust the forcing rate from the model’s windowed response derivative dv_dt_ave (averaged over dt_ave), then integrate to update the mean forcing within [f_min, f_max]. They must be stepped online with tsgen_update (passing the response var); tsgen_tabulate rejects them.\n\nexp — exponential rate scaling: the rate collapses toward zero as the response derivative approaches the tolerance tol.\nPI42, H312b, H312PID, H321PID, PID1 — proportional-integral(-derivative) controllers following the adaptive-timestep schemes of Söderlind (2002, 2003) and Cheng et al. (2017, GMD), with the forcing increment playing the role of the timestep. The controller keeps the response derivative near tol while respecting the rate cap df_dt_max.\n\nThe kill switch (with_kill = .TRUE.) stops the run once the response has equilibrated (|dv_dt_ave| &lt; tol) at the target bound; ts%kill is then set .TRUE. for the caller to act on.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#tabulated-series-method",
+    "href": "packages/tsgen.html#tabulated-series-method",
+    "title": "tsgen",
+    "section": "Tabulated series method",
+    "text": "Tabulated series method\nmethod = \"series\" reads a curve from file (ASCII or netCDF, auto-detected by extension) through the series module and interpolates it on the file’s own absolute time axis. Only method, sigma, and the series_* keys are consulted. A multi-channel series (e.g. 12 monthly values) reports the channel mean in ts%f_now, with per-channel values in ts%vec%f_now(:).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#namelist-configuration",
+    "href": "packages/tsgen.html#namelist-configuration",
+    "title": "tsgen",
+    "section": "Namelist configuration",
+    "text": "Namelist configuration\nParameters are read from the group tsgen (or tsgen_&lt;label&gt; when a label is passed to tsgen_init). Only the keys relevant to the chosen method are read.\n&tsgen_climate\n    method    = \"ramp-time\"   ! const | ramp-time | ramp-time-step | ramp-slope\n                              ! | sin | series | exp | PI42 | H312b | H312PID\n                              ! | H321PID | PID1\n    with_kill = .FALSE.       ! stop once the response equilibrates at a bound\n    sigma     = 0.0           ! stddev of the additive Gaussian noise [f]\n    df_sign   = 1.0           ! ramp direction, +1 or -1 (sin requires +1)\n\n    f_min     = 0.0           ! lower forcing bound\n    f_max     = 10.0          ! upper forcing bound\n    f_conv    = 5.0           ! convergence value (ramp-time-step)\n\n    dt_init   = 0.0           ! initialization hold before forcing starts [yr]\n    dt_ramp   = 1000.0        ! ramp duration; also the period for method=\"sin\" [yr]\n    dt_conv   = 1000.0        ! relaxation duration (ramp-time-step) [yr]\n    dt_ave    = 200.0         ! response-averaging window (feedback/kill) [yr]\n\n    df_dt_max = 0.01          ! max/constant forcing rate [f/yr]\n    tol       = 1.0e-4        ! feedback convergence tolerance on |dv_dt_ave|\n/\nFor a tabulated series, replace the ramp/feedback keys with the file location:\n&tsgen_climate\n    method           = \"series\"\n    sigma            = 0.0\n    series_file      = \"input/co2.nc\"   ! .nc/.nc4/.cdf -&gt; netCDF, else ASCII\n    series_var       = \"co2\"            ! (netCDF only) value variable\n    series_time_name = \"time\"           ! (netCDF only) time coordinate\n/\n\n\n\n\n\n\nNote\n\n\n\nThe feedback-convergence tolerance was renamed eps → tol (v1.2+). The name eps now denotes the realized noise sample. Existing tsgen namelists must rename their eps key to tol.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#tabulating-and-writing-a-series",
+    "href": "packages/tsgen.html#tabulating-and-writing-a-series",
+    "title": "tsgen",
+    "section": "Tabulating and writing a series",
+    "text": "Tabulating and writing a series\nFor validation or offline output, sample an analytic/series forcing over a time axis and write it to netCDF:\nreal(wp) :: time(2001), f(2001), dfdt(2001)\ninteger  :: i\n\ndo i = 1, size(time)\n    time(i) = real(i-1, wp)      ! 0 .. 2000 yr\nend do\n\ncall tsgen_init(ts, \"forcing.nml\", time=0.0_wp, label=\"climate\")\ncall tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)\ncall tsgen_write(\"forcing_out.nc\", ts, time, f, dfdt)",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#reproducing-the-figures",
+    "href": "packages/tsgen.html#reproducing-the-figures",
+    "title": "tsgen",
+    "section": "Reproducing the figures",
+    "text": "Reproducing the figures\nThe annotated figures on this page are generated by docs/figures/make_figures.jl, which re-implements the analytic eval_open formulas from src/tsgen.f90 for illustration. Regenerate them with:\ncd docs/figures\njulia --project=. make_figures.jl",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  },
+  {
+    "objectID": "packages/tsgen.html#see-also",
+    "href": "packages/tsgen.html#see-also",
+    "title": "tsgen",
+    "section": "See also",
+    "text": "See also\nseries · nml · ncio · root_finder",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "tsgen"
+    ]
+  }
+]
