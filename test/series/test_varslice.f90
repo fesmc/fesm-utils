@@ -22,6 +22,7 @@ program test_varslice
     type(varslice_class) :: vs
     integer :: nfail
     real(wp) :: exp1(nx)
+    real(wp), allocatable :: f2(:,:), f3(:,:,:)
 
     nfail = 0
 
@@ -67,6 +68,16 @@ program test_varslice
     call varslice_update(vs, time=[4.5_wp], method="interp")
     call check_shape("interp shape", vs, nx, 1, nfail)
     call check_col("interp @4.5", vs%var(:,1,1,1), val_col(4.5_wp,nx), nfail)
+
+    ! accessors v1/v2/v3: natural-rank copies of the stored slices. Reload a
+    ! range (interp above overwrote it) whose var is (nx,3,1,1).
+    call varslice_update(vs, time=[3.0_wp,5.0_wp], method="range")
+    call check_col("v1(2) == range col t=4", vs%v1(2), val_col(4.0_wp,nx), nfail)
+    call check_col("v1() default k=1",       vs%v1(),  val_col(3.0_wp,nx), nfail)
+    f2 = vs%v2()                       ! var(:,:,1,1) -> (nx,3)
+    call check_col("v2 col t=4", f2(:,2), val_col(4.0_wp,nx), nfail)
+    f3 = vs%v3()                       ! var(:,:,:,1) -> (nx,3,1)
+    call check_col("v3 col t=5", f3(:,3,1), val_col(5.0_wp,nx), nfail)
 
     call varslice_end(vs)
 

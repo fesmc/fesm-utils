@@ -56,8 +56,18 @@ module varslice
         integer, allocatable  :: idx(:)
         
         real(wp), allocatable :: var(:,:,:,:)
-                
-    end type 
+
+    contains
+
+        ! Convenience accessors returning a natural-rank copy of the data,
+        ! indexed by the trailing time/level position (default 1). The classic
+        ! vs%var(:,:,k,1) indexing continues to work unchanged.
+        !   v1(k) => var(:,k,1,1)   v2(k) => var(:,:,k,1)   v3(k) => var(:,:,:,k)
+        procedure :: v1 => varslice_v1
+        procedure :: v2 => varslice_v2
+        procedure :: v3 => varslice_v3
+
+    end type
 
     interface axis_init
         module procedure axis_init_sp
@@ -1207,6 +1217,39 @@ contains
         return
 
     end subroutine alloc_var
+
+    function varslice_v1(vs, k) result(v)
+        ! 1D (vector) copy at trailing index k: var(:,k,1,1)
+        class(varslice_class), intent(IN) :: vs
+        integer, optional,     intent(IN) :: k
+        real(wp), allocatable :: v(:)
+        integer :: kk
+        kk = 1
+        if (present(k)) kk = k
+        v = vs%var(:,kk,1,1)
+    end function varslice_v1
+
+    function varslice_v2(vs, k) result(v)
+        ! 2D (field) copy at trailing index k: var(:,:,k,1)
+        class(varslice_class), intent(IN) :: vs
+        integer, optional,     intent(IN) :: k
+        real(wp), allocatable :: v(:,:)
+        integer :: kk
+        kk = 1
+        if (present(k)) kk = k
+        v = vs%var(:,:,kk,1)
+    end function varslice_v2
+
+    function varslice_v3(vs, k) result(v)
+        ! 3D (volume) copy at trailing index k: var(:,:,:,k)
+        class(varslice_class), intent(IN) :: vs
+        integer, optional,     intent(IN) :: k
+        real(wp), allocatable :: v(:,:,:)
+        integer :: kk
+        kk = 1
+        if (present(k)) kk = k
+        v = vs%var(:,:,:,kk)
+    end function varslice_v3
 
     subroutine load_or_generate_axis(filename, varname, n, x)
         ! Allocate axis x to length n and populate it: read the coordinate
