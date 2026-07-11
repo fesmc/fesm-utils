@@ -201,8 +201,8 @@ contains
 
         implicit none 
 
-        type(varslice_class),       intent(INOUT) :: vs
-        real(wp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range 
+        type(varslice_class), target, intent(INOUT) :: vs
+        real(wp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
         character(len=*), optional, intent(IN)    :: method         ! slice_method (only if with_time==True)
         character(len=*), optional, intent(IN)    :: fill           ! none, min, max, mean (how to fill in missing values)
         integer,          optional, intent(IN)    :: rep            ! Only if with_time==True
@@ -220,9 +220,11 @@ contains
         character(len=56) :: slice_method
         character(len=56) :: fill_method
         character(len=56) :: vec_method 
-        integer  :: range_rep 
-        integer,  allocatable :: kk(:) 
-        real(wp), allocatable :: var(:,:,:,:) 
+        integer  :: range_rep
+        integer,  allocatable :: kk(:)
+        real(wp), allocatable, target :: var(:,:,:,:)
+        integer  :: s, nsp
+        real(wp), pointer, contiguous :: src2d(:,:), dst2d(:,:)
 
         ! Define shortcuts
         par = vs%par 
@@ -569,79 +571,28 @@ contains
                                     "range_rep       = "//to_str(vs%range_rep))
                             end if
 
-                            if (allocated(vs%var)) deallocate(vs%var)
+                            ! Allocate output at the natural rank (spatial dims
+                            ! from the loaded slab, nt_out in the time slot).
+                            call alloc_var(vs%var, shape(var), par%ndim, nt_out)
 
-                            select case(par%ndim)
+                            ! Collapse every rank to a single (space, time) view:
+                            ! nsp is the flattened spatial extent, and the reduction
+                            ! (mean/sd/interp/...) is one loop regardless of ndim.
+                            nsp = size(var) / nt_tot
+                            src2d(1:nsp,1:nt_tot) => var
+                            dst2d(1:nsp,1:nt_out) => vs%var
 
-                                case(1)
-                                    allocate(vs%var(nt_out,1,1,1))
+                            do k = 1, nt_out
 
-                                    ! Calculate each slice 
-                                    do k = 1, nt_out 
+                                ! Get indices for current repitition
+                                call get_rep_indices(kk,i0=k,i1=nt_tot,nrep=vs%range_rep)
 
-                                        ! Get indices for current repitition
-                                        call get_rep_indices(kk,i0=k,i1=nt_tot,nrep=vs%range_rep)
+                                do s = 1, nsp
+                                    ! Calculate the vector value desired (mean,sd,...)
+                                    call calc_vec_value(dst2d(s,k),src2d(s,kk),vec_method,mv,wt=time_wt)
+                                end do
 
-                                        ! Calculate the vector value desired (mean,sd,...)
-                                        call calc_vec_value(vs%var(k,1,1,1),var(kk,1,1,1),vec_method,mv,wt=time_wt)
-
-                                    end do 
-
-                                case(2)
-                                    allocate(vs%var(size(var,1),nt_out,1,1))
-
-                                    ! Calculate each slice 
-                                    do k = 1, nt_out 
-
-                                        ! Get indices for current repitition
-                                        call get_rep_indices(kk,i0=k,i1=nt_tot,nrep=vs%range_rep)
-
-                                        do i = 1, size(vs%var,1)
-                                            ! Calculate the vector value desired (mean,sd,...)
-                                            call calc_vec_value(vs%var(i,k,1,1),var(i,kk,1,1),vec_method,mv,wt=time_wt)
-                                        end do 
-
-                                    end do 
-                                    
-                                case(3)
-                                    allocate(vs%var(size(var,1),size(var,2),nt_out,1))
-                                
-                                    ! Calculate each slice 
-                                    do k = 1, nt_out 
-
-                                        ! Get indices for current repitition
-                                        call get_rep_indices(kk,i0=k,i1=nt_tot,nrep=vs%range_rep)
-
-                                        do j = 1, size(vs%var,2)
-                                        do i = 1, size(vs%var,1)
-                                            ! Calculate the vector value desired (mean,sd,...)
-                                            call calc_vec_value(vs%var(i,j,k,1),var(i,j,kk,1),vec_method,mv,wt=time_wt)
-                                        end do
-                                        end do 
-                                        
-                                    end do 
-                                    
-                                case(4)
-                                    allocate(vs%var(size(var,1),size(var,2),size(var,3),nt_out))
-
-                                    ! Calculate each slice 
-                                    do k = 1, nt_out 
-
-                                        ! Get indices for current repitition
-                                        call get_rep_indices(kk,i0=k,i1=nt_tot,nrep=vs%range_rep)
-
-                                        do l = 1, size(vs%var,3)
-                                        do j = 1, size(vs%var,2)
-                                        do i = 1, size(vs%var,1)
-                                            ! Calculate the vector value desired (mean,sd,...)
-                                            call calc_vec_value(vs%var(i,j,l,k),var(i,j,l,kk),vec_method,mv,wt=time_wt)
-                                        end do
-                                        end do
-                                        end do 
-                                        
-                                    end do 
-                                    
-                            end select
+                            end do
 
 
                     end select
@@ -1229,6 +1180,33 @@ contains
         return  
 
     end subroutine varslice_init_data
+
+    subroutine alloc_var(var, src_shape, ndim, nout)
+        ! (Re)allocate the 4D storage array so that the first ndim-1 axes are
+        ! the spatial extents (taken from src_shape, the shape of the loaded
+        ! slab), the ndim-th axis has length nout (the time-like output), and
+        ! any remaining trailing axes are singleton. This keeps a single code
+        ! path for every rank instead of a per-ndim allocate.
+
+        implicit none
+
+        real(wp), allocatable, intent(INOUT) :: var(:,:,:,:)
+        integer,               intent(IN)    :: src_shape(4)
+        integer,               intent(IN)    :: ndim
+        integer,               intent(IN)    :: nout
+
+        integer :: shp(4)
+
+        shp = 1
+        if (ndim .ge. 2) shp(1:ndim-1) = src_shape(1:ndim-1)
+        shp(ndim) = nout
+
+        if (allocated(var)) deallocate(var)
+        allocate(var(shp(1),shp(2),shp(3),shp(4)))
+
+        return
+
+    end subroutine alloc_var
 
     subroutine load_or_generate_axis(filename, varname, n, x)
         ! Allocate axis x to length n and populate it: read the coordinate
