@@ -210,6 +210,7 @@ contains
         ! Additional helper variables
         integer :: i, j, k, m, ndims, dimid
         logical :: var_has_no_dims
+        logical :: var_exists
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -259,7 +260,7 @@ contains
         call nc_check_open(filename, ncid, nf90_write, nc_id)
         
         ! and get attributes if variable already exists
-        call nc_get_att(nc_id,v,ec)
+        call nc_get_att(nc_id,v,ec,exists=var_exists)
         call nc_check( nf90_inquire(nc_id, unlimitedDimID=RecordDimID), ec, "nf90_inquire" ) ! Get Unlimited dimension ID if any
 
         ! Determine number of dims in file from arguments
@@ -401,10 +402,15 @@ contains
             end if
         end if
 
-        ! Define / update the netCDF variable for the data.
-        call nc_check( nf90_redef(nc_id), ec, "nf90_redef" )
-        call nc_put_att(nc_id, v, ec)
-        call nc_check( nf90_enddef(nc_id), ec, "nf90_enddef" )
+        ! Define the netCDF variable and its attributes on first encounter only.
+        ! For an already-defined variable there is nothing left to write to the
+        ! header (nc_put_att only acts on new variables), so we skip the
+        ! redef/enddef round-trip entirely and write straight into data mode.
+        if (.not. var_exists) then
+            call nc_check( nf90_redef(nc_id), ec, "nf90_redef" )
+            call nc_put_att(nc_id, v, ec)
+            call nc_check( nf90_enddef(nc_id), ec, "nf90_enddef" )
+        end if
 
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
@@ -1156,7 +1162,7 @@ contains
     ! Author     :  Alex Robinson
     ! Purpose    :  Get attributes from a netcdf file for a given variable
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    subroutine nc_get_att(ncid, v, ec, readmeta)
+    subroutine nc_get_att(ncid, v, ec, readmeta, exists)
 
         implicit none
 
@@ -1174,6 +1180,7 @@ contains
         integer, parameter :: noerr = NF90_NOERR
 
         logical, optional :: readmeta
+        logical, optional, intent(out) :: exists
         logical :: read_meta
 
         read_meta = .TRUE.
@@ -1181,6 +1188,9 @@ contains
 
         ! Get the current variable's id, if it exists
         stat = nf90_inq_varid(ncid, trim(v%name), v%varid)
+
+        ! Report whether the variable already exists on file
+        if (present(exists)) exists = (stat .eq. noerr)
 
         ! If variable exists, get attributes from file
         if ( stat .eq. noerr ) then
