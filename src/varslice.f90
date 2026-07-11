@@ -690,14 +690,21 @@ contains
         logical,               intent(IN)    :: with_sub        ! Use fractional time unit too
 
         ! Local variables
-        integer :: i, n, nidx, i1, ni
-        integer :: ii(10000)
-        real(wp) :: xmain(10000)
-        real(wp) :: dist(10000)
-        real(wp) :: dist_min_lo, dist_min_hi
-        real(wp) :: x0, x1
+        integer :: i, n, nidx
+        integer,  allocatable :: ii(:)
+        real(dp), allocatable :: xmain(:)
+        real(dp), allocatable :: dist(:)
+        real(dp) :: dist_min_lo, dist_min_hi
+        real(dp) :: x0, x1
 
         n     = size(x)
+
+        ! Size work arrays to the time axis (no fixed upper bound), and
+        ! keep them in double precision to match the incoming time axis x.
+        allocate(ii(n))
+        allocate(xmain(n))
+        allocate(dist(n))
+
         xmain = 0
         nidx  = 0
         ii    = 0
@@ -726,7 +733,7 @@ contains
 
         select case(trim(slice_method))
 
-            case("exact","range","range_mean","range_sd","range_min","range_max")
+            case("exact","range","range_mean","range_sd","range_min","range_max","range_sum")
 
                 if ( x0 .ge. xmain(1)-TOL .and. x1 .le. xmain(n)+TOL) then
                     ! All values within the range are available, proceed
@@ -774,7 +781,15 @@ contains
                     end if
 
                 end if
-                
+
+            case DEFAULT
+                ! Guard against a slice_method that has no index rule here.
+                ! Without this, an unhandled method silently yields no
+                ! indices and the whole field is returned as missing.
+                call varslice_error("get_indices", &
+                    "slice_method not recognized.", &
+                    "slice_method = "//trim(slice_method))
+
         end select
 
         nidx = count(ii .gt. 0)
@@ -818,13 +833,14 @@ contains
         integer, intent(IN) :: i1 
         integer, intent(IN) :: nrep 
 
-        ! Local variables   
-        integer :: i, ni, ntot 
-        integer :: jj(10000)
+        ! Local variables
+        integer :: i, ni, ntot
+        integer, allocatable :: jj(:)
 
-        ni = i1-i0+1 
+        ni = i1-i0+1
 
-        jj = 0  
+        allocate(jj(ni))
+        jj = 0
 
         do i = 1, ni
             jj(i) = i0 + nrep*(i-1) 
@@ -995,12 +1011,17 @@ contains
         if (present(with_time)) vs%par%with_time = with_time 
 
         vs%par%time_par = [0.0,0.0,0.0,0.0]
-        if (present(time_par)) vs%par%time_par(1:size(time_par)) = time_par 
+        if (present(time_par)) vs%par%time_par(1:size(time_par)) = time_par
 
-        ! Perform remaining init operations 
-        call varslice_init_data(vs) 
-        
-        return 
+        ! Resolve file list and derive internal time parameters
+        ! (mirrors the nml path; without this par%filenames and
+        !  par%with_time_sub would be left unset)
+        call varslice_par_finalize(vs%par)
+
+        ! Perform remaining init operations
+        call varslice_init_data(vs)
+
+        return
 
     end subroutine varslice_init_arg
 
@@ -1320,19 +1341,10 @@ contains
         ! Parse filename as needed
         if (present(domain) .and. present(grid_name)) then
             call parse_path(par%filename,domain,grid_name)
-        end if 
-
-        ! See if multiple files are available
-        call get_matching_files(par%filenames, par%filename)
-        
-        ! Make sure time parameters are consistent time_par=[x0,x1,dx]
-        if (par%time_par(3) .eq. 0.0) par%time_par(2) = par%time_par(1) 
-
-        if (par%time_par(4) .gt. 1.0) then
-            par%with_time_sub = .TRUE.
-        else
-            par%with_time_sub = .FALSE.
         end if
+
+        ! Resolve file list and derive internal time parameters
+        call varslice_par_finalize(par)
 
         ! Summary 
         if (print_summary) then  
@@ -1359,6 +1371,32 @@ contains
         return
 
     end subroutine varslice_par_load
+
+    subroutine varslice_par_finalize(par)
+        ! Resolve the (possibly wildcard) filename into the sorted list of
+        ! matching files and derive the internal time parameters. Shared by
+        ! both the nml- and argument-based initialization paths so they stay
+        ! consistent.
+
+        implicit none
+
+        type(varslice_param_class), intent(INOUT) :: par
+
+        ! See if multiple files are available (also allocates par%filenames)
+        call get_matching_files(par%filenames, par%filename)
+
+        ! Make sure time parameters are consistent time_par=[x0,x1,dx,sub]
+        if (par%time_par(3) .eq. 0.0) par%time_par(2) = par%time_par(1)
+
+        if (par%time_par(4) .gt. 1.0) then
+            par%with_time_sub = .TRUE.
+        else
+            par%with_time_sub = .FALSE.
+        end if
+
+        return
+
+    end subroutine varslice_par_finalize
 
     subroutine parse_path(path,domain,grid_name)
 
@@ -1653,8 +1691,8 @@ contains
             !write(*,*) "k0: ", k0, nk
             if (k0 .le. nk) then 
                 j0 = k0 - j0            ! start index for current file
-                nj = nk - k0 + 1        ! count total from current file
-                nj = min(nj,count(ndim))
+                nj = nk - k0 + 1        ! count available from current file
+                nj = min(nj,count(ndim)-nt)  ! limit to values still needed (not total)
                 nt = nt + nj            ! store total to be loaded so far
                 t0 = nt - nj + 1        ! start index in output array
                 !write(*,*) "j: ", j0, nj, k0, nk, t0, nt
