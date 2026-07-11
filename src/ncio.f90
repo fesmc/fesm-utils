@@ -50,7 +50,6 @@ module ncio
         integer, allocatable :: dlen(:), start(:), count(:)
         integer :: n, dimid, varid, ndims_in
         double precision :: add_offset, scale_factor, missing_value, FillValue
-        double precision :: actual_range(2)
         logical :: missing_set, FillValue_set
         double precision, allocatable :: dim(:)
         logical :: coord
@@ -210,7 +209,6 @@ contains
 
         ! Additional helper variables
         integer :: i, j, k, m, ndims, dimid
-        double precision :: actual_range(2)
         logical :: var_has_no_dims
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
@@ -355,27 +353,6 @@ contains
                 v%count(1:size(size_in)) = size_in
             end if
         
-        end if
-
-        ! Reset or initialize the actual range of the variable
-        if (v%missing_set) then
-            actual_range = [minval(dat,mask=dabs(dat-v%missing_value) .gt. NC_TOL), &
-                            maxval(dat,mask=dabs(dat-v%missing_value) .gt. NC_TOL)]
-        else 
-            actual_range = [minval(dat),maxval(dat)]
-        end if 
-        if (v%start(ndims) .ne. 1) then
-            v%actual_range(1) = min(v%actual_range(1),actual_range(1))
-            v%actual_range(2) = max(v%actual_range(2),actual_range(2))
-        else
-            v%actual_range = actual_range
-        end if
-
-        ! Check if the variable gave us reasonable values
-        if (maxval(dabs(v%actual_range)) .gt. 1d98) then
-            write(*,*) "ncio:: nc_write:: warning: actual range too high,&
-                            & variable may not be defined: "//trim(v%name)
-            v%actual_range = [0.d0,0.d0]
         end if
 
         ! Make sure count size makes sense
@@ -704,7 +681,6 @@ contains
         v%calendar      = ""
         v%add_offset    = 0.d0
         v%scale_factor  = 1.d0
-        v%actual_range  = (/ 0.d0, 0.d0 /)
         v%missing_set   = .FALSE.
         v%missing_value = -9999d0
         v%FillValue     = v%missing_value
@@ -1023,7 +999,6 @@ contains
             write(*,"(10x,a20,a1,2x,a)")      "units",    ":",     trim(v%units)
         if (.not. trim(v%axis) .eq. "") &
             write(*,"(10x,a20,a1,2x,a)")      "axis",":",          trim(v%axis)
-        write(*,"(10x,a20,a1,2x,2e12.4)") "actual_range",":",  v%actual_range
         write(*,"(10x,a20,a1,2x,e12.4)")  "add_offset",":",    v%add_offset
         write(*,"(10x,a20,a1,2x,e12.4)")  "scale_factor",":",  v%scale_factor
         write(*,"(10x,a20,a1,2x,e12.4)")  "missing_value",":", v%missing_value
@@ -1172,22 +1147,6 @@ contains
 
         end if
 
-        ! ! Always update the actual range (whether new or not) if it exists
-        if (v%actual_range(1) .ne. 0.d0 .and. v%actual_range(2) .ne. 0.d0) then
-            select case(trim(v%xtype))
-                case("NF90_INT")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", int(v%actual_range)), ec, "nf90_put_att" )
-                case("NF90_FLOAT")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", real(v%actual_range)), ec, "nf90_put_att" )
-                case("NF90_DOUBLE")
-                    call nc_check( nf90_put_att(ncid, v%varid, "actual_range", v%actual_range), ec, "nf90_put_att" )
-                case("NF90_CHAR")
-                    v%actual_range = (/ 0.d0, 0.d0 /)
-                case DEFAULT
-                    call nc_abort(op="nc_put_att", ec=ec, msg="invalid xtype defined: "//trim(v%xtype))
-            end select
-        end if
-
         return
 
     end subroutine nc_put_att
@@ -1202,8 +1161,8 @@ contains
         implicit none
 
         integer :: ncid, stat, i
-        double precision :: tmp, tmp2(2)
-        integer :: tmpi, tmpi2(2)
+        double precision :: tmp
+        integer :: tmpi
 
         character(len=NC_STRLEN) :: tmpstr
         type(ncvar) :: v
@@ -1262,9 +1221,6 @@ contains
                 select case(trim(v%xtype))
                     case("NF90_INT")
 
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "actual_range", tmpi2), ec, "nf90_get_att" )
-                        if (stat .eq. noerr) v%actual_range = dble(tmpi2)
-
                         stat = nc_check_att( nf90_get_att(ncid, v%varid, "scale_factor", tmpi), ec, "nf90_get_att" )
                         if (stat .eq. noerr) v%scale_factor = dble(tmpi)
 
@@ -1288,9 +1244,6 @@ contains
                         end if
 
                     case DEFAULT
-
-                        stat = nc_check_att( nf90_get_att(ncid, v%varid, "actual_range", tmp2), ec, "nf90_get_att" )
-                        if (stat .eq. noerr) v%actual_range = tmp2
 
                         stat = nc_check_att( nf90_get_att(ncid, v%varid, "scale_factor", tmp), ec, "nf90_get_att" )
                         if (stat .eq. noerr) v%scale_factor = tmp
@@ -2396,8 +2349,6 @@ contains
         if (allocated(v%dims)) deallocate(v%dims)
         allocate(v%dims(1))
         
-        ! Get the range from the x values
-        v%actual_range = (/ minval(v%dim), maxval(v%dim) /)
         v%add_offset   = 0.d0
         v%scale_factor = 1.d0
 
