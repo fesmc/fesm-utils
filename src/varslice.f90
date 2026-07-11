@@ -12,6 +12,13 @@ module varslice
 
     logical, parameter :: verbose = .FALSE.
 
+    ! Values with magnitude >= var_lim_crazy are treated as unflagged
+    ! fill/garbage and reset to the missing value. This catches NetCDF
+    ! default fill values (~9.97e36) that were not tagged via missing_value.
+    ! Note: legitimate data with magnitude above this limit would also be
+    ! discarded — raise it if a variable can genuinely exceed 1e10.
+    real(wp), parameter :: var_lim_crazy = 1.0e10_wp
+
     type varslice_param_class
 
         character(len=1024) :: filename
@@ -658,7 +665,7 @@ contains
             end if 
 
             ! Make sure crazy values have been set to missing (for safety)
-            where (abs(vs%var) .ge. 1e10) vs%var = mv 
+            where (abs(vs%var) .ge. var_lim_crazy) vs%var = mv
 
             ! Apply scaling 
             where (vs%var .ne. mv) 
@@ -1145,113 +1152,46 @@ contains
 
         end if 
 
-        ! Allocate coordinate and data variables,
-        ! load coordinates too 
+        ! Allocate coordinate variables and load coordinates too. The number
+        ! of spatial axes is ndim, minus one when the last dimension is time.
         select case(vs%par%ndim)
 
             case(1)
-                if (with_time) then 
-                    !allocate(vs%var(1,1,1,1))
-                else 
-                    !allocate(vs%var(vs%dim(1),1,1,1))
-                end if 
+                ! Point (0D space), or a 1D-in-space variable with no time.
+                ! No spatial axis coordinates to load here.
+
             case(2)
-                if (with_time) then 
-                    allocate(vs%x(vs%dim(1)))
-                    !allocate(vs%var(vs%dim(1),1,1,1))
-
-                    if (nc_exists_var(filename_dims,dim_names(1))) then 
-                        call nc_read(filename_dims,dim_names(1),vs%x)
-                    else
-                        call axis_init(vs%x,nx=vs%dim(1))
-                    end if
-                else 
-                    allocate(vs%x(vs%dim(1)))
-                    allocate(vs%y(vs%dim(2)))
-                    !allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
-
-                    if (nc_exists_var(filename_dims,dim_names(1))) then 
-                        call nc_read(filename_dims,dim_names(1),vs%x)
-                    else
-                        call axis_init(vs%x,nx=vs%dim(1))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(2))) then 
-                        call nc_read(filename_dims,dim_names(2),vs%y)
-                    else
-                        call axis_init(vs%y,nx=vs%dim(2))
-                    end if
-                    
-                end if 
+                if (with_time) then
+                    ! 1D space + time
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                else
+                    ! 2D space
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                end if
 
             case(3)
                 if (with_time) then
-                    allocate(vs%x(vs%dim(1)))
-                    allocate(vs%y(vs%dim(2)))
-                    !allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
-
-                    if (nc_exists_var(filename_dims,dim_names(1))) then 
-                        call nc_read(filename_dims,dim_names(1),vs%x)
-                    else
-                        call axis_init(vs%x,nx=vs%dim(1))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(2))) then 
-                        call nc_read(filename_dims,dim_names(2),vs%y)
-                    else
-                        call axis_init(vs%y,nx=vs%dim(2))
-                    end if
-                    
-                else 
-                    allocate(vs%x(vs%dim(1)))
-                    allocate(vs%y(vs%dim(2)))
-                    allocate(vs%z(vs%dim(3)))
-                    !allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
-
-                    if (nc_exists_var(filename_dims,dim_names(1))) then 
-                        call nc_read(filename_dims,dim_names(1),vs%x)
-                    else
-                        call axis_init(vs%x,nx=vs%dim(1))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(2))) then 
-                        call nc_read(filename_dims,dim_names(2),vs%y)
-                    else
-                        call axis_init(vs%y,nx=vs%dim(2))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(3))) then 
-                        call nc_read(filename_dims,dim_names(3),vs%z)
-                    else
-                        call axis_init(vs%z,nx=vs%dim(3))
-                    end if
-                    
+                    ! 2D space + time
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                else
+                    ! 3D space
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                    call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
                 end if
-                  
-            case(4)
-                if (with_time) then 
-                    allocate(vs%x(vs%dim(1)))
-                    allocate(vs%y(vs%dim(2)))
-                    allocate(vs%z(vs%dim(3)))
-                    !allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
 
-                    if (nc_exists_var(filename_dims,dim_names(1))) then 
-                        call nc_read(filename_dims,dim_names(1),vs%x)
-                    else
-                        call axis_init(vs%x,nx=vs%dim(1))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(2))) then 
-                        call nc_read(filename_dims,dim_names(2),vs%y)
-                    else
-                        call axis_init(vs%y,nx=vs%dim(2))
-                    end if
-                    if (nc_exists_var(filename_dims,dim_names(3))) then 
-                        call nc_read(filename_dims,dim_names(3),vs%z)
-                    else
-                        call axis_init(vs%z,nx=vs%dim(3))
-                    end if
-                    
+            case(4)
+                if (with_time) then
+                    ! 3D space + time
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                    call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
                 else
                     call varslice_error("varslice_init_data", &
                         "4D array without time dimension is not yet supported.")
                 end if
-
 
             case DEFAULT
                 call varslice_error("varslice_init_data", &
@@ -1289,6 +1229,30 @@ contains
         return  
 
     end subroutine varslice_init_data
+
+    subroutine load_or_generate_axis(filename, varname, n, x)
+        ! Allocate axis x to length n and populate it: read the coordinate
+        ! variable from file if it exists, otherwise generate a 1..n index axis.
+
+        implicit none
+
+        character(len=*),      intent(IN)    :: filename
+        character(len=*),      intent(IN)    :: varname
+        integer,               intent(IN)    :: n
+        real(wp), allocatable, intent(INOUT) :: x(:)
+
+        if (allocated(x)) deallocate(x)
+        allocate(x(n))
+
+        if (nc_exists_var(filename, varname)) then
+            call nc_read(filename, varname, x)
+        else
+            call axis_init(x, nx=n)
+        end if
+
+        return
+
+    end subroutine load_or_generate_axis
 
     subroutine varslice_end(vs)
         ! Deallocate all variables
