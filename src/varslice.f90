@@ -54,7 +54,8 @@ module varslice
         real(dp), allocatable :: time(:)
         real(dp), allocatable :: time_sub(:)
         integer, allocatable  :: idx(:)
-        
+        integer, allocatable  :: nt_files(:)   ! per-file time length (cached at init)
+
         real(wp), allocatable :: var(:,:,:,:)
 
     contains
@@ -419,7 +420,7 @@ contains
 
                             ! 0D (point) variable plus time dimension
                             call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[k0],count=[nt_tot])
+                                    start=[k0],count=[nt_tot],nt_files=vs%nt_files)
 
                         case(2)
 
@@ -428,7 +429,7 @@ contains
 
                             ! 1D variable plus time dimension
                             call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,k0],count=[vs%dim(1),nt_tot])
+                                    start=[1,k0],count=[vs%dim(1),nt_tot],nt_files=vs%nt_files)
 
                         case(3)
         
@@ -437,7 +438,7 @@ contains
 
                             ! 2D variable plus time dimension
                             call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,1,k0],count=[vs%dim(1),vs%dim(2),nt_tot])
+                                    start=[1,1,k0],count=[vs%dim(1),vs%dim(2),nt_tot],nt_files=vs%nt_files)
 
                         case(4)
 
@@ -446,7 +447,7 @@ contains
 
                             ! 3D variable plus time dimension
                             call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot])
+                                    start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot],nt_files=vs%nt_files)
 
                         case DEFAULT 
 
@@ -1024,14 +1025,17 @@ contains
         call nc_dims(filename_dims,vs%par%name,dim_names,vs%dim)
         vs%par%ndim = size(vs%dim,1)
 
-        ! Determine total time dimension size from multiple files!
-        if (with_time .and. size(vs%par%filenames,1) .gt. 1) then
-            nt = 0
+        ! Determine total time dimension size and cache the per-file time
+        ! lengths. nt_files is reused by nc_read_multifile so it need not
+        ! re-query the files on every update.
+        if (with_time) then
+            if (allocated(vs%nt_files)) deallocate(vs%nt_files)
+            allocate(vs%nt_files(size(vs%par%filenames,1)))
             do i = 1, size(vs%par%filenames,1)
                 call nc_dims(vs%par%filenames(i),vs%par%name,dim_names,dim_now)
-                nt = nt + dim_now(vs%par%ndim)
+                vs%nt_files(i) = dim_now(vs%par%ndim)
             end do
-            vs%dim(vs%par%ndim) = nt
+            vs%dim(vs%par%ndim) = sum(vs%nt_files)
         end if
 
 ! ======== TO DO =============
@@ -1289,6 +1293,7 @@ contains
         if (allocated(vs%time))         deallocate(vs%time)
         if (allocated(vs%time_sub))     deallocate(vs%time_sub)
         if (allocated(vs%idx))          deallocate(vs%idx)
+        if (allocated(vs%nt_files))     deallocate(vs%nt_files)
         if (allocated(vs%var))          deallocate(vs%var)
         
         return 
@@ -1622,7 +1627,7 @@ contains
     ! not just nc4_read_internal, but also nc_dims, etc...
     ! Now routine benefits from generic var[4D], but perhaps harder to collapse to 1D reading.
 
-    subroutine nc_read_multifile(filenames,name,var,start,count,missing_value)
+    subroutine nc_read_multifile(filenames,name,var,start,count,nt_files,missing_value)
 
         implicit none
 
@@ -1631,27 +1636,18 @@ contains
         real(wp),           intent(INOUT)   :: var(:,:,:,:)
         integer,            intent(IN)      :: start(:)
         integer,            intent(IN)      :: count(:)
+        integer,            intent(IN)      :: nt_files(:)   ! per-file time length (cached)
         real(wp),           intent(IN), optional :: missing_value
 
         ! Local variables
         integer :: i, k0, nk, j0, nj, t0, nt, num_files
-        integer :: ndim, nj_max
-        integer, allocatable :: nt_files(:)
-        integer, allocatable :: dims(:)
-        character(len=1024) :: filename
+        integer :: ndim
         character(len=:), allocatable :: fnames
 
         ! Get number of dimensions we are working with
         ndim = size(start,1)
 
         num_files = size(filenames)
-        allocate(nt_files(num_files))
-
-        ! First determine dimension of each file
-        do i = 1, num_files
-            call nc_dims(filenames(i),name,dims=dims)
-            nt_files(i) = dims(size(dims,1))
-        end do
 
         ! Consistency check
         if (sum(nt_files) .lt. count(ndim)) then
