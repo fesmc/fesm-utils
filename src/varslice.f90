@@ -1575,8 +1575,10 @@ contains
 
         integer, parameter :: max_num_files_allowed = 10000
 
-        ! Temporary file to store file names
-        temp_filename = "filelist.tmp"
+        ! Temporary file to store file names. Make the name unique per
+        ! process (PID) so concurrent runs sharing a working directory
+        ! (e.g. batch experiments) do not clobber each other's list.
+        write(temp_filename,"(a,i0,a)") "filelist_", getpid(), ".tmp"
 
         ! Create command to list files sorted alphabetically
         command = "ls -1 " // trim(pattern) // " | sort > " // trim(temp_filename)
