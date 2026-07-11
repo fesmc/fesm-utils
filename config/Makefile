@@ -329,6 +329,14 @@ test-series : fesmutils-static
 		@echo "    series test program ready: $(bindir)/test_series.x"
 		@echo " "
 
+# varslice (time-slicing of netcdf forcing) test program
+test-varslice : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_varslice.x $(testdir)/series/test_varslice.f90 \
+			$(INC_NC) -L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    varslice test program ready: $(bindir)/test_varslice.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
