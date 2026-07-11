@@ -211,6 +211,7 @@ contains
         integer :: i, j, k, m, ndims, dimid
         logical :: var_has_no_dims
         logical :: var_exists
+        logical :: packing
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -388,16 +389,19 @@ contains
             end do
         end if
 
-        ! Prepare the data for writing to file
-        allocate(dat_to_write(size(dat)))
-        dat_to_write = dat
+        ! Determine whether scale/offset packing is actually active. Defaults are
+        ! scale_factor=1, add_offset=0 (nc_v_init), possibly overwritten from file
+        ! attributes in nc_get_att. When unchanged the transform is the identity,
+        ! so `dat` is written directly below with no intermediate copy.
+        packing = (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") &
+                  .and. (v%scale_factor .ne. 1.d0 .or. v%add_offset .ne. 0.d0)
 
-        ! Modify the variable according to scale and offset (if working with real or double data)
-        if (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") then
+        if (packing) then
+            allocate(dat_to_write(size(dat)))
             if (v%missing_set) then
+                dat_to_write = dat
                 where( dabs(dat-v%missing_value) .gt. NC_TOL ) dat_to_write = (dat-v%add_offset)/v%scale_factor
             else
-                ! Apply the scalar and offset if available
                 dat_to_write = (dat-v%add_offset)/v%scale_factor
             end if
         end if
@@ -414,7 +418,11 @@ contains
 
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
-        call nc_check( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec, "nf90_put_var" )
+        if (packing) then
+            call nc_check( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec, "nf90_put_var" )
+        else
+            call nc_check( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec, "nf90_put_var" )
+        end if
 
         ! Close the file. This causes netCDF to flush all buffers and make
         ! sure your data are really written to disk.
