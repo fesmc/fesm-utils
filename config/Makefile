@@ -144,6 +144,15 @@ $(objdir)/coupler.o: $(srcdir)/coupler.f90 $(objdir)/precision.o $(objdir)/coord
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
+# Regenerate src/ncio.f90 from the fypp template src/ncio.fypp. This is a
+# developer step run only after editing the template; the generated ncio.f90
+# is committed, so the normal build never needs fypp (or Python). fypp is
+# vendored at tools/fypp.py.
+.PHONY : ncio-gen
+ncio-gen:
+	python3 tools/fypp.py $(srcdir)/ncio.fypp $(srcdir)/ncio.f90
+	@echo "Regenerated $(srcdir)/ncio.f90 from $(srcdir)/ncio.fypp"
+
 $(objdir)/ncio_transpose.o: $(srcdir)/ncio_transpose.f90 $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
@@ -418,6 +427,7 @@ usage:
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
+	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""
 

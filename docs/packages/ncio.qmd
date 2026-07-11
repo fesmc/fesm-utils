@@ -85,6 +85,35 @@ call nc_write_dim(filename, "month", x=month)
 call nc_write(filename, "dTmon", dTmon, dim1="time", dim2="month")
 ```
 
+## Performance: reuse an open file with `ncid`
+
+By default every `nc_write` / `nc_read` / `nc_size` call given a *filename*
+opens the file, performs the operation, and closes it. That is convenient for
+one-off calls, but when writing or reading **many variables (or many time
+slices) to the same file** the repeated open/close dominates the cost.
+
+Open the file once with `nc_open`, thread the returned `ncid` through the
+calls, and close it with `nc_close`:
+
+```fortran
+integer :: ncid, k
+
+call nc_create(filename, netcdf4=.TRUE.)
+call nc_write_dim(filename, "x",    x=x)
+call nc_write_dim(filename, "time", x=[0.d0], unlimited=.TRUE.)
+
+call nc_open(filename, ncid, writable=.TRUE.)
+do k = 1, nt
+    call nc_write(filename, "field", slice(:,:,k), dim1="x", dim2="time", &
+                  start=[1, k], count=[nx, 1], ncid=ncid)
+end do
+call nc_close(ncid)
+```
+
+For a loop of many slice writes this is roughly **2–3× faster** than the
+filename-per-call form and brings ncio to within ~2× of hand-written netCDF.
+Prefer it whenever more than a handful of operations touch the same file.
+
 ## ncio_transpose
 
 `module ncio_transpose` provides the generic interfaces `nc_write_t` and `nc_read_t` for reading and writing arrays in transposed dimension order (2D and 3D, double precision). They wrap the ordinary `nc_write` / `nc_read` calls: the data is transposed in memory before writing (e.g. `[j,i]` to on-disk `[i,j]`, `[k,j,i]` to `[i,j,k]`) and transposed back on read. This is convenient when the in-memory array layout differs from the desired on-disk axis ordering. All the usual optional arguments (`dim1…dim6`, `dims`, `start`, `count`, `long_name`, `units`, `missing_value`, etc.) are forwarded.
@@ -94,6 +123,7 @@ call nc_write(filename, "dTmon", dTmon, dim1="time", dim2="month")
 - **Compression.** netCDF4 output defaults to deflate level 1, lowering memory use for compressed files.
 - **Error messages.** I/O operations are threaded with a context (filename, variable, dimension, attribute) so that failures report exactly which file/variable/dimension/attribute led to the error.
 - **Vector attributes.** Both `nc_write_attr` and `nc_read_attr` support scalar and 1D (vector) numeric attributes for integer, single, and double types, at both variable and global level.
+- **Generated source.** The many per-type/per-rank wrapper routines behind `nc_write`, `nc_read`, `nc_write_dim`, and the attribute interfaces are generated from the fypp template `src/ncio.fypp`; `src/ncio.f90` is the committed, generated output. Contributors editing those families edit the template and run `make ncio-gen` (fypp is vendored at `tools/fypp.py`; no Python is needed for an ordinary build). All other code lives directly in the template as pass-through Fortran.
 
 ## See also
 
