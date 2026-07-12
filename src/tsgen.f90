@@ -92,25 +92,27 @@ module tsgen
 
 contains
 
-    subroutine tsgen_init(ts,filename,time,label)
+    subroutine tsgen_init(ts,filename,time,group)
+        ! `group` is the namelist group name to read (default "tsgen"). It is used
+        ! verbatim -- no prefix is forced -- so callers fully control the group name.
 
         type(tsgen_class), intent(INOUT) :: ts
         character(len=*),   intent(IN)    :: filename
         real(wp),           intent(IN)    :: time
-        character(len=*),   intent(IN), optional :: label
+        character(len=*),   intent(IN), optional :: group
 
         integer :: ntot
-        character(len=56) :: par_label
+        character(len=56) :: par_group
 
-        par_label = "tsgen"
-        if (present(label)) par_label = trim(par_label)//"_"//trim(label)
+        par_group = "tsgen"
+        if (present(group)) par_group = trim(group)
 
         ! The method determines which parameters are relevant, so read it first.
-        call nml_read(filename,trim(par_label),"method",      ts%par%method)
+        call nml_read(filename,trim(par_group),"method",      ts%par%method)
 
         ! Noise amplitude applies to every method (it is added on top of the
         ! mean forcing), so it is always read.
-        call nml_read(filename,trim(par_label),"sigma",       ts%par%sigma)
+        call nml_read(filename,trim(par_group),"sigma",       ts%par%sigma)
 
         ! Classify the method: response-driven (feedback) vs time-driven
         select case(trim(ts%par%method))
@@ -126,11 +128,11 @@ contains
             call tsgen_par_defaults(ts%par)
             ts%par%with_kill = .FALSE.
 
-            call nml_read(filename,trim(par_label),"series_file",ts%par%series_file)
+            call nml_read(filename,trim(par_group),"series_file",ts%par%series_file)
 
             if (series_is_netcdf(ts%par%series_file)) then
-                call nml_read(filename,trim(par_label),"series_var",      ts%par%series_var)
-                call nml_read(filename,trim(par_label),"series_time_name",ts%par%series_time_name)
+                call nml_read(filename,trim(par_group),"series_var",      ts%par%series_var)
+                call nml_read(filename,trim(par_group),"series_time_name",ts%par%series_time_name)
                 call series_load(ts%ser,ts%par%series_file, &
                                     varname=ts%par%series_var, &
                                     time_name=ts%par%series_time_name, &
@@ -143,17 +145,17 @@ contains
 
         else
             ! Time-driven (analytic) or response-driven (feedback) scalar forcing
-            call nml_read(filename,trim(par_label),"with_kill",   ts%par%with_kill)
-            call nml_read(filename,trim(par_label),"dt_ave",      ts%par%dt_ave)
-            call nml_read(filename,trim(par_label),"dt_init",     ts%par%dt_init)
-            call nml_read(filename,trim(par_label),"dt_ramp",     ts%par%dt_ramp)
-            call nml_read(filename,trim(par_label),"dt_conv",     ts%par%dt_conv)
-            call nml_read(filename,trim(par_label),"df_sign",     ts%par%df_sign)
-            call nml_read(filename,trim(par_label),"tol",         ts%par%tol)
-            call nml_read(filename,trim(par_label),"df_dt_max",   ts%par%df_dt_max)
-            call nml_read(filename,trim(par_label),"f_min",       ts%par%f_min)
-            call nml_read(filename,trim(par_label),"f_max",       ts%par%f_max)
-            call nml_read(filename,trim(par_label),"f_conv",      ts%par%f_conv)
+            call nml_read(filename,trim(par_group),"with_kill",   ts%par%with_kill)
+            call nml_read(filename,trim(par_group),"dt_ave",      ts%par%dt_ave)
+            call nml_read(filename,trim(par_group),"dt_init",     ts%par%dt_init)
+            call nml_read(filename,trim(par_group),"dt_ramp",     ts%par%dt_ramp)
+            call nml_read(filename,trim(par_group),"dt_conv",     ts%par%dt_conv)
+            call nml_read(filename,trim(par_group),"df_sign",     ts%par%df_sign)
+            call nml_read(filename,trim(par_group),"tol",         ts%par%tol)
+            call nml_read(filename,trim(par_group),"df_dt_max",   ts%par%df_dt_max)
+            call nml_read(filename,trim(par_group),"f_min",       ts%par%f_min)
+            call nml_read(filename,trim(par_group),"f_max",       ts%par%f_max)
+            call nml_read(filename,trim(par_group),"f_conv",      ts%par%f_conv)
 
             ! Make sure sign is only +1/-1
             ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
@@ -172,9 +174,8 @@ contains
             ts%nc = 1
         end if
 
-        ! Define label for this tsgen object
-        ts%par%label = "tsgen"
-        if (present(label)) ts%par%label = trim(ts%par%label)//"_"//trim(label)
+        ! Label this tsgen object (used for diagnostics / output variable names).
+        ts%par%label = trim(par_group)
 
         ! The history buffers are only needed for feedback control and/or the
         ! kill switch (both use the windowed response derivative). Allocate them

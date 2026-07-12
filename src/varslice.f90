@@ -921,7 +921,7 @@ contains
 
     end subroutine calc_vec_value
 
-    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose)
+    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs)
         ! Routine to load information related to a given 
         ! transient variable, so that it can be processed properly.
 
@@ -932,11 +932,12 @@ contains
         character(len=*),       intent(IN)    :: group
         character(len=*),       intent(IN), optional :: domain
         character(len=*),       intent(IN), optional :: grid_name
-        logical,                intent(IN), optional :: verbose 
-        ! Local variables 
-        
-        ! First load parameters from nml file 
-        call varslice_par_load(vs%par,filename,group,domain,grid_name,verbose)
+        logical,                intent(IN), optional :: verbose
+        character(len=*),       intent(IN), optional :: subs(:,:)   ! extra {key}->value path substitutions
+        ! Local variables
+
+        ! First load parameters from nml file
+        call varslice_par_load(vs%par,filename,group,domain,grid_name,verbose,subs)
 
         ! Perform remaining init operations 
         call varslice_init_data(vs) 
@@ -1300,14 +1301,15 @@ contains
 
     end subroutine varslice_end
 
-    subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose)
+    subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose,subs)
 
-        type(varslice_param_class), intent(OUT) :: par 
+        type(varslice_param_class), intent(OUT) :: par
         character(len=*), intent(IN) :: filename
         character(len=*), intent(IN) :: group
         character(len=*), intent(IN), optional :: domain
-        character(len=*), intent(IN), optional :: grid_name   
-        logical, optional :: verbose 
+        character(len=*), intent(IN), optional :: grid_name
+        logical, optional :: verbose
+        character(len=*), intent(IN), optional :: subs(:,:)   ! extra {key}->value path substitutions
 
         ! Local variables
         logical  :: print_summary
@@ -1349,10 +1351,9 @@ contains
         par%with_time   = (time(1) .ge. 0.5_dp)
         par%time_par    = time(2:5)
 
-        ! Parse filename as needed
-        if (present(domain) .and. present(grid_name)) then
-            call parse_path(par%filename,domain,grid_name)
-        end if
+        ! Parse filename placeholders ({domain}/{grid_name} and any extra subs).
+        ! parse_path skips whichever optionals are absent.
+        call parse_path(par%filename,domain,grid_name,subs)
 
         ! Resolve file list and derive internal time parameters
         call varslice_par_finalize(par)
@@ -1411,17 +1412,29 @@ contains
 
     end subroutine varslice_par_finalize
 
-    subroutine parse_path(path,domain,grid_name)
+    subroutine parse_path(path,domain,grid_name,subs)
+        ! Substitute placeholder tokens in a path. {domain} and {grid_name} are the
+        ! built-in tokens; `subs` supplies any additional {key}->value pairs, with
+        ! subs(k,1)=key (no braces) and subs(k,2)=value, e.g. {snapshot}->"lgm".
 
-        implicit none 
+        implicit none
 
-        character(len=*), intent(INOUT) :: path 
-        character(len=*), intent(IN)    :: domain, grid_name 
+        character(len=*), intent(INOUT) :: path
+        character(len=*), intent(IN), optional :: domain, grid_name
+        character(len=*), intent(IN), optional :: subs(:,:)
 
-        call nml_replace(path,"{domain}",   trim(domain))
-        call nml_replace(path,"{grid_name}",trim(grid_name))
-        
-        return 
+        integer :: k
+
+        if (present(domain))    call nml_replace(path,"{domain}",   trim(domain))
+        if (present(grid_name)) call nml_replace(path,"{grid_name}",trim(grid_name))
+
+        if (present(subs)) then
+            do k = 1, size(subs,1)
+                call nml_replace(path,"{"//trim(subs(k,1))//"}",trim(subs(k,2)))
+            end do
+        end if
+
+        return
 
     end subroutine parse_path
     

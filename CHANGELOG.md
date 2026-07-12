@@ -5,6 +5,10 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Changed
+- **tsgen** `tsgen_init` argument `label` renamed to `group` and used verbatim as
+  the namelist group name (default `"tsgen"`), instead of forcing a `tsgen_`
+  prefix. Callers now fully control the group name (e.g. `&snp2_idx_at`). The one
+  no-argument call path is unaffected (still reads `&tsgen`).
 - **varslice** namelist format condensed (breaking): the per-variable group now
   uses bundled keys — `units = "<in>" "<out>"`, `scaling = <scale> <offset>`,
   and `time = <active> <x0> <x1> <dx> <n_sub>` — replacing `units_in`,
@@ -13,6 +17,11 @@ All notable changes to fesm-utils are documented here.
   period it represents (`x0..x1` preserved); `n_sub` is an optional trailing
   value. Existing namelists must be updated. Internals and the `varslice_class`
   API are unchanged.
+- **varslice** `varslice_init_nml`/`varslice_par_load`/`parse_path` gain an
+  optional `subs(:,2)` argument of extra `{key}`→value path substitutions
+  (`subs(k,1)`=key without braces, `subs(k,2)`=value), applied after
+  `{domain}`/`{grid_name}`. Non-breaking. Enables per-call tokens such as
+  `{snapshot}`, `{gcm}`, `{experiment}` without a bespoke path parser.
 
 ### Added
 - **series** (tabulated time-series reader): load a scalar (`nc=1`) or
