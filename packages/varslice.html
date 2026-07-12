@@ -642,6 +642,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="namelist-configuration" class="level2">
 <h2 class="anchored" data-anchor-id="namelist-configuration">Namelist configuration</h2>
 <p><code>varslice_init_nml</code> reads the following keys from the given group (via <code>nml_read</code> in <code>varslice_par_load</code>):</p>
+<p>Each key bundles related quantities so the group stays short while keeping the full provenance explicit in the file:</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 33%">
@@ -667,54 +668,38 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>netCDF variable name</td>
 </tr>
 <tr class="odd">
-<td><code>units_in</code></td>
-<td>string</td>
-<td>Units in the file (metadata only)</td>
+<td><code>units</code></td>
+<td>string(2)</td>
+<td><code>"&lt;units_in&gt;" "&lt;units_out&gt;"</code> (metadata only)</td>
 </tr>
 <tr class="even">
-<td><code>units_out</code></td>
-<td>string</td>
-<td>Units after scaling (metadata only)</td>
+<td><code>scaling</code></td>
+<td>real(2)</td>
+<td><code>&lt;unit_scale&gt; &lt;unit_offset&gt;</code> applied on read: <code>value*scale + offset</code></td>
 </tr>
 <tr class="odd">
-<td><code>unit_scale</code></td>
-<td>real</td>
-<td>Multiplicative factor applied on read</td>
-</tr>
-<tr class="even">
-<td><code>unit_offset</code></td>
-<td>real</td>
-<td>Additive offset applied on read</td>
-</tr>
-<tr class="odd">
-<td><code>with_time</code></td>
-<td>logical</td>
-<td><code>.TRUE.</code> if the variable has a time dimension</td>
-</tr>
-<tr class="even">
-<td><code>time_par</code></td>
-<td>real(4)</td>
-<td>Time axis <code>[x0, x1, dx, n_sub]</code></td>
+<td><code>time</code></td>
+<td>real(5)</td>
+<td><code>&lt;active&gt; &lt;x0&gt; &lt;x1&gt; &lt;dx&gt; &lt;n_sub&gt;</code> (see below)</td>
 </tr>
 </tbody>
 </table>
-<p>Notes on <code>time_par = [x0, x1, dx, n_sub]</code>:</p>
+<p>Notes on <code>time = [active, x0, x1, dx, n_sub]</code>:</p>
 <ul>
-<li><code>x0</code>, <code>x1</code>, <code>dx</code> define the file’s time axis; the generated axis must match the netCDF time length or init aborts.</li>
-<li>If <code>dx == 0</code>, <code>x1</code> is forced to <code>x0</code> (single timestep).</li>
-<li>If <code>n_sub &gt; 1</code>, a sub-annual axis is built with <code>n_sub</code> steps per major unit (e.g.&nbsp;<code>n_sub = 12</code> for monthly data) and <code>with_time_sub</code> is set <code>.TRUE.</code>.</li>
+<li><code>active</code> flags time-dependence: <code>1.0</code> = the variable is time-varying; <code>0.0</code> = the variable is static and <code>x0..x1</code> merely document the period the data represents (kept for provenance, never collapsed).</li>
+<li><code>x0</code>, <code>x1</code>, <code>dx</code> define the file’s time axis (used when <code>active = 1.0</code>); the generated axis must match the netCDF time length or init aborts.</li>
+<li>When <code>active = 1.0</code> and <code>dx == 0</code>, <code>x1</code> is forced to <code>x0</code> (single timestep).</li>
+<li><code>n_sub</code> is optional (trailing) and defaults to <code>0</code>. If <code>n_sub &gt; 1</code>, a sub-annual axis is built with <code>n_sub</code> steps per major unit (e.g.&nbsp;<code>n_sub = 12</code> for monthly data) and <code>with_time_sub</code> is set <code>.TRUE.</code>.</li>
 </ul>
+<p>These keys unpack internally to <code>par%units_in/units_out</code>, <code>par%unit_scale/unit_offset</code>, <code>par%with_time</code>, and <code>par%time_par(4)</code>.</p>
 <p>Example namelist group:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>ts_series</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    filename    <span class="kw">=</span> <span class="st">"input/{domain}/{grid_name}_climate.nc"</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    name        <span class="kw">=</span> <span class="st">"t2m"</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    units_in    <span class="kw">=</span> <span class="st">"K"</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    units_out   <span class="kw">=</span> <span class="st">"degC"</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    unit_scale  <span class="kw">=</span> <span class="fl">1.0</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    unit_offset <span class="kw">=</span> <span class="kw">-</span><span class="fl">273.15</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    with_time   <span class="kw">=</span> <span class="cn">.TRUE.</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    time_par    <span class="kw">=</span> <span class="kw">-</span><span class="fl">22000.0</span>, <span class="fl">0.0</span>, <span class="fl">1.0</span>, <span class="fl">12.0</span>    <span class="co">! x0, x1, dx, n_sub (monthly)</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    filename <span class="kw">=</span> <span class="st">"input/{domain}/{grid_name}_climate.nc"</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    name     <span class="kw">=</span> <span class="st">"t2m"</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    units    <span class="kw">=</span> <span class="st">"K"</span> <span class="st">"degC"</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    scaling  <span class="kw">=</span> <span class="fl">1.0</span> <span class="kw">-</span><span class="fl">273.15</span>                     <span class="co">! value*scale + offset</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    time     <span class="kw">=</span> <span class="fl">1.0</span>, <span class="kw">-</span><span class="fl">22000.0</span>, <span class="fl">0.0</span>, <span class="fl">1.0</span>, <span class="fl">12.0</span>   <span class="co">! active, x0, x1, dx, n_sub (monthly)</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="usage-example" class="level2">
 <h2 class="anchored" data-anchor-id="usage-example">Usage example</h2>

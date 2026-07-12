@@ -365,6 +365,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#queries" id="toc-queries" class="nav-link" data-scroll-target="#queries">Queries</a></li>
   </ul></li>
   <li><a href="#usage-example" id="toc-usage-example" class="nav-link" data-scroll-target="#usage-example">Usage example</a></li>
+  <li><a href="#performance-reuse-an-open-file-with-ncid" id="toc-performance-reuse-an-open-file-with-ncid" class="nav-link" data-scroll-target="#performance-reuse-an-open-file-with-ncid">Performance: reuse an open file with <code>ncid</code></a></li>
   <li><a href="#ncio_transpose" id="toc-ncio_transpose" class="nav-link" data-scroll-target="#ncio_transpose">ncio_transpose</a></li>
   <li><a href="#notes" id="toc-notes" class="nav-link" data-scroll-target="#notes">Notes</a></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a></li>
@@ -478,6 +479,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_write_dim(filename, "month", x=month)</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_write(filename, "dTmon", dTmon, dim1="time", dim2="month")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="performance-reuse-an-open-file-with-ncid" class="level2">
+<h2 class="anchored" data-anchor-id="performance-reuse-an-open-file-with-ncid">Performance: reuse an open file with <code>ncid</code></h2>
+<p>By default every <code>nc_write</code> / <code>nc_read</code> / <code>nc_size</code> call given a <em>filename</em> opens the file, performs the operation, and closes it. That is convenient for one-off calls, but when writing or reading <strong>many variables (or many time slices) to the same file</strong> the repeated open/close dominates the cost.</p>
+<p>Open the file once with <code>nc_open</code>, thread the returned <code>ncid</code> through the calls, and close it with <code>nc_close</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">integer</span> <span class="dt">::</span> ncid, k</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_create(filename, netcdf4=.TRUE.)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_write_dim(filename, "x",    x=x)</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_write_dim(filename, "time", x=[0.d0], unlimited=.TRUE.)</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_open(filename, ncid, writable=.TRUE.)</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span> k <span class="kw">=</span> <span class="dv">1</span>, nt</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    <span class="kw">call</span> nc_write(filename, <span class="st">"field"</span>, slice(:,:,k), dim1<span class="kw">=</span><span class="st">"x"</span>, dim2<span class="kw">=</span><span class="st">"time"</span><span class="co">, &amp;</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>                  start<span class="kw">=[</span><span class="dv">1</span>, k<span class="kw">]</span>, <span class="fu">count</span><span class="kw">=[</span>nx, <span class="dv">1</span><span class="kw">]</span>, ncid<span class="kw">=</span>ncid)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">call nc_close(ncid)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For a loop of many slice writes this is roughly <strong>2–3× faster</strong> than the filename-per-call form and brings ncio to within ~2× of hand-written netCDF. Prefer it whenever more than a handful of operations touch the same file.</p>
+</section>
 <section id="ncio_transpose" class="level2">
 <h2 class="anchored" data-anchor-id="ncio_transpose">ncio_transpose</h2>
 <p><code>module ncio_transpose</code> provides the generic interfaces <code>nc_write_t</code> and <code>nc_read_t</code> for reading and writing arrays in transposed dimension order (2D and 3D, double precision). They wrap the ordinary <code>nc_write</code> / <code>nc_read</code> calls: the data is transposed in memory before writing (e.g.&nbsp;<code>[j,i]</code> to on-disk <code>[i,j]</code>, <code>[k,j,i]</code> to <code>[i,j,k]</code>) and transposed back on read. This is convenient when the in-memory array layout differs from the desired on-disk axis ordering. All the usual optional arguments (<code>dim1…dim6</code>, <code>dims</code>, <code>start</code>, <code>count</code>, <code>long_name</code>, <code>units</code>, <code>missing_value</code>, etc.) are forwarded.</p>
@@ -488,6 +507,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong>Compression.</strong> netCDF4 output defaults to deflate level 1, lowering memory use for compressed files.</li>
 <li><strong>Error messages.</strong> I/O operations are threaded with a context (filename, variable, dimension, attribute) so that failures report exactly which file/variable/dimension/attribute led to the error.</li>
 <li><strong>Vector attributes.</strong> Both <code>nc_write_attr</code> and <code>nc_read_attr</code> support scalar and 1D (vector) numeric attributes for integer, single, and double types, at both variable and global level.</li>
+<li><strong>Generated source.</strong> The many per-type/per-rank wrapper routines behind <code>nc_write</code>, <code>nc_read</code>, <code>nc_write_dim</code>, and the attribute interfaces are generated from the fypp template <code>src/ncio.fypp</code>; <code>src/ncio.f90</code> is the committed, generated output. Contributors editing those families edit the template and run <code>make ncio-gen</code> (fypp is vendored at <code>tools/fypp.py</code>; no Python is needed for an ordinary build). All other code lives directly in the template as pass-through Fortran.</li>
 </ul>
 </section>
 <section id="see-also" class="level2">
