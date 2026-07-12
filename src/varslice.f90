@@ -1310,24 +1310,45 @@ contains
         logical, optional :: verbose 
 
         ! Local variables
-        logical  :: init_pars
-        logical  :: print_summary 
-        integer  :: i 
+        logical  :: print_summary
+        integer  :: i
+        character(len=56) :: units(2)     ! [units_in, units_out]
+        real(wp)          :: scaling(2)   ! [unit_scale, unit_offset]
+        real(dp)          :: time(5)      ! [active, x0, x1, dx, sub]
 
-        init_pars = .FALSE.
+        print_summary = .TRUE.
+        if (present(verbose)) print_summary = verbose
 
-        print_summary = .TRUE. 
-        if (present(verbose)) print_summary = verbose 
+        ! Read the condensed namelist keys. Each value bundles related
+        ! quantities so the group stays short but fully explicit:
+        !   units   = "<in>" "<out>"
+        !   scaling = <unit_scale> <unit_offset>
+        !   time    = <active> <x0> <x1> <dx> <sub>
+        ! `active` (1.0/0.0) flags whether the variable is time-varying, or
+        ! whether x0..x1 merely document the period the (static) data represents.
+        ! `sub` is optional (trailing) and defaults to 0; every other value is
+        ! required, keeping the provenance visible in the file.
 
-        call nml_read(filename,group,"filename",       par%filename,     init=init_pars)
-        call nml_read(filename,group,"name",           par%name,         init=init_pars)
-        call nml_read(filename,group,"units_in",       par%units_in,     init=init_pars)
-        call nml_read(filename,group,"units_out",      par%units_out,    init=init_pars)
-        call nml_read(filename,group,"unit_scale",     par%unit_scale,   init=init_pars)   
-        call nml_read(filename,group,"unit_offset",    par%unit_offset,  init=init_pars)   
-        call nml_read(filename,group,"with_time",      par%with_time,    init=init_pars)   
-        call nml_read(filename,group,"time_par",       par%time_par,     init=init_pars)   
-        
+        ! Pre-set defaults so an omitted trailing element falls back sensibly
+        ! (the keys themselves remain mandatory).
+        units   = ""
+        scaling = [1.0_wp, 0.0_wp]
+        time    = 0.0_dp
+
+        call nml_read(filename,group,"filename", par%filename)
+        call nml_read(filename,group,"name",     par%name)
+        call nml_read(filename,group,"units",    units)
+        call nml_read(filename,group,"scaling",  scaling)
+        call nml_read(filename,group,"time",     time)
+
+        ! Unpack into the internal parameter fields
+        par%units_in    = units(1)
+        par%units_out   = units(2)
+        par%unit_scale  = scaling(1)
+        par%unit_offset = scaling(2)
+        par%with_time   = (time(1) .ge. 0.5_dp)
+        par%time_par    = time(2:5)
+
         ! Parse filename as needed
         if (present(domain) .and. present(grid_name)) then
             call parse_path(par%filename,domain,grid_name)
@@ -1375,8 +1396,10 @@ contains
         ! See if multiple files are available (also allocates par%filenames)
         call get_matching_files(par%filenames, par%filename)
 
-        ! Make sure time parameters are consistent time_par=[x0,x1,dx,sub]
-        if (par%time_par(3) .eq. 0.0) par%time_par(2) = par%time_par(1)
+        ! For a time-varying field with no step given, collapse to a single
+        ! time slice (x1=x0). Skip this for a static field, where x0..x1 are
+        ! only documenting the represented period and must be preserved.
+        if (par%with_time .and. par%time_par(3) .eq. 0.0) par%time_par(2) = par%time_par(1)
 
         if (par%time_par(4) .gt. 1.0) then
             par%with_time_sub = .TRUE.

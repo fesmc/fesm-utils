@@ -4,6 +4,16 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **varslice** namelist format condensed (breaking): the per-variable group now
+  uses bundled keys — `units = "<in>" "<out>"`, `scaling = <scale> <offset>`,
+  and `time = <active> <x0> <x1> <dx> <n_sub>` — replacing `units_in`,
+  `units_out`, `unit_scale`, `unit_offset`, `with_time`, and `time_par`.
+  `active` (1.0/0.0) folds in `with_time` and lets a static field document the
+  period it represents (`x0..x1` preserved); `n_sub` is an optional trailing
+  value. Existing namelists must be updated. Internals and the `varslice_class`
+  API are unchanged.
+
 ### Added
 - **series** (tabulated time-series reader): load a scalar (`nc=1`) or
   multi-channel (`nc>1`, e.g. 12 monthly) forcing/index curve from an ASCII

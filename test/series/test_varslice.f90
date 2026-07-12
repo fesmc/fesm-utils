@@ -12,7 +12,8 @@ program test_varslice
 
     use precision
     use ncio,     only : nc_create, nc_write_dim, nc_write
-    use varslice, only : varslice_class, varslice_init_arg, varslice_update, varslice_end
+    use varslice, only : varslice_class, varslice_init_arg, varslice_init_nml, &
+                         varslice_update, varslice_end
 
     implicit none
 
@@ -31,6 +32,8 @@ program test_varslice
     call make_file("test_vs_multi_01.nc", nx, 1,  5)   ! first half
     call make_file("test_vs_multi_02.nc", nx, 6, 10)   ! second half
     call make_file("test_vs_big.nc",       1, 1, 12000) ! long time axis (>10000)
+    call make_file("test_vs_nml.nc",      nx, 1, 10)   ! source for the namelist test
+    call make_file2d("test_vs_static.nc", nx, 2)       ! static 2D field (no time)
 
     ! ========================================================================
     ! Single-file cases (also exercises fix #1: init via varslice_init_arg)
@@ -116,9 +119,35 @@ program test_varslice
 
     call varslice_end(vs)
 
+    ! ========================================================================
+    ! Namelist parsing, condensed format: units / scaling / time
+    ! ========================================================================
+    call write_nml("test_vs.nml")
+
+    ! time-active group (time flag = 1.0): scaling applied, with_time inferred
+    call varslice_init_nml(vs, "test_vs.nml", "vtest", verbose=.FALSE.)
+    call check_true("nml with_time=T", vs%par%with_time, nfail)
+    call check_scalar("nml unit_scale",  vs%par%unit_scale,  2.0_wp, nfail)
+    call check_scalar("nml unit_offset", vs%par%unit_offset, 5.0_wp, nfail)
+    call varslice_update(vs, time=[5.0_wp], method="exact")
+    ! temp(i,5)=5+(i-1)*100, then scaling 2*x+5
+    call check_col("nml exact @5 scaled", vs%var(:,1,1,1), &
+                   [15.0_wp, 215.0_wp, 415.0_wp], nfail)
+    call varslice_end(vs)
+
+    ! static group (time flag = 0.0): with_time=F, and the documented period
+    ! x0..x1 must be preserved (dx=0 must NOT collapse x1 to x0)
+    call varslice_init_nml(vs, "test_vs.nml", "vtest_static", verbose=.FALSE.)
+    call check_true("static with_time=F", .not. vs%par%with_time, nfail)
+    call check_scalar("static x0 provenance", real(vs%par%time_par(1),wp), 1979.0_wp, nfail)
+    call check_scalar("static x1 provenance (not clobbered)", &
+                      real(vs%par%time_par(2),wp), 2022.0_wp, nfail)
+    call varslice_end(vs)
+
     ! --- cleanup synthetic files --------------------------------------------
     call execute_command_line("rm -f test_vs_single.nc test_vs_multi_01.nc "// &
-                              "test_vs_multi_02.nc test_vs_big.nc")
+                              "test_vs_multi_02.nc test_vs_big.nc test_vs_nml.nc "// &
+                              "test_vs_static.nc test_vs.nml")
 
     ! --- report -------------------------------------------------------------
     write(*,*)
@@ -169,6 +198,78 @@ contains
 
         deallocate(x, time, var)
     end subroutine make_file
+
+    subroutine make_file2d(filename, n1, n2)
+        ! Write a static 2D field temp(x,y) = (i-1) + (j-1)*100, no time axis
+        character(len=*), intent(in) :: filename
+        integer,          intent(in) :: n1, n2
+        integer  :: i, j
+        real(dp), allocatable :: x(:), y(:)
+        real(wp), allocatable :: var(:,:)
+        allocate(x(n1), y(n2), var(n1,n2))
+        do i = 1, n1
+            x(i) = real(i-1,dp)
+        end do
+        do j = 1, n2
+            y(j) = real(j-1,dp)
+            do i = 1, n1
+                var(i,j) = real(i-1,wp) + real(j-1,wp)*100.0_wp
+            end do
+        end do
+        call nc_create(filename)
+        call nc_write_dim(filename, "x", x=x)
+        call nc_write_dim(filename, "y", x=y)
+        call nc_write(filename, "temp", var, dim1="x", dim2="y")
+        deallocate(x, y, var)
+    end subroutine make_file2d
+
+    subroutine write_nml(fname)
+        ! Emit a namelist in the condensed format for two groups:
+        ! a time-active variable and a static (period-documenting) field.
+        character(len=*), intent(in) :: fname
+        integer :: u
+        open(newunit=u, file=fname, status="replace", action="write")
+        write(u,'(a)') "&vtest"
+        write(u,'(a)') '    filename = "test_vs_nml.nc"'
+        write(u,'(a)') '    name     = "temp"'
+        write(u,'(a)') '    units    = "K" "K"'
+        write(u,'(a)') '    scaling  = 2.0 5.0'
+        write(u,'(a)') '    time     = 1.0, 1.0, 10.0, 1.0'
+        write(u,'(a)') "/"
+        write(u,'(a)') ""
+        write(u,'(a)') "&vtest_static"
+        write(u,'(a)') '    filename = "test_vs_static.nc"'
+        write(u,'(a)') '    name     = "temp"'
+        write(u,'(a)') '    units    = "m" "m"'
+        write(u,'(a)') '    scaling  = 1.0 0.0'
+        write(u,'(a)') '    time     = 0.0, 1979.0, 2022.0'
+        write(u,'(a)') "/"
+        close(u)
+    end subroutine write_nml
+
+    subroutine check_true(label, cond, nfail)
+        character(len=*), intent(in)    :: label
+        logical,          intent(in)    :: cond
+        integer,          intent(inout) :: nfail
+        if (cond) then
+            write(*,"(a,a)") "  PASS ", label
+        else
+            write(*,"(a,a)") "  FAIL ", label
+            nfail = nfail + 1
+        end if
+    end subroutine check_true
+
+    subroutine check_scalar(label, got, expected, nfail)
+        character(len=*), intent(in)    :: label
+        real(wp),         intent(in)    :: got, expected
+        integer,          intent(inout) :: nfail
+        if (abs(got - expected) <= rtol*abs(expected) + rtol) then
+            write(*,"(a,a,es12.4)") "  PASS ", label//"  ", got
+        else
+            write(*,"(a,a,2es12.4)") "  FAIL ", label//"  got/exp ", got, expected
+            nfail = nfail + 1
+        end if
+    end subroutine check_scalar
 
     subroutine check_shape(label, vs, nsp, ntime, nfail)
         character(len=*),     intent(in)    :: label

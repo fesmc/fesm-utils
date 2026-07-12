@@ -139,37 +139,41 @@ implemented).
 `varslice_init_nml` reads the following keys from the given group (via
 `nml_read` in `varslice_par_load`):
 
+Each key bundles related quantities so the group stays short while keeping the
+full provenance explicit in the file:
+
 | Key | Type | Meaning |
 |---|---|---|
 | `filename` | string | Source file or glob pattern; supports `{domain}` and `{grid_name}` placeholders |
 | `name` | string | netCDF variable name |
-| `units_in` | string | Units in the file (metadata only) |
-| `units_out` | string | Units after scaling (metadata only) |
-| `unit_scale` | real | Multiplicative factor applied on read |
-| `unit_offset` | real | Additive offset applied on read |
-| `with_time` | logical | `.TRUE.` if the variable has a time dimension |
-| `time_par` | real(4) | Time axis `[x0, x1, dx, n_sub]` |
+| `units` | string(2) | `"<units_in>" "<units_out>"` (metadata only) |
+| `scaling` | real(2) | `<unit_scale> <unit_offset>` applied on read: `value*scale + offset` |
+| `time` | real(5) | `<active> <x0> <x1> <dx> <n_sub>` (see below) |
 
-Notes on `time_par = [x0, x1, dx, n_sub]`:
+Notes on `time = [active, x0, x1, dx, n_sub]`:
 
-- `x0`, `x1`, `dx` define the file's time axis; the generated axis must match
-  the netCDF time length or init aborts.
-- If `dx == 0`, `x1` is forced to `x0` (single timestep).
-- If `n_sub > 1`, a sub-annual axis is built with `n_sub` steps per major unit
-  (e.g. `n_sub = 12` for monthly data) and `with_time_sub` is set `.TRUE.`.
+- `active` flags time-dependence: `1.0` = the variable is time-varying;
+  `0.0` = the variable is static and `x0..x1` merely document the period the
+  data represents (kept for provenance, never collapsed).
+- `x0`, `x1`, `dx` define the file's time axis (used when `active = 1.0`); the
+  generated axis must match the netCDF time length or init aborts.
+- When `active = 1.0` and `dx == 0`, `x1` is forced to `x0` (single timestep).
+- `n_sub` is optional (trailing) and defaults to `0`. If `n_sub > 1`, a
+  sub-annual axis is built with `n_sub` steps per major unit (e.g. `n_sub = 12`
+  for monthly data) and `with_time_sub` is set `.TRUE.`.
+
+These keys unpack internally to `par%units_in/units_out`,
+`par%unit_scale/unit_offset`, `par%with_time`, and `par%time_par(4)`.
 
 Example namelist group:
 
 ```fortran
 &ts_series
-    filename    = "input/{domain}/{grid_name}_climate.nc"
-    name        = "t2m"
-    units_in    = "K"
-    units_out   = "degC"
-    unit_scale  = 1.0
-    unit_offset = -273.15
-    with_time   = .TRUE.
-    time_par    = -22000.0, 0.0, 1.0, 12.0    ! x0, x1, dx, n_sub (monthly)
+    filename = "input/{domain}/{grid_name}_climate.nc"
+    name     = "t2m"
+    units    = "K" "degC"
+    scaling  = 1.0 -273.15                     ! value*scale + offset
+    time     = 1.0, -22000.0, 0.0, 1.0, 12.0   ! active, x0, x1, dx, n_sub (monthly)
 /
 ```
 
