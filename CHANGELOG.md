@@ -4,6 +4,13 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **series** `series_load_ascii` now skips a plain (non-`#`/`!`) header row such as
+  `time  value`, so ascii series files need not comment their header line.
+- **varslice** `varslice_update` allocates the missing-values fallback for `ndim == 4`
+  (3-D field + time) instead of leaving `vs%var` unallocated — a no-index-found update
+  on a 4-D field previously segfaulted on `vs%var = mv`.
+
 ### Changed
 - **tsgen** `tsgen_init` argument `label` renamed to `group` and used verbatim as
   the namelist group name (default `"tsgen"`), instead of forcing a `tsgen_`

@@ -231,7 +231,7 @@ contains
         do
             read(u,"(a)",iostat=ios) line
             if (ios .ne. 0) exit
-            if (is_blank_or_comment(line)) cycle
+            if (is_blank_or_comment(line) .or. .not. is_numeric_start(line)) cycle
             if (ncols .eq. 0) ncols = count_tokens(line)
             ser%nt = ser%nt + 1
         end do
@@ -256,7 +256,7 @@ contains
         do
             read(u,"(a)",iostat=ios) line
             if (ios .ne. 0) exit
-            if (is_blank_or_comment(line)) cycle
+            if (is_blank_or_comment(line) .or. .not. is_numeric_start(line)) cycle
             i = i + 1
             read(line,*,iostat=ios) row(1:ncols)
             if (ios .ne. 0) then
@@ -399,6 +399,26 @@ contains
         return
 
     end function is_blank_or_comment
+
+    logical function is_numeric_start(line)
+        ! .TRUE. if the first whitespace-delimited token parses as a real number.
+        ! Used to skip a plain (non-comment) header row, e.g. "time  value", so
+        ! ascii series files need not prefix their header with '#'/'!'.
+
+        character(len=*), intent(IN) :: line
+        character(len=:), allocatable :: s
+        real(wp) :: x
+        integer  :: ios
+
+        s = trim(adjustl(line))
+        is_numeric_start = .FALSE.
+        if (len(s) .eq. 0) return
+        read(s,*,iostat=ios) x
+        is_numeric_start = (ios .eq. 0)
+
+        return
+
+    end function is_numeric_start
 
     integer function count_tokens(line)
         ! Count whitespace-delimited tokens (spaces and tabs) in a line.

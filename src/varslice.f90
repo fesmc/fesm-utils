@@ -618,9 +618,12 @@ contains
                             allocate(vs%var(vs%dim(1),vs%dim(2),1,1))
                         case(3)
                             allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
+                        case(4)
+                            ! 3-D space + time: one (missing) time slice at natural rank
+                            allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),1))
                     end select
 
-                    vs%var = mv 
+                    vs%var = mv
 
                 end if
 
