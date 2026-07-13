@@ -1588,11 +1588,13 @@ contains
 
     subroutine get_matching_files(filenames, pattern)
 
+        use, intrinsic :: iso_c_binding, only : c_int
+
         implicit none
 
         character(len=*), allocatable, intent(OUT) :: filenames(:)
         character(len=*), intent(in) :: pattern
-        
+
         ! Local variables
         character(len=1024) :: command
         character(len=256) :: temp_filename
@@ -1601,10 +1603,20 @@ contains
 
         integer, parameter :: max_num_files_allowed = 10000
 
+        ! Bind the POSIX getpid() from libc directly. gfortran offers a
+        ! getpid() intrinsic extension, but ifx does not (it lives in the
+        ! non-standard IFPORT module); the C interop route is portable.
+        interface
+            function c_getpid() bind(c, name="getpid")
+                import :: c_int
+                integer(c_int) :: c_getpid
+            end function c_getpid
+        end interface
+
         ! Temporary file to store file names. Make the name unique per
         ! process (PID) so concurrent runs sharing a working directory
         ! (e.g. batch experiments) do not clobber each other's list.
-        write(temp_filename,"(a,i0,a)") "filelist_", getpid(), ".tmp"
+        write(temp_filename,"(a,i0,a)") "filelist_", c_getpid(), ".tmp"
 
         ! Create command to list files sorted alphabetically
         command = "ls -1 " // trim(pattern) // " | sort > " // trim(temp_filename)
