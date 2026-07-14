@@ -85,7 +85,8 @@ module varslice
     public :: varslice_param_class
     public :: varslice_class
     public :: varslice_update
-    public :: varslice_init_nml 
+    public :: varslice_nsub
+    public :: varslice_init_nml
     public :: varslice_init_arg
     public :: varslice_init_data
     public :: varslice_end 
@@ -222,7 +223,8 @@ contains
         ! Local variables 
         integer :: k, k0, k1, nt
         integer :: nt_tot, nt_rep, nt_major, nt_out
-        integer :: n1, n2, i, j, l    
+        integer :: nsub
+        integer :: n1, n2, i, j, l
         type(varslice_param_class) :: par 
         logical  :: with_time
         logical  :: with_time_sub
@@ -282,7 +284,31 @@ contains
                 "fill methods have not yet been implemented. Set fill_method='none' for now.", &
                 "fill_method = "//trim(fill_method))
         end if
-        
+
+        ! Validate that the requested repetition count is consistent with the
+        ! variable's declared sub-annual period (time_par(4), i.e. varslice_nsub).
+        ! For the reducing/interpolating methods, `rep` must either be 1 (collapse
+        ! the whole range to a single field) or match the file's period (preserve
+        ! the sub-annual cycle, e.g. rep=12 for monthly data). This catches
+        ! mismatches such as requesting a 12-month climatology from annual data,
+        ! or a typo'd rep that would silently reshape the time axis.
+        if (with_time) then
+            select case(trim(slice_method))
+                case("interp","extrap","range_mean","range_sd","range_min","range_max","range_sum")
+                    nsub = max(1, nint(par%time_par(4)))
+                    if (range_rep .ne. 1 .and. range_rep .ne. nsub) then
+                        call varslice_error("varslice_update", &
+                            "requested rep is inconsistent with the variable's declared "// &
+                            "sub-annual period (time_par(4)). rep must be 1 or equal to the period.", &
+                            "variable    = "//trim(par%name)//new_line("a")// &
+                            "method      = "//trim(slice_method)//new_line("a")// &
+                            "rep         = "//to_str(range_rep)//new_line("a")// &
+                            "period      = "//to_str(nsub)//new_line("a")// &
+                            "time_par(4) = "//to_str(par%time_par(4)))
+                    end if
+            end select
+        end if
+
         if (present(time)) then
 
             if (size(time) .eq. 2) then 
@@ -1299,10 +1325,28 @@ contains
         if (allocated(vs%idx))          deallocate(vs%idx)
         if (allocated(vs%nt_files))     deallocate(vs%nt_files)
         if (allocated(vs%var))          deallocate(vs%var)
-        
-        return 
+
+        return
 
     end subroutine varslice_end
+
+    function varslice_nsub(vs) result(nsub)
+        ! Number of sub-annual steps per year declared for this variable in its
+        ! namelist `time` entry (the 5th value, stored as time_par(4)). Returns
+        ! 12 for monthly data and 1 for annual/static data. This is the natural
+        ! value of `rep` for slice methods that preserve the sub-annual cycle,
+        ! letting callers source it from the data rather than hard-coding it.
+
+        implicit none
+
+        type(varslice_class), intent(IN) :: vs
+        integer :: nsub
+
+        nsub = max(1, nint(vs%par%time_par(4)))
+
+        return
+
+    end function varslice_nsub
 
     subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose,subs)
 
