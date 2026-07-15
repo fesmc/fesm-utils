@@ -585,6 +585,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>Remap a <code>varslice</code> field from a source grid to a target grid</td>
 </tr>
 <tr class="even">
+<td><code>vs%v1(k)</code> / <code>vs%v2(k)</code> / <code>vs%v3(k)</code></td>
+<td>Type-bound natural-rank accessors: copy-return the 1-D/2-D/3-D slice at trailing index <code>k</code> (default 1), e.g.&nbsp;<code>vs%v2(m)</code> for <code>var(:,:,m,1)</code></td>
+</tr>
+<tr class="odd">
+<td><code>varslice_nsub</code></td>
+<td>The declared sub-annual period (<code>time_par(4)</code>)</td>
+</tr>
+<tr class="even">
 <td><code>varslice_end</code></td>
 <td>Deallocate all data arrays in the object</td>
 </tr>
@@ -602,31 +610,33 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="signatures" class="level3">
 <h3 class="anchored" data-anchor-id="signatures">Signatures</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from a namelist group</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_nml(vs, filename, group, domain, grid_name, verbose)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs)</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename        <span class="co">! namelist file</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> group           <span class="co">! namelist group name</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> domain    <span class="co">! substitutes {domain}</span></span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> grid_name <span class="co">! substitutes {grid_name}</span></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,              <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> verbose</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from explicit arguments (no namelist)</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_arg(vs, filename, name, units_in, units_out, <span class="kw">&amp;</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>                             <span class="bu">scale</span>, offset, with_time, time_par)</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename, name, units_in, units_out</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> <span class="bu">scale</span>, offset</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,  <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> with_time</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="co">! Update the field to a given time or time range</span></span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_update(vs, time, method, fill, rep, print_summary)</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>,       <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> method        <span class="co">! slice_method</span></span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! only "none" supported</span></span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> rep           <span class="co">! repetition frequency</span></span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> print_summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> subs(:,:) <span class="co">! extra {key}-&gt;value path subs</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>                                                            <span class="co">! subs(k,1)=key (no braces), subs(k,2)=value</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from explicit arguments (no namelist)</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_arg(vs, filename, name, units_in, units_out, <span class="kw">&amp;</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>                             <span class="bu">scale</span>, offset, with_time, time_par)</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename, name, units_in, units_out</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> <span class="bu">scale</span>, offset</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,  <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> with_time</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="co">! Update the field to a given time or time range</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_update(vs, time, method, fill, rep, print_summary)</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>,       <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> method        <span class="co">! slice_method</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! only "none" supported</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> rep           <span class="co">! repetition frequency</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> print_summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong><code>method</code> (slice_method)</strong> selects how the read timesteps are reduced:</p>
 <ul>
 <li><code>"exact"</code> — the timestep matching <code>time</code> exactly (missing if unavailable).</li>
@@ -660,7 +670,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <tr class="odd">
 <td><code>filename</code></td>
 <td>string</td>
-<td>Source file or glob pattern; supports <code>{domain}</code> and <code>{grid_name}</code> placeholders</td>
+<td>Source file or glob pattern; supports <code>{domain}</code>, <code>{grid_name}</code>, and any extra <code>{key}</code> tokens passed via <code>subs</code></td>
 </tr>
 <tr class="even">
 <td><code>name</code></td>

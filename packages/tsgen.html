@@ -420,20 +420,21 @@ Figure&nbsp;1: The four analytic time-driven methods, each a closed-form functio
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="dt">type(tsgen_class)</span> <span class="dt">::</span> ts</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> time, var, dvdt</span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">! Read the &amp;tsgen_&lt;label&gt; group from a namelist and set the initial value</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_wp, label="climate")</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span>            <span class="co">! model time loop</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">! var is the model response tsgen may react to (ignored by time-driven</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">! methods); dv_dt is optional (finite-differenced from var if omitted)</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="kw">call</span> tsgen_update(ts, time, var, dv_dt<span class="kw">=</span>dvdt)</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="co">! ts%f_now is the forcing to apply this step (mean + optional noise)</span></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="kw">call</span> apply_forcing(ts<span class="op">%</span>f_now)</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> (ts<span class="op">%</span>kill) <span class="kw">exit</span>          <span class="co">! optional: stop once the response equilibrates</span></span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    time <span class="kw">=</span> time <span class="kw">+</span> dt</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co">! Read a namelist group and set the initial value. The group name is used</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">! verbatim (default "tsgen"); here we read &amp;tsgen_climate.</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span>            <span class="co">! model time loop</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">! var is the model response tsgen may react to (ignored by time-driven</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">! methods); dv_dt is optional (finite-differenced from var if omitted)</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">call</span> tsgen_update(ts, time, var, dv_dt<span class="kw">=</span>dvdt)</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">! ts%f_now is the forcing to apply this step (mean + optional noise)</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">call</span> apply_forcing(ts<span class="op">%</span>f_now)</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">if</span> (ts<span class="op">%</span>kill) <span class="kw">exit</span>          <span class="co">! optional: stop once the response equilibrates</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    time <span class="kw">=</span> time <span class="kw">+</span> dt</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The object carries both the mean forcing (<code>ts%f_mean_now</code>), the realized noise sample (<code>ts%eps</code>), and the reported rate of change (<code>ts%df_dt</code>). <code>ts%f_now = ts%f_mean_now + ts%eps</code>.</p>
 </section>
 <section id="public-api" class="level2">
@@ -451,8 +452,8 @@ Figure&nbsp;1: The four analytic time-driven methods, each a closed-form functio
 </thead>
 <tbody>
 <tr class="odd">
-<td><code>tsgen_init(ts, filename, time, [label])</code></td>
-<td>Read the namelist group <code>tsgen[_label]</code>, classify the method, allocate state, set the initial value at simulation time <code>time</code>.</td>
+<td><code>tsgen_init(ts, filename, time, [group])</code></td>
+<td>Read the namelist group <code>group</code> (used verbatim, default <code>"tsgen"</code>), classify the method, allocate state, set the initial value at simulation time <code>time</code>.</td>
 </tr>
 <tr class="even">
 <td><code>tsgen_update(ts, time, var, [dv_dt])</code></td>
@@ -465,6 +466,14 @@ Figure&nbsp;1: The four analytic time-driven methods, each a closed-form functio
 <tr class="even">
 <td><code>tsgen_write(filename, ts, time(:), f(:), [df_dt(:)])</code></td>
 <td>Write a tabulated series to netCDF (<code>time</code>, <code>f</code>, optional <code>df_dt</code>).</td>
+</tr>
+<tr class="odd">
+<td><code>tsgen_write_step(filename, ts, time, [label])</code></td>
+<td>Append a per-step 1-D diagnostic record (variables prefixed by the tsgen label, or <code>label</code> if given).</td>
+</tr>
+<tr class="even">
+<td><code>tsgen_restart_write(filename, ts, time)</code> / <code>tsgen_restart_read(ts, filename)</code></td>
+<td>Persist and restore controller state across a restart (<code>tsgen_restart_read</code> runs after <code>tsgen_init</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -559,7 +568,7 @@ Figure&nbsp;6: Noise is layered on top of the mean forcing; <code>sigma</code> s
 </section>
 <section id="namelist-configuration" class="level2">
 <h2 class="anchored" data-anchor-id="namelist-configuration">Namelist configuration</h2>
-<p>Parameters are read from the group <code>tsgen</code> (or <code>tsgen_&lt;label&gt;</code> when a <code>label</code> is passed to <code>tsgen_init</code>). Only the keys relevant to the chosen <code>method</code> are read.</p>
+<p>Parameters are read from the namelist group named by <code>group</code> (used verbatim, default <code>"tsgen"</code>; here <code>&amp;tsgen_climate</code>). Only the keys relevant to the chosen <code>method</code> are read.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>tsgen_climate</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    method    <span class="kw">=</span> <span class="st">"ramp-time"</span>   <span class="co">! const | ramp-time | ramp-time-step | ramp-slope</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                              <span class="co">! | sin | series | exp | PI42 | H312b | H312PID</span></span>
@@ -598,7 +607,7 @@ Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>The feedback-convergence tolerance was renamed <code>eps</code> → <code>tol</code> (v1.2+). The name <code>eps</code> now denotes the realized noise sample. Existing tsgen namelists must rename their <code>eps</code> key to <code>tol</code>.</p>
+<p>The feedback-convergence tolerance was renamed <code>eps</code> → <code>tol</code> (v1.3). The name <code>eps</code> now denotes the realized noise sample. Existing tsgen namelists must rename their <code>eps</code> key to <code>tol</code>.</p>
 </div>
 </div>
 </section>
@@ -612,7 +621,7 @@ Note
 <span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    time(i) <span class="kw">=</span> <span class="dt">real(i-1, wp)</span>      <span class="co">! 0 .. 2000 yr</span></span>
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_wp, label="climate")</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")</span></span>
 <span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)</span></span>
 <span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_write("forcing_out.nc", ts, time, f, dfdt)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
