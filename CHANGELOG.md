@@ -2,33 +2,7 @@
 
 All notable changes to fesm-utils are documented here.
 
-## [Unreleased]
-
-### Fixed
-- **series** `series_load_ascii` now skips a plain (non-`#`/`!`) header row such as
-  `time  value`, so ascii series files need not comment their header line.
-- **varslice** `varslice_update` allocates the missing-values fallback for `ndim == 4`
-  (3-D field + time) instead of leaving `vs%var` unallocated — a no-index-found update
-  on a 4-D field previously segfaulted on `vs%var = mv`.
-
-### Changed
-- **tsgen** `tsgen_init` argument `label` renamed to `group` and used verbatim as
-  the namelist group name (default `"tsgen"`), instead of forcing a `tsgen_`
-  prefix. Callers now fully control the group name (e.g. `&snp2_idx_at`). The one
-  no-argument call path is unaffected (still reads `&tsgen`).
-- **varslice** namelist format condensed (breaking): the per-variable group now
-  uses bundled keys — `units = "<in>" "<out>"`, `scaling = <scale> <offset>`,
-  and `time = <active> <x0> <x1> <dx> <n_sub>` — replacing `units_in`,
-  `units_out`, `unit_scale`, `unit_offset`, `with_time`, and `time_par`.
-  `active` (1.0/0.0) folds in `with_time` and lets a static field document the
-  period it represents (`x0..x1` preserved); `n_sub` is an optional trailing
-  value. Existing namelists must be updated. Internals and the `varslice_class`
-  API are unchanged.
-- **varslice** `varslice_init_nml`/`varslice_par_load`/`parse_path` gain an
-  optional `subs(:,2)` argument of extra `{key}`→value path substitutions
-  (`subs(k,1)`=key without braces, `subs(k,2)`=value), applied after
-  `{domain}`/`{grid_name}`. Non-breaking. Enables per-call tokens such as
-  `{snapshot}`, `{gcm}`, `{experiment}` without a bespoke path parser.
+## [v1.3] - 2026-07-15
 
 ### Added
 - **series** (tabulated time-series reader): load a scalar (`nc=1`) or
@@ -47,11 +21,70 @@ All notable changes to fesm-utils are documented here.
   in `vec%f_now(:)`. Includes `tsgen_tabulate` / `tsgen_write` diagnostics and
   a `make test-tsgen` self-check. Supersedes the former (unbuilt) `hyster`
   module.
+- **tsgen** `tsgen_write_step` (append a per-step 1-D diagnostic record) and
+  `tsgen_restart_write` / `tsgen_restart_read` (persist and restore controller
+  state across a restart).
+- **root_finder** promoted into the build with hardened bracketing/convergence
+  and a `make test-roots` self-check.
+- **varslice** natural-rank accessors `v1`/`v2`/`v3` (1-D/2-D/3-D views onto the
+  rank-4 `var`) and a `varslice_nsub` accessor for the declared sub-annual
+  period.
+- **distances** `compute_distance_to_mask` gains optional periodic-`x`/`y`
+  support.
+- **error handling**: framed, context-rich abort messages across the library.
+- **docs**: Quarto documentation site with per-package pages, generated figures,
+  and gh-pages publishing from `dev`.
 
 ### Changed
+- **tsgen** `tsgen_init` argument `label` renamed to `group` and used verbatim as
+  the namelist group name (default `"tsgen"`), instead of forcing a `tsgen_`
+  prefix. Callers now fully control the group name (e.g. `&snp2_idx_at`). The one
+  no-argument call path is unaffected (still reads `&tsgen`).
 - **tsgen** namelist: the feedback-convergence tolerance is renamed `eps` →
   `tol`; `eps` now denotes the realized noise sample (was `eta_now`
   internally). Existing tsgen namelists must rename their `eps` key to `tol`.
+- **varslice** namelist format condensed (breaking): the per-variable group now
+  uses bundled keys — `units = "<in>" "<out>"`, `scaling = <scale> <offset>`,
+  and `time = <active> <x0> <x1> <dx> <n_sub>` — replacing `units_in`,
+  `units_out`, `unit_scale`, `unit_offset`, `with_time`, and `time_par`.
+  `active` (1.0/0.0) folds in `with_time` and lets a static field document the
+  period it represents (`x0..x1` preserved); `n_sub` is an optional trailing
+  value. Existing namelists must be updated. Internals and the `varslice_class`
+  API are unchanged.
+- **varslice** `varslice_init_nml`/`varslice_par_load`/`parse_path` gain an
+  optional `subs(:,2)` argument of extra `{key}`→value path substitutions
+  (`subs(k,1)`=key without braces, `subs(k,2)`=value), applied after
+  `{domain}`/`{grid_name}`. Non-breaking. Enables per-call tokens such as
+  `{snapshot}`, `{gcm}`, `{experiment}` without a bespoke path parser.
+- **ncio** `nc_write` no longer writes the `actual_range` attribute.
+- **ncio** wrapper families are generated from a single `ncio.fypp` template
+  (fypp 3.2 vendored under `tools/`); `ncio.f90` is now a generated artifact.
+- **subgrid** `calc_subgrid_array`/`_cell`/`_mask` made precision-generic
+  (single/double).
+- **nml** uses `error stop` on read failures so callers exit with a nonzero
+  status.
+- **staggering** marked a work-in-progress stub (not exported, not built).
+
+### Fixed
+- **series** `series_load_ascii` now skips a plain (non-`#`/`!`) header row such as
+  `time  value`, so ascii series files need not comment their header line.
+- **varslice** `varslice_update` allocates the missing-values fallback for `ndim == 4`
+  (3-D field + time) instead of leaving `vs%var` unallocated — a no-index-found update
+  on a 4-D field previously segfaulted on `vs%var = mv`.
+- **varslice** correctness fixes in init and time-slicing; `get_matching_files`
+  now uses a per-process temp file (avoids collisions between concurrent runs).
+- **varslice** avoid an `ifx` compilation error from the `get_pid()` intrinsic
+  usage.
+
+### Performance
+- **ncio** skip the pre-write copy when no scale/offset packing is active, and
+  skip `redef`/`enddef` when overwriting an existing variable.
+- **varslice** cache per-file time lengths at init, and collapse the per-rank
+  reduction into a single `(space, time)` loop.
+
+### Removed
+- **interp2D** dead code removed.
+- **hyster** module removed (superseded by `tsgen`).
 
 ## [v1.2] - 2026-07-08
 

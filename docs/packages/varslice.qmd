@@ -77,6 +77,8 @@ The main object: parameters plus the loaded coordinates, time axis and data.
 | `varslice_init_data` | (Re)load coordinates and time axis for an already-configured variable |
 | `varslice_update` | Read/slice the field to match a given time or time range |
 | `varslice_map_to_grid` | Remap a `varslice` field from a source grid to a target grid |
+| `vs%v1(k)` / `vs%v2(k)` / `vs%v3(k)` | Type-bound natural-rank accessors: copy-return the 1-D/2-D/3-D slice at trailing index `k` (default 1), e.g. `vs%v2(m)` for `var(:,:,m,1)` |
+| `varslice_nsub` | The declared sub-annual period (`time_par(4)`) |
 | `varslice_end` | Deallocate all data arrays in the object |
 | `get_matching_files` | Expand a glob pattern into a sorted list of filenames |
 | `print_var_range` | Print the min/max of a field (skipping missing values) |
@@ -87,13 +89,15 @@ The types `varslice_param_class` and `varslice_class` are also public.
 
 ```fortran
 ! Initialize from a namelist group
-subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose)
+subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs)
     type(varslice_class), intent(INOUT) :: vs
     character(len=*),     intent(IN)    :: filename        ! namelist file
     character(len=*),     intent(IN)    :: group           ! namelist group name
     character(len=*),     intent(IN), optional :: domain    ! substitutes {domain}
     character(len=*),     intent(IN), optional :: grid_name ! substitutes {grid_name}
     logical,              intent(IN), optional :: verbose
+    character(len=*),     intent(IN), optional :: subs(:,:) ! extra {key}->value path subs
+                                                            ! subs(k,1)=key (no braces), subs(k,2)=value
 
 ! Initialize from explicit arguments (no namelist)
 subroutine varslice_init_arg(vs, filename, name, units_in, units_out, &
@@ -144,7 +148,7 @@ full provenance explicit in the file:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `filename` | string | Source file or glob pattern; supports `{domain}` and `{grid_name}` placeholders |
+| `filename` | string | Source file or glob pattern; supports `{domain}`, `{grid_name}`, and any extra `{key}` tokens passed via `subs` |
 | `name` | string | netCDF variable name |
 | `units` | string(2) | `"<units_in>" "<units_out>"` (metadata only) |
 | `scaling` | real(2) | `<unit_scale> <unit_offset>` applied on read: `value*scale + offset` |

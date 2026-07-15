@@ -25,8 +25,9 @@ use tsgen
 type(tsgen_class) :: ts
 real(wp) :: time, var, dvdt
 
-! Read the &tsgen_<label> group from a namelist and set the initial value
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, label="climate")
+! Read a namelist group and set the initial value. The group name is used
+! verbatim (default "tsgen"); here we read &tsgen_climate.
+call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
 
 do            ! model time loop
     ! var is the model response tsgen may react to (ignored by time-driven
@@ -49,10 +50,12 @@ ts%f_mean_now + ts%eps`.
 
 | Procedure | Purpose |
 |---|---|
-| `tsgen_init(ts, filename, time, [label])` | Read the namelist group `tsgen[_label]`, classify the method, allocate state, set the initial value at simulation time `time`. |
+| `tsgen_init(ts, filename, time, [group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`), classify the method, allocate state, set the initial value at simulation time `time`. |
 | `tsgen_update(ts, time, var, [dv_dt])` | Advance to `time`; compute `ts%f_now` from the method, the response `var`, and (optionally) its rate `dv_dt`. |
 | `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
 | `tsgen_write(filename, ts, time(:), f(:), [df_dt(:)])` | Write a tabulated series to netCDF (`time`, `f`, optional `df_dt`). |
+| `tsgen_write_step(filename, ts, time, [label])` | Append a per-step 1-D diagnostic record (variables prefixed by the tsgen label, or `label` if given). |
+| `tsgen_restart_write(filename, ts, time)` / `tsgen_restart_read(ts, filename)` | Persist and restore controller state across a restart (`tsgen_restart_read` runs after `tsgen_init`). |
 
 `tsgen_class` holds the configuration (`ts%par`), the loaded `series` (if any),
 history buffers for feedback/kill, and the runtime outputs listed above.
@@ -134,8 +137,9 @@ channel mean in `ts%f_now`, with per-channel values in `ts%vec%f_now(:)`.
 
 ## Namelist configuration
 
-Parameters are read from the group `tsgen` (or `tsgen_<label>` when a `label` is
-passed to `tsgen_init`). Only the keys relevant to the chosen `method` are read.
+Parameters are read from the namelist group named by `group` (used verbatim,
+default `"tsgen"`; here `&tsgen_climate`). Only the keys relevant to the chosen
+`method` are read.
 
 ```fortran
 &tsgen_climate
@@ -173,7 +177,7 @@ For a tabulated series, replace the ramp/feedback keys with the file location:
 ```
 
 ::: {.callout-note}
-The feedback-convergence tolerance was renamed `eps` → `tol` (v1.2+). The name
+The feedback-convergence tolerance was renamed `eps` → `tol` (v1.3). The name
 `eps` now denotes the realized noise sample. Existing tsgen namelists must
 rename their `eps` key to `tol`.
 :::
@@ -191,7 +195,7 @@ do i = 1, size(time)
     time(i) = real(i-1, wp)      ! 0 .. 2000 yr
 end do
 
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, label="climate")
+call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
 call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)
 call tsgen_write("forcing_out.nc", ts, time, f, dfdt)
 ```
