@@ -152,7 +152,7 @@ contains
         integer  :: i, j, ic, jc, c, cs, cc, k, nf, no, nthreads, tid
         integer  :: e, en, s, nsv
         real(dp) :: rad, diag2, area, maxsrcdiag, d, xyc, px, py
-        real(dp) :: cx, cy, cz, srcdeg, tgtdeg, tt, plon, plat
+        real(dp) :: cx, cy, cz, srcdeg, tgtdeg, tt, plon, plat, glon, glat, src_xyc
         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source cell boundary in target plane
@@ -210,14 +210,20 @@ contains
                            + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
                     maxsrcdiag = max(maxsrcdiag, d)
                 else
-                    ! lx,ly are lon,lat -> subsample each cell edge into NSUB
-                    ! segments and project every sample into the target plane, so
-                    ! the projected source polygon follows the curved parallels/
-                    ! meridians instead of chording across them. The chord error
-                    ! grows with source cell size and projection distortion;
-                    ! subsampling cuts it from ~30 m to <1 m vs cdo for a 1deg
-                    ! source. (A separate ~O(100 m) planar-vs-spherical residual
-                    ! remains within a few cells of the geographic pole.)
+                    ! lx,ly are the source cell corners in the SOURCE axis system:
+                    ! geographic lon/lat for a plain lat-lon source, or ROTATED
+                    ! lon/lat (rlon/rlat) for a rotated-pole source. Subsample each
+                    ! cell edge into NSUB segments IN THAT AXIS SYSTEM (so the
+                    ! straight edge is traced along the true cell boundary), recover
+                    ! geographic lon/lat when the source is projected (rotated pole),
+                    ! then project every sample into the target plane so the source
+                    ! polygon follows the curved parallels/meridians instead of
+                    ! chording across them. The chord error grows with source cell
+                    ! size and projection distortion; subsampling cuts it from ~30 m
+                    ! to <1 m vs cdo for a 1deg source. (A separate ~O(100 m)
+                    ! planar-vs-spherical residual remains within a few cells of the
+                    ! geographic pole.)
+                    src_xyc = grid1%cs%xy_conv
                     k = 0
                     do e = 1, 4
                         en = mod(e,4) + 1
@@ -225,6 +231,12 @@ contains
                             tt   = real(s,dp)/real(NSUB,dp)
                             plon = lx(e) + tt*(lx(en) - lx(e))
                             plat = ly(e) + tt*(ly(en) - ly(e))
+                            if (grid1%cs%is_projection) then
+                                ! source axis is rotated/projected -> geographic
+                                call oblimap_projection_inverse(plon*src_xyc, plat*src_xyc, &
+                                                                glon, glat, grid1%cs%proj)
+                                plon = glon; plat = glat
+                            end if
                             call oblimap_projection(plon, plat, px, py, grid2%cs%proj)
                             k = k + 1
                             scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc

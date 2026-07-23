@@ -2,6 +2,17 @@
 
 All notable changes to fesm-utils are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **coords/conservative**: conservative remapping (`gen="coords"`) from a
+  rotated-pole source grid (e.g. RACMO) onto a projected target now places the
+  source cells correctly. The cross-system planar path treated the source axis
+  values as geographic lon/lat, but for a rotated grid they are *rotated*
+  lon/lat; the corners are now inverse-rotated to geographic before projection,
+  so a rotated source covers its target instead of producing an empty map.
+  Adds `make test-coords` self-check `test_conservative_rotated`.
+
 ## [v1.3] - 2026-07-15
 
 ### Added
