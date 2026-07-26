@@ -56,12 +56,14 @@ module multitopo
         integer, allocatable :: pic(:,:), pjc(:,:)     ! (nxf,nyf) parent coarse i,j
         integer, allocatable :: cstart(:)              ! (ncrs+1) CSR offsets
         integer, allocatable :: flist(:)               ! (nfin) fine linear idx, grouped
+        integer :: nsub_max = 1                        ! max fine cells in any coarse cell
     end type multitopo_class
 
     public :: multitopo_class
     public :: multitopo_init
     public :: multitopo_update
     public :: multitopo_cell_subgrid
+    public :: multitopo_cell_bands
     public :: multitopo_end
 
 contains
@@ -183,6 +185,72 @@ contains
 
         return
     end subroutine multitopo_cell_subgrid
+
+    subroutine multitopo_cell_bands(mt, ic, jc, nband, zband, wband, ficeband)
+        ! Equal-area elevation classes for coarse cell (ic,jc): partition the
+        ! cell's sub-grid surface (sorted by elevation) into nband equal-count
+        ! groups. Per band: mean elevation, area weight (group count / total),
+        ! mean ice fraction. Weights sum to 1. If the cell has fewer sub-cells
+        ! than nband, the surplus bands get zero weight (elevation = cell value)
+        ! and a consumer skips them.
+        !
+        ! Band *count* and any downstream lapse downscaling are the consumer's
+        ! choice; this is only the generic binning.
+        implicit none
+        type(multitopo_class), intent(IN)  :: mt
+        integer,               intent(IN)  :: ic, jc, nband
+        real(wp),              intent(OUT) :: zband(:), wband(:), ficeband(:)
+
+        real(wp), allocatable :: z(:), f(:)
+        integer  :: nsub, b, i0, i1, k, m
+        real(dp) :: zs, fs
+
+        allocate(z(mt%nsub_max), f(mt%nsub_max))
+        call multitopo_cell_subgrid(mt, ic, jc, nsub, z, f)
+        call sort_pair(z(1:nsub), f(1:nsub))
+
+        zband = 0.0_wp; wband = 0.0_wp; ficeband = 0.0_wp
+        do b = 1, nband
+            i0 = (b-1)*nsub/nband + 1
+            i1 = b*nsub/nband
+            m  = i1 - i0 + 1
+            if (m .le. 0) then
+                zband(b)    = mt%crs%z_srf(ic,jc)   ! empty band: placeholder, w=0
+                wband(b)    = 0.0_wp
+                ficeband(b) = 0.0_wp
+                cycle
+            end if
+            zs = 0.0_dp; fs = 0.0_dp
+            do k = i0, i1
+                zs = zs + real(z(k),dp); fs = fs + real(f(k),dp)
+            end do
+            zband(b)    = real(zs/real(m,dp),wp)
+            wband(b)    = real(m,wp)/real(nsub,wp)
+            ficeband(b) = real(fs/real(m,dp),wp)
+        end do
+
+        deallocate(z, f)
+
+        return
+    end subroutine multitopo_cell_bands
+
+    subroutine sort_pair(z, f)
+        ! Insertion sort of z ascending, carrying f. Sub-cell counts are small
+        ! (tens at 8 km); revisit if very high-res sub-grids are used.
+        implicit none
+        real(wp), intent(INOUT) :: z(:), f(:)
+        integer  :: i, j
+        real(wp) :: zt, ft
+        do i = 2, size(z)
+            zt = z(i); ft = f(i); j = i - 1
+            do while (j .ge. 1)
+                if (z(j) .le. zt) exit
+                z(j+1) = z(j); f(j+1) = f(j); j = j - 1
+            end do
+            z(j+1) = zt; f(j+1) = ft
+        end do
+        return
+    end subroutine sort_pair
 
     subroutine multitopo_end(mt)
         implicit none
@@ -381,6 +449,8 @@ contains
             pos(c) = pos(c) + 1
         end do
         end do
+
+        mt%nsub_max = max(1, maxval(cnt))
         deallocate(cnt, pos)
 
         return

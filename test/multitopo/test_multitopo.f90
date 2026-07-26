@@ -21,6 +21,7 @@ program test_multitopo
     call test_fill_limits()
     call test_bedrock_anomaly()
     call test_subgrid_query()
+    call test_bands()
 
     write(*,*) "---------------------------------------------------"
     if (nfail .eq. 0) then
@@ -203,5 +204,32 @@ contains
 
         call multitopo_end(mt)
     end subroutine test_subgrid_query
+
+    subroutine test_bands()
+        type(multitopo_class) :: mt
+        real(wp), allocatable :: xcc(:),ycc(:),xcf(:),ycf(:)
+        real(wp) :: bedc(2,2), icec(2,2), bedf(4,4), icef(4,4)
+        real(wp) :: zb(2), wb(2), fb(2)
+        integer  :: i,j
+        logical  :: ok
+
+        call make_grids(xcc,ycc,xcf,ycf)
+        ! Coarse cell (1,1) fine beds: 0,100,200,300 (sorted).
+        bedf = 0.0_wp
+        bedf(1,1)=0.0_wp; bedf(2,1)=100.0_wp; bedf(1,2)=200.0_wp; bedf(2,2)=300.0_wp
+        do j=1,2; do i=1,2; bedc(i,j)= sum(bedf(2*i-1:2*i,2*j-1:2*j))/4.0_wp; end do; end do
+        icec=0.0_wp; icef=0.0_wp
+        call multitopo_init(mt, xcc,ycc,bedc,icec, xcf,ycf,bedf,icef)
+        call multitopo_update(mt, MT_COARSE, bedc, icec)
+
+        ! 2 equal-area bands over {0,100,200,300}: lower {0,100}->50, upper {200,300}->250.
+        call multitopo_cell_bands(mt, 1,1, 2, zb, wb, fb)
+        ok = abs(zb(1)-50.0_wp).lt.1e-4_wp .and. abs(zb(2)-250.0_wp).lt.1e-4_wp
+        ok = ok .and. abs(wb(1)-0.5_wp).lt.1e-4_wp .and. abs(wb(2)-0.5_wp).lt.1e-4_wp
+        ok = ok .and. abs(sum(wb)-1.0_wp).lt.1e-5_wp
+        call check("cell_bands: 2 equal-area bands, weights sum to 1", ok)
+
+        call multitopo_end(mt)
+    end subroutine test_bands
 
 end program test_multitopo
