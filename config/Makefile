@@ -174,6 +174,9 @@ $(objdir)/staggering.o: $(srcdir)/staggering.f90 $(objdir)/precision.o
 $(objdir)/subgrid.o: $(srcdir)/subgrid.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/multitopo.o: $(srcdir)/multitopo.f90 $(objdir)/precision.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/timer.o: $(srcdir)/timer.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -228,6 +231,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/precision.o \
 					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
+					$(objdir)/multitopo.o \
 					$(objdir)/staggering.o \
 					$(objdir)/timer.o \
 					$(objdir)/timeout.o \
@@ -344,6 +348,14 @@ test-varslice : fesmutils-static
 			$(INC_NC) -L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    varslice test program ready: $(bindir)/test_varslice.x"
+		@echo " "
+
+# multitopo (multi-resolution topography) test program
+test-multitopo : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_multitopo.x $(testdir)/multitopo/test_multitopo.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    multitopo test program ready: $(bindir)/test_multitopo.x"
 		@echo " "
 
 # tsgen (time-series generator) test program
