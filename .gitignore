@@ -46,3 +46,8 @@ __pycache__/
 .configme-build.toml
 .install.sh
 .upgrade.sh
+
+# --- pre-refactor leftover build dirs (superseded by nested fftw/lis/SHTns) ---
+/fftw-*/
+/lis-*/
+/utils/
