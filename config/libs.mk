@@ -136,11 +136,11 @@ endif
 ifneq ($(filter $(COMPILER),ifx ifort),)
   ifneq ($(MARCH_LIB),)
     ifeq ($(MARCH_LIB),core-avx2)
-      CFLAGS_LIB := -Ofast -march=core-avx2 -mtune=core-avx2 -traceback
-      FFLAGS_LIB := -Ofast -march=core-avx2 -mtune=core-avx2 -traceback
+      CFLAGS_LIB := -Ofast -march=core-avx2 -mtune=core-avx2 -traceback -fPIC
+      FFLAGS_LIB := -Ofast -march=core-avx2 -mtune=core-avx2 -traceback -fPIC
     else
-      CFLAGS_LIB := -Ofast -march=$(MARCH_LIB) -traceback
-      FFLAGS_LIB := -Ofast -march=$(MARCH_LIB) -traceback
+      CFLAGS_LIB := -Ofast -march=$(MARCH_LIB) -traceback -fPIC
+      FFLAGS_LIB := -Ofast -march=$(MARCH_LIB) -traceback -fPIC
     endif
   endif
   # SHTns owns its own -O/-fp-model scheme, so its target strips the opt/arch
