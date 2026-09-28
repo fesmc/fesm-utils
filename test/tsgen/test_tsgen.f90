@@ -59,7 +59,7 @@ contains
         write(u,"(a)") "2000.0   30.0"
         close(u)
 
-        call tsgen_init(ts, nml_file, 0.0_wp, label="ser")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_ser")
 
         call tsgen_update(ts, 500.0_wp, 0.0_wp)
         call check("series     f(500)  == 5 ", ts%f_now,  5.0_wp)
@@ -78,7 +78,7 @@ contains
         do i = 1, 31
             time(i) = real(i-1,wp)*100.0_wp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, label="ramp")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_ramp")
         call tsgen_tabulate(ts, time, f)
 
         call check("ramp-time  f(0)   == 0 ", f(1),   0.0_wp)
@@ -96,7 +96,7 @@ contains
         do i = 1, 31
             time(i) = real(i-1,wp)*100.0_wp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, label="step")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_step")
         call tsgen_tabulate(ts, time, f)
 
         call check("ramp-step  f(1000)== 10 ", f(11), 10.0_wp)
@@ -114,7 +114,7 @@ contains
         do i = 1, 21
             time(i) = real(i-1,wp)*100.0_wp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, label="sin")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_sin")
         call tsgen_tabulate(ts, time, f)
 
         call check("sin        f(0)   == 5 ", f(1),   5.0_wp)
@@ -131,7 +131,7 @@ contains
         integer  :: i
         logical  :: ok
 
-        call tsgen_init(ts, nml_file, 0.0_wp, label="pi")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_pi")
         tt = 0.0_wp
         dt = 50.0_wp
         v  = 100.0_wp
@@ -155,7 +155,7 @@ contains
         real(wp) :: tt, dt
         integer  :: i
 
-        call tsgen_init(ts, nml_file, 0.0_wp, label="kill")
+        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_kill")
         tt = 0.0_wp
         dt = 50.0_wp
         do i = 1, 40
