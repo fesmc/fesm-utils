@@ -633,32 +633,22 @@ contains
 
     end subroutine nc4_read_internal_numeric
 
-    ! Open a netcdf file and return a valid ncid
+    ! Open a netcdf file and return a valid ncid. `writable` is required: a
+    ! netCDF4/HDF5 file opened for writing is locked exclusively, so callers
+    ! must state their intent rather than defaulting to write access.
     subroutine nc_open(filename,ncid,writable)
 
         implicit none
 
-        character(len=*) filename
-        logical, optional :: writable
-        logical :: is_writable
-        integer :: ncid
+        character(len=*), intent(in)  :: filename
+        integer,          intent(out) :: ncid
+        logical,          intent(in)  :: writable
 
-        ! Local variables
-        integer :: stat
-
-        is_writable = .TRUE.
-        if (present(writable)) is_writable = writable
-
-        if (is_writable) then
-            stat = nf90_open(filename, nf90_write, ncid)
+        if (writable) then
+            ncid = nc_open_file(filename, nf90_write)
         else
-            stat = nf90_open(filename, nf90_nowrite, ncid)
+            ncid = nc_open_file(filename, nf90_nowrite)
         end if
-
-        if (stat .ne. NF90_NOERR) then
-            call nc_abort(op="nf90_open", ec=nc_ctx(file=filename), status=stat, &
-                          msg="could not open file (no such file or directory?).")
-        endif
 
         return
 
@@ -981,8 +971,6 @@ contains
         integer, intent (in) :: mode
         integer, intent (out) :: nc_id
 
-        integer stat
-
         ! Open the file.
         if (present(ncid)) then
           nc_id = ncid
@@ -990,16 +978,49 @@ contains
           if (.not. present(filename)) then
                 call nc_abort(op="nc_open", msg="neither filename nor ncid provided.")
           endif
-          stat = nf90_open(filename, mode, nc_id)
-          if (stat .ne. NF90_NOERR) then
-              call nc_abort(op="nf90_open", ec=nc_ctx(file=filename), status=stat, &
-                            msg="could not open file (no such file or directory?).")
-          endif
+          nc_id = nc_open_file(filename, mode)
         end if
 
         return
 
     end subroutine nc_check_open
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose    :  Single entry point for nf90_open; aborts with an
+    !               explanation of the failure.
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    function nc_open_file(filename, mode, ec) result(ncid)
+
+        implicit none
+
+        character(len=*),       intent(in) :: filename
+        integer,                intent(in) :: mode
+        type(nc_ctx), optional, intent(in) :: ec
+        integer :: ncid
+
+        integer :: stat
+        type(nc_ctx) :: ec_now
+
+        ec_now = nc_ctx(file=filename)
+        if (present(ec)) ec_now = ec
+
+        stat = nf90_open(filename, mode, ncid)
+
+        if (stat == nf90_ehdferr) then
+            ! HDF5 refuses to open a netCDF4 file that is already open with
+            ! conflicting access: locked by another process, or still open
+            ! read-only through another handle in this program.
+            call nc_abort(op="nf90_open", ec=ec_now, status=stat, &
+                msg="could not open netCDF4/HDF5 file: it may be open elsewhere "// &
+                    "(another process, or another handle in this program), or corrupt. "// &
+                    "Cross-process locks can be disabled with HDF5_USE_FILE_LOCKING=FALSE.")
+        else if (stat /= nf90_noerr) then
+            call nc_abort(op="nf90_open", ec=ec_now, status=stat)
+        end if
+
+        return
+
+    end function nc_open_file
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Subroutine :  a t t r _ p r i n t
@@ -1598,7 +1619,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1610,7 +1631,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1622,7 +1643,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1634,7 +1655,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1646,7 +1667,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1657,7 +1678,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1668,7 +1689,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1679,7 +1700,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1690,7 +1711,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1702,7 +1723,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1714,7 +1735,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_get_att(ncid, varid, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -1726,7 +1747,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1737,7 +1758,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1748,7 +1769,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_get_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_get_att" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end subroutine
@@ -1760,7 +1781,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1774,7 +1795,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1788,7 +1809,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1802,7 +1823,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1816,7 +1837,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1829,7 +1850,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1842,7 +1863,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1855,7 +1876,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1868,7 +1889,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1882,7 +1903,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1896,7 +1917,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_put_att(ncid, varid, trim(name), value), ec, "nf90_put_att" )
@@ -1910,7 +1931,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1923,7 +1944,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -1936,7 +1957,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=name)
-        call nc_check( nf90_open(filename, nf90_write, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_write, ec)
         call nc_check( nf90_redef(ncid), ec, "nf90_redef" )
         call nc_check( nf90_put_att(ncid, NF90_GLOBAL, trim(name), value), ec, "nf90_put_att" )
         call nc_check( nf90_enddef(ncid), ec, "nf90_enddef" )
@@ -4161,11 +4182,9 @@ contains
         character(len=*), intent(IN) :: filename, attname
         integer :: ncid
         logical :: exists
-        integer :: stat
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=attname)
-        stat = nf90_open(filename, nf90_nowrite, ncid)
-        if (stat /= nf90_noerr) call nc_abort(op="nf90_open", ec=ec, status=stat)
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         exists = nf90_inquire_attribute(ncid, NF90_GLOBAL, trim(attname)) == NF90_NOERR
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end function
@@ -4174,11 +4193,9 @@ contains
         character(len=*), intent(IN) :: filename, varname, attname
         integer :: ncid, varid
         logical :: exists
-        integer :: stat
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=attname)
-        stat = nf90_open(filename, nf90_nowrite, ncid)
-        if (stat /= nf90_noerr) call nc_abort(op="nf90_open", ec=ec, status=stat)
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         exists = nf90_inquire_attribute(ncid, varid, trim(attname)) == NF90_NOERR
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
@@ -4188,11 +4205,9 @@ contains
         character(len=*), intent(IN) :: filename, varname
         integer :: n, ncid, varid
         logical :: exists
-        integer :: stat
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname)
-        stat = nf90_open(filename, nf90_nowrite, ncid)
-        if (stat /= nf90_noerr) call nc_abort(op="nf90_open", ec=ec, status=stat)
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         exists = nf90_inq_varid(ncid, trim(varname), varid) == NF90_NOERR
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end function
@@ -4209,7 +4224,7 @@ contains
         integer :: ncid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, att=attname)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inquire_attribute(ncid, NF90_GLOBAL, trim(attname), len=n), ec, "nf90_inquire_attribute" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
     end function
@@ -4220,7 +4235,7 @@ contains
         integer :: ncid, varid
         type(nc_ctx) :: ec
         ec = nc_ctx(file=filename, var=varname, att=attname)
-        call nc_check( nf90_open(filename, nf90_nowrite, ncid), ec, "nf90_open" )
+        ncid = nc_open_file(filename, nf90_nowrite, ec)
         call nc_check( nf90_inq_varid(ncid, trim(varname), varid), ec, "nf90_inq_varid" )
         call nc_check( nf90_inquire_attribute(ncid, varid, trim(attname), len=n), ec, "nf90_inquire_attribute" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
