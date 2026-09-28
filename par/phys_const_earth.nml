@@ -1,0 +1,50 @@
+! Reference physical constants for Earth.
+!
+! This file is DATA, not policy: fesm-utils ships it so that programs have one
+! agreed place to point at, but nothing in the library reads it implicitly. A
+! program opts in by passing it as `defaults_file` to `phys_const_load`:
+!
+!     call phys_const_load(cnst, "input/my_phys_const.nml", group="Earth", &
+!                          defaults_file=trim(fesm_par)//"/phys_const_earth.nml", &
+!                          defaults_group="Earth")
+!
+! Values below then act as the fallback, and the program's own group overrides
+! only what it means to change. A benchmark group works the same way:
+! group="EISMINT" with defaults_group="Earth" takes the Earth values and
+! overrides the handful that the benchmark specifies.
+!
+! Seconds- and days-per-year are deliberately absent. Year length is a
+! program's calendar choice, not a physical constant, and belongs with its time
+! stepping.
+
+&Earth
+
+    g            = 9.81         ! [m s-2]      Gravitational acceleration
+    T0           = 273.15       ! [K]          Reference freezing temperature
+
+    rho_ice      =  910.0       ! [kg m-3]     Density of ice
+    rho_w        = 1000.0       ! [kg m-3]     Density of pure water
+    rho_sw       = 1028.0       ! [kg m-3]     Density of seawater
+    rho_asth     = 3300.0       ! [kg m-3]     Density of the asthenosphere
+
+    ! Latent heat of fusion. 3.335e5 J kg-1 is the standard value at 0 degC;
+    ! 3.34e5 is a common rounding of it. Programs that have been tuned against
+    ! the rounded value should override this rather than silently disagree.
+    L_ice        = 333500.0     ! [J kg-1]     Latent heat of fusion, ice/water
+
+    cp_ice       = 2110.0       ! [J kg-1 K-1] Specific heat capacity of ice
+    cp_w         = 4187.0       ! [J kg-1 K-1] Specific heat capacity of pure water
+
+    ! Heat capacity of the ocean mixed layer, as used in the thermal-forcing
+    ! shelf-melt parameterisations (ISMIP6 convention). This is NOT cp_w: 4187
+    ! is fresh water near room temperature, and using it here inflates the melt
+    ! scaling omega_melt by about 5 %.
+    cp_ocn       = 3974.0       ! [J kg-1 K-1] Specific heat capacity, ocean mixed layer
+
+    T_pmp_beta   = 9.8e-8       ! [K Pa-1]     Melting-point pressure slope, Greve and Blatter (2009)
+
+    ! Global present-day sea-surface area, used with rho_ice/rho_w to convert
+    ! ice volume above flotation to metres of sea-level equivalent.
+    area_seasurf = 3.618e8      ! [km2]        Global sea-surface area
+
+/

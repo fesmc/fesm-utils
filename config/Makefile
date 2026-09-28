@@ -168,6 +168,10 @@ $(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
 $(objdir)/root_finder.o: $(srcdir)/root_finder.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/phys_constants.o: $(srcdir)/phys_constants.f90 $(objdir)/precision.o \
+					$(objdir)/nml.o $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/staggering.o: $(srcdir)/staggering.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -229,6 +233,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/ncio_transpose.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
+					$(objdir)/phys_constants.o \
 					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
 					$(objdir)/multitopo.o \
@@ -320,6 +325,17 @@ test-coords : fesmutils-static
 		@echo " "
 
 # root_finder test program
+# phys_constants test program. Run it from the repo root so that the relative
+# path to par/phys_const_earth.nml resolves:
+#     ./bin/test_phys_constants.x
+test-phys-constants : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_phys_constants.x \
+			$(testdir)/phys_constants/test_phys_constants.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    phys_constants test program ready: $(bindir)/test_phys_constants.x"
+		@echo " "
+
 test-root : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_roots.x $(testdir)/root/test_roots.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
@@ -435,6 +451,7 @@ usage:
 	@echo "    * USAGE * "
 	@echo ""
 	@echo " make fesmutils-static : builds libfesmutils.a (openmp=0|1)"
+	@echo " make test-phys-constants : builds the phys_constants test program"
 	@echo " make fftw|lis|shtns   : builds one external library (openmp=0|1)"
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"

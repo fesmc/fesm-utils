@@ -1,0 +1,5 @@
+! Minimal benchmark group: overrides only rho_ice. Every other value must come
+! from the Earth reference set via defaults_file.
+&EISMINT
+    rho_ice = 917.0
+/
