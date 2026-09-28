@@ -9,7 +9,8 @@ program test_phys_constants
     implicit none
 
     type(phys_const_class) :: c_ref, c_bench, c_prog
-    character(len=512), parameter :: ref = "par/phys_const_earth.nml"
+    character(len=*), parameter :: ref  = "par/phys_const_earth.nml"
+    character(len=*), parameter :: tdir = "test/phys_constants/"
     integer :: ndiff
     logical :: ok
 
@@ -32,7 +33,7 @@ program test_phys_constants
     ! --- 2. A benchmark group overriding the reference ----------------------
     ! test_phys_const_bench.nml sets only rho_ice; everything else must fall
     ! back to the Earth reference.
-    call phys_const_load(c_bench, "test_phys_const_bench.nml", group="EISMINT", &
+    call phys_const_load(c_bench, tdir//"test_phys_const_bench.nml", group="EISMINT", &
                          defaults_file=ref, defaults_group="Earth")
 
     call expect(c_bench%rho_ice, 917.0_dp,  "bench rho_ice (overridden)")
@@ -126,10 +127,10 @@ program test_phys_constants
     end if
 
     ! --- 5. Round-trip through phys_const_write ----------------------------
-    call phys_const_write(c_ref, "test_phys_const_used.nml", group="Earth")
+    call phys_const_write(c_ref, tdir//"test_phys_const_used.nml", group="Earth")
     block
         type(phys_const_class) :: c_rt
-        call phys_const_load(c_rt, "test_phys_const_used.nml", group="Earth")
+        call phys_const_load(c_rt, tdir//"test_phys_const_used.nml", group="Earth")
         call phys_const_compare(c_ref, c_rt, label1="original", label2="round-trip", &
                                 n_diff=ndiff)
         if (ndiff /= 0) then

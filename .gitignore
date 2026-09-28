@@ -46,3 +46,4 @@ __pycache__/
 .configme-build.toml
 .install.sh
 .upgrade.sh
+test/phys_constants/test_phys_const_used.nml
