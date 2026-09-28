@@ -1004,16 +1004,19 @@ contains
         ec_now = nc_ctx(file=filename)
         if (present(ec)) ec_now = ec
 
+        call nc_hdf5_file_locking_off()
+
         stat = nf90_open(filename, mode, ncid)
 
         if (stat == nf90_ehdferr) then
             ! HDF5 refuses to open a netCDF4 file that is already open with
-            ! conflicting access: locked by another process, or still open
-            ! read-only through another handle in this program.
+            ! conflicting access: still open read-only through another handle
+            ! in this program, or locked by another process when file locking
+            ! was re-enabled via HDF5_USE_FILE_LOCKING.
             call nc_abort(op="nf90_open", ec=ec_now, status=stat, &
-                msg="could not open netCDF4/HDF5 file: it may be open elsewhere "// &
-                    "(another process, or another handle in this program), or corrupt. "// &
-                    "Cross-process locks can be disabled with HDF5_USE_FILE_LOCKING=FALSE.")
+                msg="could not open netCDF4/HDF5 file: it may be open with conflicting "// &
+                    "access (another handle in this program, or another process if "// &
+                    "HDF5_USE_FILE_LOCKING is enabled), or corrupt.")
         else if (stat /= nf90_noerr) then
             call nc_abort(op="nf90_open", ec=ec_now, status=stat)
         end if
@@ -1021,6 +1024,39 @@ contains
         return
 
     end function nc_open_file
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose    :  Disable HDF5 file locking for this process, unless
+    !               HDF5_USE_FILE_LOCKING is already set. Otherwise HDF5
+    !               refuses to open a netCDF4 file that another process holds
+    !               open (e.g. ncview monitoring a running simulation).
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_hdf5_file_locking_off()
+
+        use, intrinsic :: iso_c_binding, only : c_char, c_int, c_null_char
+
+        implicit none
+
+        interface
+            function c_setenv(name, value, overwrite) result(stat) bind(C, name="setenv")
+                import :: c_char, c_int
+                character(kind=c_char), intent(in) :: name(*), value(*)
+                integer(c_int), value :: overwrite
+                integer(c_int) :: stat
+            end function c_setenv
+        end interface
+
+        logical, save  :: done = .FALSE.
+        integer(c_int) :: stat
+
+        if (done) return
+
+        stat = c_setenv("HDF5_USE_FILE_LOCKING"//c_null_char, "FALSE"//c_null_char, 0_c_int)
+        done = .TRUE.
+
+        return
+
+    end subroutine nc_hdf5_file_locking_off
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Subroutine :  a t t r _ p r i n t
@@ -1596,6 +1632,7 @@ contains
         write(history,"(a,f5.2)") "Dataset generated using ncio v", NCIO_VERSION
 
         ! Create the new empty file and close it (necessary to avoid errors with dim vars)
+        call nc_hdf5_file_locking_off()
         call nc_check( nf90_create(trim(adjustl(filename)), cmode, ncid), ec, "nf90_create" )
         call nc_check( nf90_close(ncid), ec, "nf90_close" )
 

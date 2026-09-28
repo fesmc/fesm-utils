@@ -16,7 +16,7 @@ All public entities are exported from `module ncio`. The main generic interfaces
 ### File
 
 - `nc_create` — create a new netCDF file, optionally with `overwrite`, `netcdf4`, and global metadata (`author`, `creation_date`, `institution`, `description`).
-- `nc_open` — open an existing file, returning `ncid`; `writable` is required (a netCDF4/HDF5 file opened for writing is locked exclusively, so open read-only whenever possible).
+- `nc_open` — open an existing file, returning `ncid`; `writable` is required; open read-only whenever possible. ncio disables HDF5 file locking for the process (`HDF5_USE_FILE_LOCKING=FALSE`) unless that variable is already set, so files can be viewed (e.g. with ncview) while a simulation writes them.
 - `nc_close` — close an open file given its `ncid`.
 
 ### Dimensions
