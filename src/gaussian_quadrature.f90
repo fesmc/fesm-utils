@@ -390,7 +390,27 @@ contains
 
     end subroutine gq2D_to_nodes_ab
     
-    subroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+    elemental function mean2_active(a, b, act_a, act_b) result(v)
+        ! Mean of two face values over the faces that carry a value; the plain
+        ! mean if both or neither do.
+
+        implicit none
+
+        real(wp), intent(IN) :: a, b
+        logical,  intent(IN) :: act_a, act_b
+        real(wp) :: v
+
+        if (act_a .eqv. act_b) then
+            v = 0.5d0 * (a + b)
+        else if (act_a) then
+            v = a
+        else
+            v = b
+        end if
+
+    end function mean2_active
+
+    subroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1, act)
 
         implicit none
 
@@ -401,12 +421,20 @@ contains
         real(wp), intent(IN)  :: dy
         integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        logical,  intent(IN), optional :: act(:,:) ! Faces carrying a value; only these enter the corner means
         
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(im1, j))      ! Bottom-left
-        gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(i, j))          ! Bottom-right
-        gq%v_ab(3) = 0.5d0 * (var(i, j) + var(i, jp1))          ! Top-right
-        gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(im1, jp1))      ! Top-left
+        if (present(act)) then
+            gq%v_ab(1) = mean2_active(var(im1, jm1), var(im1, j), act(im1, jm1), act(im1, j))
+            gq%v_ab(2) = mean2_active(var(i, jm1), var(i, j), act(i, jm1), act(i, j))
+            gq%v_ab(3) = mean2_active(var(i, j), var(i, jp1), act(i, j), act(i, jp1))
+            gq%v_ab(4) = mean2_active(var(im1, j), var(im1, jp1), act(im1, j), act(im1, jp1))
+        else
+            gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(im1, j))      ! Bottom-left
+            gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(i, j))          ! Bottom-right
+            gq%v_ab(3) = 0.5d0 * (var(i, j) + var(i, jp1))          ! Top-right
+            gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(im1, jp1))      ! Top-left
+        end if
 
         ! Map corner values to quadrature nodes
         call gq2D_to_nodes(gq, dx, dy)
@@ -418,7 +446,7 @@ contains
 
     end subroutine gq2D_to_nodes_acx
     
-    subroutine gq2D_to_nodes_acy(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+    subroutine gq2D_to_nodes_acy(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1, act)
 
         implicit none
 
@@ -429,12 +457,20 @@ contains
         real(wp), intent(IN)  :: dy
         integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        logical,  intent(IN), optional :: act(:,:) ! Faces carrying a value; only these enter the corner means
         
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(i, jm1))      ! Bottom-left
-        gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(ip1, jm1))      ! Bottom-right
-        gq%v_ab(3) = 0.5d0 * (var(i, j) + var(ip1, j))          ! Top-right
-        gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(i, j))          ! Top-left
+        if (present(act)) then
+            gq%v_ab(1) = mean2_active(var(im1, jm1), var(i, jm1), act(im1, jm1), act(i, jm1))
+            gq%v_ab(2) = mean2_active(var(i, jm1), var(ip1, jm1), act(i, jm1), act(ip1, jm1))
+            gq%v_ab(3) = mean2_active(var(i, j), var(ip1, j), act(i, j), act(ip1, j))
+            gq%v_ab(4) = mean2_active(var(im1, j), var(i, j), act(im1, j), act(i, j))
+        else
+            gq%v_ab(1) = 0.5d0 * (var(im1, jm1) + var(i, jm1))      ! Bottom-left
+            gq%v_ab(2) = 0.5d0 * (var(i, jm1) + var(ip1, jm1))      ! Bottom-right
+            gq%v_ab(3) = 0.5d0 * (var(i, j) + var(ip1, j))          ! Top-right
+            gq%v_ab(4) = 0.5d0 * (var(im1, j) + var(i, j))          ! Top-left
+        end if
 
         ! Map corner values to quadrature nodes
         call gq2D_to_nodes(gq, dx, dy)
@@ -621,7 +657,7 @@ contains
 
     end subroutine gq3D_to_nodes_ab
 
-    subroutine gq3D_to_nodes_acx(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+    subroutine gq3D_to_nodes_acx(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1, act)
         
         implicit none
         
@@ -635,25 +671,45 @@ contains
         integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         integer,  intent(IN)  :: km1, kp1
+        logical,  intent(IN), optional :: act(:,:) ! Faces carrying a value (horizontal); only these enter the corner means
 
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(im1, jm1, k)    &
-                              + var(im1, j, km1)  + var(im1, j, k) )
-        gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(i, jm1, k)      &
-                              + var(i, j, km1)    + var(i, j, k) )
-        gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(i, j, k)        &
-                              + var(i, jp1, km1)  + var(i, jp1, k) )
-        gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(im1, j, k)      &
-                              + var(im1, jp1, km1)+ var(im1, jp1, k) )
+        if (present(act)) then
+            gq%v_ab(1) = 0.5d0 * ( mean2_active(var(im1, jm1, km1), var(im1, j, km1), act(im1, jm1), act(im1, j)) &
+                                  + mean2_active(var(im1, jm1, k), var(im1, j, k), act(im1, jm1), act(im1, j)) )
+            gq%v_ab(2) = 0.5d0 * ( mean2_active(var(i, jm1, km1), var(i, j, km1), act(i, jm1), act(i, j)) &
+                                  + mean2_active(var(i, jm1, k), var(i, j, k), act(i, jm1), act(i, j)) )
+            gq%v_ab(3) = 0.5d0 * ( mean2_active(var(i, j, km1), var(i, jp1, km1), act(i, j), act(i, jp1)) &
+                                  + mean2_active(var(i, j, k), var(i, jp1, k), act(i, j), act(i, jp1)) )
+            gq%v_ab(4) = 0.5d0 * ( mean2_active(var(im1, j, km1), var(im1, jp1, km1), act(im1, j), act(im1, jp1)) &
+                                  + mean2_active(var(im1, j, k), var(im1, jp1, k), act(im1, j), act(im1, jp1)) )
+            gq%v_ab(5) = 0.5d0 * ( mean2_active(var(im1, jm1, k), var(im1, j, k), act(im1, jm1), act(im1, j)) &
+                                  + mean2_active(var(im1, jm1, kp1), var(im1, j, kp1), act(im1, jm1), act(im1, j)) )
+            gq%v_ab(6) = 0.5d0 * ( mean2_active(var(i, jm1, k), var(i, j, k), act(i, jm1), act(i, j)) &
+                                  + mean2_active(var(i, jm1, kp1), var(i, j, kp1), act(i, jm1), act(i, j)) )
+            gq%v_ab(7) = 0.5d0 * ( mean2_active(var(i, j, k), var(i, jp1, k), act(i, j), act(i, jp1)) &
+                                  + mean2_active(var(i, j, kp1), var(i, jp1, kp1), act(i, j), act(i, jp1)) )
+            gq%v_ab(8) = 0.5d0 * ( mean2_active(var(im1, j, k), var(im1, jp1, k), act(im1, j), act(im1, jp1)) &
+                                  + mean2_active(var(im1, j, kp1), var(im1, jp1, kp1), act(im1, j), act(im1, jp1)) )
+        else
+            gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(im1, jm1, k)    &
+                                  + var(im1, j, km1)  + var(im1, j, k) )
+            gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(i, jm1, k)      &
+                                  + var(i, j, km1)    + var(i, j, k) )
+            gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(i, j, k)        &
+                                  + var(i, jp1, km1)  + var(i, jp1, k) )
+            gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(im1, j, k)      &
+                                  + var(im1, jp1, km1)+ var(im1, jp1, k) )
 
-        gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(im1, jm1, kp1)  &
-                              + var(im1, j, k)    + var(im1, j, kp1) )
-        gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(i, jm1, kp1)    &
-                              + var(i, j, k)      + var(i, j, kp1) )
-        gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(i, j, kp1)      &
-                              + var(i, jp1, k)    + var(i, jp1, kp1) )
-        gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(im1, j, kp1)    &
-                              + var(im1, jp1, k)  + var(im1, jp1, kp1) )
+            gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(im1, jm1, kp1)  &
+                                  + var(im1, j, k)    + var(im1, j, kp1) )
+            gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(i, jm1, kp1)    &
+                                  + var(i, j, k)      + var(i, j, kp1) )
+            gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(i, j, kp1)      &
+                                  + var(i, jp1, k)    + var(i, jp1, kp1) )
+            gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(im1, j, kp1)    &
+                                  + var(im1, jp1, k)  + var(im1, jp1, kp1) )
+        end if
 
         ! Map corner values to quadrature nodes
         call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
@@ -665,7 +721,7 @@ contains
 
     end subroutine gq3D_to_nodes_acx
 
-    subroutine gq3D_to_nodes_acy(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+    subroutine gq3D_to_nodes_acy(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1, act)
         
         implicit none
         
@@ -679,26 +735,47 @@ contains
         integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         integer,  intent(IN)  :: km1, kp1
+        logical,  intent(IN), optional :: act(:,:) ! Faces carrying a value (horizontal); only these enter the corner means
 
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)    &
-                              + var(im1, jm1, k)  + var(i, jm1, k) )
-        gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)  &
-                              + var(i, jm1, k)    + var(ip1, jm1, k) )
-        gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)    &
-                              + var(i, j, k)      + var(ip1, j, k) )
-        gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)      &
-                              + var(im1, j, k)    + var(i, j, k) )
+        if (present(act)) then
+            gq%v_ab(1) = 0.5d0 * ( mean2_active(var(im1, jm1, km1), var(i, jm1, km1), act(im1, jm1), act(i, jm1)) &
+                                  + mean2_active(var(im1, jm1, k), var(i, jm1, k), act(im1, jm1), act(i, jm1)) )
+            gq%v_ab(2) = 0.5d0 * ( mean2_active(var(i, jm1, km1), var(ip1, jm1, km1), act(i, jm1), act(ip1, jm1)) &
+                                  + mean2_active(var(i, jm1, k), var(ip1, jm1, k), act(i, jm1), act(ip1, jm1)) )
+            gq%v_ab(3) = 0.5d0 * ( mean2_active(var(i, j, km1), var(ip1, j, km1), act(i, j), act(ip1, j)) &
+                                  + mean2_active(var(i, j, k), var(ip1, j, k), act(i, j), act(ip1, j)) )
+            gq%v_ab(4) = 0.5d0 * ( mean2_active(var(im1, j, km1), var(i, j, km1), act(im1, j), act(i, j)) &
+                                  + mean2_active(var(im1, j, k), var(i, j, k), act(im1, j), act(i, j)) )
+            gq%v_ab(5) = 0.5d0 * ( mean2_active(var(im1, jm1, k), var(i, jm1, k), act(im1, jm1), act(i, jm1)) &
+                                  + mean2_active(var(im1, jm1, kp1), var(i, jm1, kp1), act(im1, jm1), act(i, jm1)) )
+            gq%v_ab(6) = 0.5d0 * ( mean2_active(var(i, jm1, k), var(ip1, jm1, k), act(i, jm1), act(ip1, jm1)) &
+                                  + mean2_active(var(i, jm1, kp1), var(ip1, jm1, kp1), act(i, jm1), act(ip1, jm1)) )
+            gq%v_ab(7) = 0.5d0 * ( mean2_active(var(i, j, k), var(ip1, j, k), act(i, j), act(ip1, j)) &
+                                  + mean2_active(var(i, j, kp1), var(ip1, j, kp1), act(i, j), act(ip1, j)) )
+            gq%v_ab(8) = 0.5d0 * ( mean2_active(var(im1, j, k), var(i, j, k), act(im1, j), act(i, j)) &
+                                  + mean2_active(var(im1, j, kp1), var(i, j, kp1), act(im1, j), act(i, j)) )
+        else
+            gq%v_ab(1) = 0.25d0 * ( var(im1, jm1, km1)+ var(i, jm1, km1)    &
+                                  + var(im1, jm1, k)  + var(i, jm1, k) )
+            gq%v_ab(2) = 0.25d0 * ( var(i, jm1, km1)  + var(ip1, jm1, km1)  &
+                                  + var(i, jm1, k)    + var(ip1, jm1, k) )
+            gq%v_ab(3) = 0.25d0 * ( var(i, j, km1)    + var(ip1, j, km1)    &
+                                  + var(i, j, k)      + var(ip1, j, k) )
+            gq%v_ab(4) = 0.25d0 * ( var(im1, j, km1)  + var(i, j, km1)      &
+                                  + var(im1, j, k)    + var(i, j, k) )
 
-        gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)      &
-                              + var(im1, jm1, kp1)+ var(i, jm1, kp1) )
-        gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)    &
-                              + var(i, jm1, kp1)  + var(ip1, jm1, kp1) )
-        gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)      &
-                              + var(i, j, kp1)    + var(ip1, j, kp1) )
-        gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)        &
-                              + var(im1, j, kp1)  + var(i, j, kp1) )
-        
+            gq%v_ab(5) = 0.25d0 * ( var(im1, jm1, k)  + var(i, jm1, k)      &
+                                  + var(im1, jm1, kp1)+ var(i, jm1, kp1) )
+            gq%v_ab(6) = 0.25d0 * ( var(i, jm1, k)    + var(ip1, jm1, k)    &
+                                  + var(i, jm1, kp1)  + var(ip1, jm1, kp1) )
+            gq%v_ab(7) = 0.25d0 * ( var(i, j, k)      + var(ip1, j, k)      &
+                                  + var(i, j, kp1)    + var(ip1, j, kp1) )
+            gq%v_ab(8) = 0.25d0 * ( var(im1, j, k)    + var(i, j, k)        &
+                                  + var(im1, j, kp1)  + var(i, j, kp1) )
+
+        end if
+
         ! Map corner values to quadrature nodes
         call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
         
