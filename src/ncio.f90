@@ -435,9 +435,9 @@ contains
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
         if (packing) then
-            call nc_check( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec, "nf90_put_var" )
+            call nc_check_put( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec )
         else
-            call nc_check( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec, "nf90_put_var" )
+            call nc_check_put( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec )
         end if
 
         ! Close the file. This causes netCDF to flush all buffers and make
@@ -930,6 +930,34 @@ contains
         return
 
     end subroutine nc_check
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose : Like nc_check for nf90_put_var of data, but a range error
+    !           (NF90_ERANGE: a value, e.g. Inf, is not representable in
+    !           the variable's type) only gives a warning. The library
+    !           has written all values at that point, so the file stays
+    !           complete and shows the offending values.
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_check_put(status, ec)
+
+        implicit none
+
+        integer,      intent(in)           :: status
+        type(nc_ctx), intent(in), optional :: ec
+
+        if (status == NF90_ERANGE) then
+            write(error_unit,*) "ncio:: warning: nf90_put_var: values not representable in the variable's type (e.g. Inf)"
+            if (present(ec)) then
+                if (len_trim(ec%file) > 0) write(error_unit,*) "    file:      "//trim(ec%file)
+                if (len_trim(ec%var)  > 0) write(error_unit,*) "    variable:  "//trim(ec%var)
+            end if
+        else if (status /= nf90_noerr) then
+            call nc_abort(op="nf90_put_var", ec=ec, status=status)
+        end if
+
+        return
+
+    end subroutine nc_check_put
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Purpose : Like nc_check, but treats a missing attribute as non-fatal.
