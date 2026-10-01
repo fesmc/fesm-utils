@@ -13,6 +13,10 @@ All notable changes to fesm-utils are documented here.
   calling `tstep_update`, and exit there once `ts%is_finished`.
 
 ### Added
+- **varslice**: `varslice_sub_mean(vs)` returns the mean of the current slice
+  over its time-like axis (e.g. the sub-annual cycle after `rep=varslice_nsub(vs)`)
+  as an `(x,y,z)` field, for any rank: the time-like axis is axis `ndim`, so a
+  2D field gives `(nx,ny,1)`. Missing values are skipped.
 - **gaussian_quadrature**: optional `act` mask in `gq2D_to_nodes_aa` and
   `gq3D_to_nodes_aa` (cells carrying a value; 2D horizontal mask for 3D), as for
   the `_acx`/`_acy` routines: the corner means use only the active cells, the

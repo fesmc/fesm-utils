@@ -79,6 +79,7 @@ The main object: parameters plus the loaded coordinates, time axis and data.
 | `varslice_map_to_grid` | Remap a `varslice` field from a source grid to a target grid |
 | `vs%v1(k)` / `vs%v2(k)` / `vs%v3(k)` | Type-bound natural-rank accessors: copy-return the 1-D/2-D/3-D slice at trailing index `k` (default 1), e.g. `vs%v2(m)` for `var(:,:,m,1)` |
 | `varslice_nsub` | The declared sub-annual period (`time_par(4)`) |
+| `varslice_sub_mean` | Mean of the current slice over its time-like axis (e.g. the sub-annual cycle), as an `(x,y,z)` field; axes the variable lacks are singleton, missing values are skipped |
 | `varslice_end` | Deallocate all data arrays in the object |
 | `get_matching_files` | Expand a glob pattern into a sorted list of filenames |
 | `print_var_range` | Print the min/max of a field (skipping missing values) |
