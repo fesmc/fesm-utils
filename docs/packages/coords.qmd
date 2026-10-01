@@ -21,7 +21,10 @@ The package covers:
   grids (`grid_class`), each carrying a shared coordinate-system descriptor
   (`coord_system`: map type, units, planet, projection).
 - **Map projections** — the oblimap2 oblique stereographic forward/inverse
-  transforms, driven by projection parameters `(lambda, phi, alpha, x_e, y_n)`.
+  transforms, driven by projection parameters `(lambda, phi, alpha, x_e, y_n)`,
+  and transverse Mercator (e.g. UTM; `mtype="transverse_mercator"`, Snyder 1987)
+  with `lambda` the central meridian, `phi` the latitude of origin, `k0` the
+  scale factor and `x_e`/`y_n` the false easting/northing [m].
 - **Gaussian-latitude grids** — quadrature latitudes for spectral/atmospheric
   grids (non-uniform y-axis).
 - **k-d tree nearest-neighbour search** — the fast neighbour engine underneath

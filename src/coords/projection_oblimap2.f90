@@ -61,6 +61,7 @@ MODULE oblimap_projection_module
         real(dp) :: phi, phi_M 
         real(dp) :: alpha, alpha_stereographic
         real(dp) :: x_e, y_n 
+        real(dp) :: k0          ! scale factor at the central meridian (transverse_mercator)
 
         ! Planet parameters 
         character(len=256) :: planet_name 
@@ -95,7 +96,7 @@ MODULE oblimap_projection_module
 
 contains
   
-  subroutine projection_init(proj,name,planet,lambda,phi,alpha,x_e,y_n,method)
+  subroutine projection_init(proj,name,planet,lambda,phi,alpha,x_e,y_n,method,k0)
     
     implicit none
     
@@ -105,6 +106,7 @@ contains
     real(dp), optional     :: lambda, phi, alpha 
     real(dp), optional     :: x_e, y_n 
     character(len=*), optional :: method 
+    real(dp), optional     :: k0
     character(len=256) :: proj_method 
 
     proj%name = trim(name) 
@@ -160,6 +162,7 @@ contains
     proj%alpha  = 0.0_dp 
     proj%x_e    = 0.0_dp
     proj%y_n    = 0.0_dp 
+    proj%k0     = 1.0_dp
 
     ! Get projection center if provided
     ! Also add additional projection rotation parameters if they exist
@@ -168,6 +171,7 @@ contains
     if (present(lambda)) proj%lambda = lambda
     if (present(x_e))    proj%x_e    = x_e
     if (present(y_n))    proj%y_n    = y_n
+    if (present(k0))     proj%k0     = k0
 
     ! Rotated-pole is a rigid coordinate rotation, not a planar projection.
     ! Handle it here directly; the stereographic/Snyder machinery below does
@@ -177,6 +181,16 @@ contains
         proj%method   = "rotated_pole"
         proj%lambda_M = degrees_to_radians * proj%lambda   ! rotated N-pole longitude
         proj%phi_M    = degrees_to_radians * proj%phi      ! rotated N-pole latitude
+        return
+    end if
+
+    ! Transverse Mercator (e.g. UTM): lambda is the central meridian, phi the
+    ! latitude of origin, k0 the scale factor on the central meridian and
+    ! x_e/y_n the false easting/northing [m]. Snyder (1987), chapter 8.
+    if (trim(proj%name) .eq. "transverse_mercator") then
+        proj%method   = "transverse_mercator_snyder"
+        proj%lambda_M = degrees_to_radians * proj%lambda
+        proj%phi_M    = degrees_to_radians * proj%phi
         return
     end if
 
@@ -287,6 +301,7 @@ contains
     write(*,"(a20,g15.3)") "alpha = ", proj%alpha
     write(*,"(a20,g15.3)") "x_e = ", proj%x_e
     write(*,"(a20,g15.3)") "y_n = ", proj%y_n
+    write(*,"(a20,g15.3)") "k0 = ", proj%k0
     write(*,*) 
     write(*,"(a20,g15.3)") "lambda_M = ", proj%lambda_M
     write(*,"(a20,g15.3)") "phi_M = ", proj%phi_M
@@ -325,6 +340,7 @@ contains
         proj1%alpha  .eq. proj2%alpha     .and. &
         proj1%x_e    .eq. proj2%x_e       .and. &
         proj1%y_n    .eq. proj2%y_n       .and. &
+        proj1%k0     .eq. proj2%k0        .and. &
         dabs(proj1%f-proj2%f) .le. eps    .and. &
         dabs(proj1%a-proj2%a) .le. eps    .and. &
         dabs(proj1%e-proj2%e) .le. eps    .and. &
@@ -393,6 +409,10 @@ contains
 
             call rotated_pole_forward(lambda,phi,x_IM_P_prime,y_IM_P_prime,proj)
 
+        case("transverse_mercator_snyder")
+
+            call transverse_mercator_snyder(lambda,phi,x_IM_P_prime,y_IM_P_prime,proj)
+
         case DEFAULT
             write(*,*) "oblimap_projection:: error: projection method not recognized: "// &
                        trim(proj%method)
@@ -452,6 +472,10 @@ contains
 
             call rotated_pole_inverse(x_IM_P_prime,y_IM_P_prime,lambda_P,phi_P,proj)
 
+        case("transverse_mercator_snyder")
+
+            call inverse_transverse_mercator_snyder(x_IM_P_prime,y_IM_P_prime,lambda_P,phi_P,proj)
+
         case DEFAULT
             write(*,*) "oblimap_projection:: error: projection method not recognized: "// &
                        trim(proj%method)
@@ -470,6 +494,115 @@ contains
     return
 
   end subroutine oblimap_projection_inverse
+
+  subroutine tm_ellipsoid(proj, a, e2, ep2)
+    ! Semi-major axis and eccentricities of the transverse Mercator projection
+    ! (a sphere has e = 0).
+    type(projection_class), intent(IN)  :: proj
+    real(dp),               intent(OUT) :: a, e2, ep2
+
+    if (proj%is_sphere) then
+        a  = proj%R
+        e2 = 0.0_dp
+    else
+        a  = proj%a
+        e2 = proj%e**2
+    end if
+    ep2 = e2 / (1.0_dp - e2)
+  end subroutine tm_ellipsoid
+
+  function tm_meridian_distance(phi, a, e2) result(M)
+    ! Distance along the meridian from the equator to latitude phi [rad],
+    ! Snyder (1987) equation (3-21).
+    real(dp), intent(IN) :: phi, a, e2
+    real(dp) :: M
+    real(dp) :: e4, e6
+
+    e4 = e2*e2
+    e6 = e4*e2
+    M  = a * ( (1.0_dp - e2/4.0_dp - 3.0_dp*e4/64.0_dp - 5.0_dp*e6/256.0_dp)*phi        &
+             - (3.0_dp*e2/8.0_dp + 3.0_dp*e4/32.0_dp + 45.0_dp*e6/1024.0_dp)*sin(2.0_dp*phi) &
+             + (15.0_dp*e4/256.0_dp + 45.0_dp*e6/1024.0_dp)*sin(4.0_dp*phi)              &
+             - (35.0_dp*e6/3072.0_dp)*sin(6.0_dp*phi) )
+  end function tm_meridian_distance
+
+  subroutine transverse_mercator_snyder(lambda, phi, x, y, proj)
+    ! Transverse Mercator projection of (lambda, phi) [deg] to (x, y) [m],
+    ! Snyder (1987) equations (8-9) to (8-13). Accurate to about a millimetre
+    ! within a few degrees of the central meridian (e.g. a UTM zone).
+    type(projection_class), intent(IN)  :: proj
+    real(dp),               intent(IN)  :: lambda, phi
+    real(dp),               intent(OUT) :: x, y
+
+    real(dp) :: a, e2, ep2, phi_r, dlam, N, T, C, AA, M, M0
+
+    call tm_ellipsoid(proj, a, e2, ep2)
+
+    phi_r = degrees_to_radians * phi
+    dlam  = degrees_to_radians * lambda - proj%lambda_M
+    dlam  = modulo(dlam + pi, 2.0_dp*pi) - pi        ! longitude difference in [-pi, pi)
+
+    N  = a / sqrt(1.0_dp - e2*sin(phi_r)**2)
+    T  = tan(phi_r)**2
+    C  = ep2 * cos(phi_r)**2
+    AA = dlam * cos(phi_r)
+    M  = tm_meridian_distance(phi_r, a, e2)
+    M0 = tm_meridian_distance(proj%phi_M, a, e2)
+
+    x = proj%k0 * N * ( AA + (1.0_dp - T + C)*AA**3/6.0_dp                              &
+                      + (5.0_dp - 18.0_dp*T + T*T + 72.0_dp*C - 58.0_dp*ep2)*AA**5/120.0_dp )
+    y = proj%k0 * ( M - M0 + N*tan(phi_r) * ( AA**2/2.0_dp                              &
+                      + (5.0_dp - T + 9.0_dp*C + 4.0_dp*C*C)*AA**4/24.0_dp              &
+                      + (61.0_dp - 58.0_dp*T + T*T + 600.0_dp*C - 330.0_dp*ep2)*AA**6/720.0_dp ) )
+
+    x = x + proj%x_e
+    y = y + proj%y_n
+  end subroutine transverse_mercator_snyder
+
+  subroutine inverse_transverse_mercator_snyder(x, y, lambda, phi, proj)
+    ! Inverse transverse Mercator projection of (x, y) [m] to (lambda, phi)
+    ! [deg], Snyder (1987) equations (7-19), (3-24) and (8-17) to (8-25).
+    type(projection_class), intent(IN)  :: proj
+    real(dp),               intent(IN)  :: x, y
+    real(dp),               intent(OUT) :: lambda, phi
+
+    real(dp) :: a, e2, ep2, xp, yp, M, mu, e1, phi1, N1, T1, C1, R1, D
+
+    call tm_ellipsoid(proj, a, e2, ep2)
+
+    xp = x - proj%x_e
+    yp = y - proj%y_n
+
+    M  = tm_meridian_distance(proj%phi_M, a, e2) + yp/proj%k0
+    mu = M / (a*(1.0_dp - e2/4.0_dp - 3.0_dp*e2**2/64.0_dp - 5.0_dp*e2**3/256.0_dp))
+    e1 = (1.0_dp - sqrt(1.0_dp - e2)) / (1.0_dp + sqrt(1.0_dp - e2))
+
+    ! Footpoint latitude
+    phi1 = mu + (3.0_dp*e1/2.0_dp - 27.0_dp*e1**3/32.0_dp)*sin(2.0_dp*mu)              &
+              + (21.0_dp*e1**2/16.0_dp - 55.0_dp*e1**4/32.0_dp)*sin(4.0_dp*mu)        &
+              + (151.0_dp*e1**3/96.0_dp)*sin(6.0_dp*mu)                                &
+              + (1097.0_dp*e1**4/512.0_dp)*sin(8.0_dp*mu)
+
+    N1 = a / sqrt(1.0_dp - e2*sin(phi1)**2)
+    T1 = tan(phi1)**2
+    C1 = ep2 * cos(phi1)**2
+    R1 = a*(1.0_dp - e2) / (1.0_dp - e2*sin(phi1)**2)**1.5_dp
+    D  = xp / (N1*proj%k0)
+
+    phi = phi1 - (N1*tan(phi1)/R1) * ( D**2/2.0_dp                                        &
+              - (5.0_dp + 3.0_dp*T1 + 10.0_dp*C1 - 4.0_dp*C1**2 - 9.0_dp*ep2)*D**4/24.0_dp &
+              + (61.0_dp + 90.0_dp*T1 + 298.0_dp*C1 + 45.0_dp*T1**2 - 252.0_dp*ep2         &
+                 - 3.0_dp*C1**2)*D**6/720.0_dp )
+    lambda = proj%lambda_M + ( D - (1.0_dp + 2.0_dp*T1 + C1)*D**3/6.0_dp                  &
+              + (5.0_dp - 2.0_dp*C1 + 28.0_dp*T1 - 3.0_dp*C1**2 + 8.0_dp*ep2               &
+                 + 24.0_dp*T1**2)*D**5/120.0_dp ) / cos(phi1)
+
+    phi    = radians_to_degrees * phi
+    lambda = radians_to_degrees * lambda
+
+    ! Our choice is to return lambda in the 0-360 degree range:
+    lambda = modulo(lambda, 360.0_dp)
+  end subroutine inverse_transverse_mercator_snyder
 
   subroutine rotated_pole_forward(lambda, phi, rlon, rlat, proj)
     ! Geographic (lon,lat) -> rotated (lon,lat), all in degrees.
