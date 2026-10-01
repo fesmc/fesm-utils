@@ -401,7 +401,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The package covers:</p>
 <ul>
 <li><strong>Coordinate and grid definition</strong> — point sets (<code>points_class</code>) and regular grids (<code>grid_class</code>), each carrying a shared coordinate-system descriptor (<code>coord_system</code>: map type, units, planet, projection).</li>
-<li><strong>Map projections</strong> — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters <code>(lambda, phi, alpha, x_e, y_n)</code>.</li>
+<li><strong>Map projections</strong> — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters <code>(lambda, phi, alpha, x_e, y_n)</code>, and transverse Mercator (e.g.&nbsp;UTM; <code>mtype="transverse_mercator"</code>, Snyder 1987) with <code>lambda</code> the central meridian, <code>phi</code> the latitude of origin, <code>k0</code> the scale factor and <code>x_e</code>/<code>y_n</code> the false easting/northing [m].</li>
 <li><strong>Gaussian-latitude grids</strong> — quadrature latitudes for spectral/atmospheric grids (non-uniform y-axis).</li>
 <li><strong>k-d tree nearest-neighbour search</strong> — the fast neighbour engine underneath distance-based maps.</li>
 <li><strong>Weight-map remapping</strong> — one sparse source→target store applied with nearest-neighbour, Shepard (inverse-distance), quadrant, bilinear or conservative (area-weighted) kernels.</li>
