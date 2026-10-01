@@ -202,7 +202,8 @@ contains
         ! allows for setting the time slice equal to the first or last timestep available, if
         ! the desired time is out of bounds, while "interp" returns missing values in this case. 
         ! "range_*" methods return one time slice with the method applied to the data within the 
-        ! range given by `time`. 
+        ! range given by `time`. The range must lie within the time axis of the file, else
+        ! an error is raised.
 
         ! rep: frequency to apply slice_method over time. If rep=1, then calculation (mean/sd/etc)
         ! will be applied to each time index, returning a field with no time dimension. 
@@ -405,6 +406,18 @@ contains
                 
                 k0 = minval(vs%idx)
                 k1 = maxval(vs%idx)
+
+                ! A reduction over a range that the file does not cover would
+                ! return a field of missing values.
+                if (k0 .le. 0 .and. index(slice_method,"range_") .eq. 1) then
+                    call varslice_error("varslice_update", &
+                        "time range is not covered by the time axis of the file.", &
+                        "variable   = "//trim(par%name)//new_line("a")// &
+                        "filename   = "//trim(par%filename)//new_line("a")// &
+                        "method     = "//trim(slice_method)//new_line("a")// &
+                        "time_range = "//to_str(vs%time_range)//new_line("a")// &
+                        "time axis  = "//to_str([vs%time(1),vs%time(size(vs%time))]))
+                end if
 
                 !write(*,*) "idx: ", k0, k1
                 !if (k0 .gt. 0) write(*,*) vs%time(k0)
