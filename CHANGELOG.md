@@ -4,6 +4,20 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **timestepping**: `tstep_update` advances the time keepers on every call,
+  including the first one. Before, the first call left `time == time_init`, so a
+  driver loop of the form `do while (.not. ts%is_finished); call tstep_update(...)`
+  ran its first pass as a zero-length step at `time_init`. Drivers that wrote the
+  initial state on that pass should write the state at the top of the loop, before
+  calling `tstep_update`, and exit there once `ts%is_finished`.
+
+### Added
+- **timestepping**: `tstep_init` is a generic interface. Besides the explicit
+  form, `tstep_init(ts, filename, group, dtt [, time_ref, cal])` reads
+  `tstep_method`, `tstep_const`, `time_init`, `time_end` and `dtt` from a
+  namelist group.
+
 ### Fixed
 - **coords/conservative**: conservative remapping (`gen="coords"`) from a
   rotated-pole source grid (e.g. RACMO) onto a projected target now places the

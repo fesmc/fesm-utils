@@ -38,6 +38,11 @@ module timestepping
         logical  :: is_finished
     end type
 
+    interface tstep_init
+        module procedure tstep_init_args
+        module procedure tstep_init_nml
+    end interface
+
     private
     public :: tstep_class
     public :: tstep_init
@@ -47,7 +52,51 @@ module timestepping
 
 contains
 
-    subroutine tstep_init(ts,time_init,time_end,method,units,time_ref,const_cal,const_rel)
+    subroutine tstep_init_nml(ts,filename,group,dtt,time_ref,cal)
+        ! Initialize the timestepper from the namelist group `group` of `filename`:
+        ! tstep_method, tstep_const, time_init, time_end and the main step dtt.
+        ! time_ref sets the calendar reference (default 1950.0). cal=.TRUE. applies
+        ! tstep_const as a constant calendar time (const_cal) instead of a constant
+        ! relative time (const_rel).
+
+        implicit none
+
+        type(tstep_class), intent(INOUT) :: ts
+        character(len=*),  intent(IN)    :: filename
+        character(len=*),  intent(IN)    :: group
+        real(wp),          intent(OUT)   :: dtt
+        real(wp),          intent(IN), optional :: time_ref
+        logical,           intent(IN), optional :: cal
+
+        ! Local variables
+        character(len=56) :: tstep_method
+        real(wp) :: tstep_const, time_init, time_end, tref
+        logical  :: is_cal
+
+        tref = 1950.0_wp
+        if (present(time_ref)) tref = time_ref
+        is_cal = .FALSE.
+        if (present(cal)) is_cal = cal
+
+        call nml_read(filename,group,"tstep_method", tstep_method)
+        call nml_read(filename,group,"tstep_const",  tstep_const)
+        call nml_read(filename,group,"time_init",    time_init)
+        call nml_read(filename,group,"time_end",     time_end)
+        call nml_read(filename,group,"dtt",          dtt)
+
+        if (is_cal) then
+            call tstep_init_args(ts,time_init,time_end,method=tstep_method,units="year", &
+                                    time_ref=tref,const_rel=0.0_wp,const_cal=tstep_const)
+        else
+            call tstep_init_args(ts,time_init,time_end,method=tstep_method,units="year", &
+                                    time_ref=tref,const_rel=tstep_const)
+        end if
+
+        return
+
+    end subroutine tstep_init_nml
+
+    subroutine tstep_init_args(ts,time_init,time_end,method,units,time_ref,const_cal,const_rel)
         ! method = "const","constant"  : time=time_init + time_elapsed evolves, fixed time_cal and time_rel
         ! method = "cal","calendar"    : time=time_cal evolves, time_rel is set relative to it
         ! method = "rel","relative"    : time=time_rel evolves, time_cal is set relative to it
@@ -172,9 +221,12 @@ contains
 
         return
     
-    end subroutine tstep_init
+    end subroutine tstep_init_args
 
     subroutine tstep_update(ts,dt,verbose)
+        ! Advance all time keepers by dt. Every call advances: write the state
+        ! at time_init before the first call (e.g. at the top of the time loop,
+        ! before tstep_update).
 
         implicit none
 
@@ -191,35 +243,31 @@ contains
             print_table = .FALSE.
         end if
 
-        if (ts%n .gt. 0) then
+        ! Update each time keeper and round for errors
 
-            ! Update each time keeper and round for errors
+        call kahan_sum(ts%time_elapsed, ts%comp_elapsed, dt)
 
-            call kahan_sum(ts%time_elapsed, ts%comp_elapsed, dt)
+        if (ts%use_const_cal) then
+            ts%time_cal = ts%time_const_cal
+        else
+            call kahan_sum(ts%time_cal, ts%comp_cal, dt)
+        end if
 
-            if (ts%use_const_cal) then
-                ts%time_cal = ts%time_const_cal
-            else
-                call kahan_sum(ts%time_cal, ts%comp_cal, dt)
-            end if
-
-            if (ts%use_const_rel) then
-                ts%time_rel = ts%time_const_rel
-            else
-                call kahan_sum(ts%time_rel, ts%comp_rel, dt)
-            end if
-            
-            ! Set output time based on method
-            select case(trim(ts%method))
-                case("const","constant")
-                    ts%time = ts%time_init + ts%time_elapsed
-                case("cal","calendar")
-                    ts%time = ts%time_cal
-                case("rel","relative")
-                    ts%time = ts%time_rel
-            end select
-
-        end if 
+        if (ts%use_const_rel) then
+            ts%time_rel = ts%time_const_rel
+        else
+            call kahan_sum(ts%time_rel, ts%comp_rel, dt)
+        end if
+        
+        ! Set output time based on method
+        select case(trim(ts%method))
+            case("const","constant")
+                ts%time = ts%time_init + ts%time_elapsed
+            case("cal","calendar")
+                ts%time = ts%time_cal
+            case("rel","relative")
+                ts%time = ts%time_rel
+        end select
 
         ! Advance number of iterations
         ts%n = ts%n + 1 
@@ -230,7 +278,7 @@ contains
         end if
 
         if (print_table) then
-            if (ts%n .eq. 0) then
+            if (ts%n .eq. 1) then
                 call tstep_print_header(ts)
             end if
             call tstep_print(ts)
