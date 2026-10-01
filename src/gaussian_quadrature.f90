@@ -334,7 +334,7 @@ contains
 
     end subroutine gq3D_init
 
-    subroutine gq2D_to_nodes_aa(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1)
+    subroutine gq2D_to_nodes_aa(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1, act)
 
         implicit none
 
@@ -345,12 +345,24 @@ contains
         real(wp), intent(IN)  :: dy
         integer,  intent(IN)  :: i, j               ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
+        logical,  intent(IN), optional :: act(:,:) ! Cells carrying a value; only these enter the corner means
         
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.25d0 * (var(im1, jm1) + var(i, jm1) + var(im1, j) + var(i, j))  ! Bottom-left
-        gq%v_ab(2) = 0.25d0 * (var(i, jm1) + var(ip1, jm1) + var(i, j) + var(ip1, j))  ! Bottom-right
-        gq%v_ab(3) = 0.25d0 * (var(i, j) + var(ip1, j) + var(i, jp1) + var(ip1, jp1))  ! Top-right
-        gq%v_ab(4) = 0.25d0 * (var(im1, j) + var(i, j) + var(im1, jp1) + var(i, jp1))  ! Top-left
+        if (present(act)) then
+            gq%v_ab(1) = mean4_active(var(im1, jm1), var(i, jm1), var(im1, j), var(i, j), &
+                                      act(im1, jm1), act(i, jm1), act(im1, j), act(i, j))
+            gq%v_ab(2) = mean4_active(var(i, jm1), var(ip1, jm1), var(i, j), var(ip1, j), &
+                                      act(i, jm1), act(ip1, jm1), act(i, j), act(ip1, j))
+            gq%v_ab(3) = mean4_active(var(i, j), var(ip1, j), var(i, jp1), var(ip1, jp1), &
+                                      act(i, j), act(ip1, j), act(i, jp1), act(ip1, jp1))
+            gq%v_ab(4) = mean4_active(var(im1, j), var(i, j), var(im1, jp1), var(i, jp1), &
+                                      act(im1, j), act(i, j), act(im1, jp1), act(i, jp1))
+        else
+            gq%v_ab(1) = 0.25d0 * (var(im1, jm1) + var(i, jm1) + var(im1, j) + var(i, j))  ! Bottom-left
+            gq%v_ab(2) = 0.25d0 * (var(i, jm1) + var(ip1, jm1) + var(i, j) + var(ip1, j))  ! Bottom-right
+            gq%v_ab(3) = 0.25d0 * (var(i, j) + var(ip1, j) + var(i, jp1) + var(ip1, jp1))  ! Top-right
+            gq%v_ab(4) = 0.25d0 * (var(im1, j) + var(i, j) + var(im1, jp1) + var(i, jp1))  ! Top-left
+        end if
 
         ! Map corner values to quadrature nodes
         call gq2D_to_nodes(gq, dx, dy)
@@ -409,6 +421,29 @@ contains
         end if
 
     end function mean2_active
+
+    elemental function mean4_active(a, b, c, d, act_a, act_b, act_c, act_d) result(v)
+        ! Mean of four cell values over the cells that carry a value; the plain
+        ! mean if none does.
+
+        implicit none
+
+        real(wp), intent(IN) :: a, b, c, d
+        logical,  intent(IN) :: act_a, act_b, act_c, act_d
+        real(wp) :: v
+
+        integer :: n
+
+        n = count([act_a, act_b, act_c, act_d])
+
+        if (n .eq. 0) then
+            v = 0.25d0 * (a + b + c + d)
+        else
+            v = ( merge(a, 0.0_wp, act_a) + merge(b, 0.0_wp, act_b) &
+                + merge(c, 0.0_wp, act_c) + merge(d, 0.0_wp, act_d) ) / real(n, wp)
+        end if
+
+    end function mean4_active
 
     subroutine gq2D_to_nodes_acx(gq, v_qp, var, dx, dy, i, j, im1, ip1, jm1, jp1, act)
 
@@ -556,7 +591,7 @@ contains
         
     end subroutine gq2D_to_nodes
 
-    subroutine gq3D_to_nodes_aa(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1)
+    subroutine gq3D_to_nodes_aa(gq, v_qp, var, dx, dy, dz0, dz1, i, j, k, im1, ip1, jm1, jp1, km1, kp1, act)
         
         implicit none
         
@@ -570,47 +605,75 @@ contains
         integer,  intent(IN)  :: i, j, k            ! [x,y] indices of current cell
         integer,  intent(IN)  :: im1, ip1, jm1, jp1 ! Neighbor indices of current cell
         integer,  intent(IN)  :: km1, kp1
+        logical,  intent(IN), optional :: act(:,:) ! Columns carrying a value (horizontal); only these enter the corner means
 
         ! Stagger variable to cell corners
-        gq%v_ab(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))       &
-                              + 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
-                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                              + 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k)) )
+        if (present(act)) then
+            gq%v_ab(1) = mean4_active(0.5_wp*(var(im1, jm1, km1) + var(im1, jm1, k)), 0.5_wp*(var(im1, j, km1) + var(im1, j, k)), &
+                                      0.5_wp*(var(i, j, km1) + var(i, j, k)), 0.5_wp*(var(i, jm1, km1) + var(i, jm1, k)), &
+                                      act(im1, jm1), act(im1, j), act(i, j), act(i, jm1))
+            gq%v_ab(2) = mean4_active(0.5_wp*(var(i, jm1, km1) + var(i, jm1, k)), 0.5_wp*(var(i, j, km1) + var(i, j, k)), &
+                                      0.5_wp*(var(ip1, j, km1) + var(ip1, j, k)), 0.5_wp*(var(ip1, jm1, km1) + var(ip1, jm1, k)), &
+                                      act(i, jm1), act(i, j), act(ip1, j), act(ip1, jm1))
+            gq%v_ab(3) = mean4_active(0.5_wp*(var(i, j, km1) + var(i, j, k)), 0.5_wp*(var(i, jp1, km1) + var(i, jp1, k)), &
+                                      0.5_wp*(var(ip1, jp1, km1) + var(ip1, jp1, k)), 0.5_wp*(var(ip1, j, km1) + var(ip1, j, k)), &
+                                      act(i, j), act(i, jp1), act(ip1, jp1), act(ip1, j))
+            gq%v_ab(4) = mean4_active(0.5_wp*(var(im1, j, km1) + var(im1, j, k)), 0.5_wp*(var(im1, jp1, km1) + var(im1, jp1, k)), &
+                                      0.5_wp*(var(i, jp1, km1) + var(i, jp1, k)), 0.5_wp*(var(i, j, km1) + var(i, j, k)), &
+                                      act(im1, j), act(im1, jp1), act(i, jp1), act(i, j))
+            gq%v_ab(5) = mean4_active(0.5_wp*(var(im1, jm1, k) + var(im1, jm1, kp1)), 0.5_wp*(var(im1, j, k) + var(im1, j, kp1)), &
+                                      0.5_wp*(var(i, j, k) + var(i, j, kp1)), 0.5_wp*(var(i, jm1, k) + var(i, jm1, kp1)), &
+                                      act(im1, jm1), act(im1, j), act(i, j), act(i, jm1))
+            gq%v_ab(6) = mean4_active(0.5_wp*(var(i, jm1, k) + var(i, jm1, kp1)), 0.5_wp*(var(i, j, k) + var(i, j, kp1)), &
+                                      0.5_wp*(var(ip1, j, k) + var(ip1, j, kp1)), 0.5_wp*(var(ip1, jm1, k) + var(ip1, jm1, kp1)), &
+                                      act(i, jm1), act(i, j), act(ip1, j), act(ip1, jm1))
+            gq%v_ab(7) = mean4_active(0.5_wp*(var(i, j, k) + var(i, j, kp1)), 0.5_wp*(var(i, jp1, k) + var(i, jp1, kp1)), &
+                                      0.5_wp*(var(ip1, jp1, k) + var(ip1, jp1, kp1)), 0.5_wp*(var(ip1, j, k) + var(ip1, j, kp1)), &
+                                      act(i, j), act(i, jp1), act(ip1, jp1), act(ip1, j))
+            gq%v_ab(8) = mean4_active(0.5_wp*(var(im1, j, k) + var(im1, j, kp1)), 0.5_wp*(var(im1, jp1, k) + var(im1, jp1, kp1)), &
+                                      0.5_wp*(var(i, jp1, k) + var(i, jp1, kp1)), 0.5_wp*(var(i, j, k) + var(i, j, kp1)), &
+                                      act(im1, j), act(im1, jp1), act(i, jp1), act(i, j))
+        else
+            gq%v_ab(1) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, km1) + var(im1, jm1, k))       &
+                                  + 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                                  + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                  + 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k)) )
 
-        gq%v_ab(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k))         &
-                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                              + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k))         &
-                              + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
+            gq%v_ab(2) = 0.25d0 * ( 0.5d0 * (var(i, jm1, km1)   + var(i, jm1, k))         &
+                                  + 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                  + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k))         &
+                                  + 0.5d0 * (var(ip1, jm1, km1) + var(ip1, jm1, k)) )
 
-        gq%v_ab(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
-                              + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
-                              + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))       &
-                              + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k)) )
+            gq%v_ab(3) = 0.25d0 * ( 0.5d0 * (var(i, j, km1)     + var(i, j, k))           &
+                                  + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                                  + 0.5d0 * (var(ip1, jp1, km1) + var(ip1, jp1, k))       &
+                                  + 0.5d0 * (var(ip1, j, km1)   + var(ip1, j, k)) )
 
-        gq%v_ab(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
-                              + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))       &
-                              + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
-                              + 0.5d0 * (var(i, j, km1)     + var(i, j, k)) )
+            gq%v_ab(4) = 0.25d0 * ( 0.5d0 * (var(im1, j, km1)   + var(im1, j, k))         &
+                                  + 0.5d0 * (var(im1, jp1, km1) + var(im1, jp1, k))       &
+                                  + 0.5d0 * (var(i, jp1, km1)   + var(i, jp1, k))         &
+                                  + 0.5d0 * (var(i, j, km1)     + var(i, j, k)) )
 
-        gq%v_ab(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k)   + var(im1, jm1, kp1))     &
-                              + 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
-                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                              + 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1)) )
+            gq%v_ab(5) = 0.25d0 * ( 0.5d0 * (var(im1, jm1, k)   + var(im1, jm1, kp1))     &
+                                  + 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                                  + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                  + 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1)) )
 
-        gq%v_ab(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1))       &
-                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                              + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1))       &
-                              + 0.5d0 * (var(ip1, jm1, k)   + var(ip1, jm1, kp1)) )
+            gq%v_ab(6) = 0.25d0 * ( 0.5d0 * (var(i, jm1, k)     + var(i, jm1, kp1))       &
+                                  + 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                  + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1))       &
+                                  + 0.5d0 * (var(ip1, jm1, k)   + var(ip1, jm1, kp1)) )
 
-        gq%v_ab(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
-                              + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
-                              + 0.5d0 * (var(ip1, jp1, k)   + var(ip1, jp1, kp1))     &
-                              + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1)) )
+            gq%v_ab(7) = 0.25d0 * ( 0.5d0 * (var(i, j, k)       + var(i, j, kp1))         &
+                                  + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                                  + 0.5d0 * (var(ip1, jp1, k)   + var(ip1, jp1, kp1))     &
+                                  + 0.5d0 * (var(ip1, j, k)     + var(ip1, j, kp1)) )
 
-        gq%v_ab(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
-                              + 0.5d0 * (var(im1, jp1, k)   + var(im1, jp1, kp1))     &
-                              + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
-                              + 0.5d0 * (var(i, j, k)       + var(i, j, kp1)) )
+            gq%v_ab(8) = 0.25d0 * ( 0.5d0 * (var(im1, j, k)     + var(im1, j, kp1))       &
+                                  + 0.5d0 * (var(im1, jp1, k)   + var(im1, jp1, kp1))     &
+                                  + 0.5d0 * (var(i, jp1, k)     + var(i, jp1, kp1))       &
+                                  + 0.5d0 * (var(i, j, k)       + var(i, j, kp1)) )
+        end if
         
         ! Map corner values to quadrature nodes
         call gq3D_to_nodes(gq, dx, dy, dz0, dz1)
