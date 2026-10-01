@@ -33,6 +33,7 @@ contains
         character(len=32)  :: xnm, ynm
         character(len=32)  :: xunits, yunits
         real(dp) :: phi_proj_orig
+        character(len=128) :: ellps
 
         ! Determine grid type to write
         select case(trim(grid%cs%mtype))
@@ -42,7 +43,7 @@ contains
                 xnm    = "lon";           ynm    = "lat"
                 xunits = "degrees_east";  yunits = "degrees_north"
 
-            case("polar_stereographic","stereographic")
+            case("polar_stereographic","stereographic","transverse_mercator")
                 grid_type = "projection"
                 xnm    = "xc";            ynm    = "yc"
                 xunits = trim(grid%cs%units); yunits = trim(grid%cs%units)
@@ -79,6 +80,7 @@ contains
         write(fnum,"(a,g0)") "# alpha  = ", grid%cs%proj%alpha
         write(fnum,"(a,g0)") "# x_e    = ", grid%cs%proj%x_e
         write(fnum,"(a,g0)") "# y_n    = ", grid%cs%proj%y_n
+        write(fnum,"(a,g0)") "# k0     = ", grid%cs%proj%k0
 
         write(fnum,"(a)")       "gridtype = "//trim(grid_type)
         write(fnum,"(a,i10)")   "gridsize = ", grid%G%nx*grid%G%ny
@@ -145,6 +147,20 @@ contains
                     write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
                 end if
 
+            case("transverse_mercator")
+                ! cdo does not know the CF transverse_mercator mapping; it takes
+                ! the projection as a PROJ string (false easting/northing in m).
+                if (grid%cs%planet%is_sphere) then
+                    write(ellps,"(a,f0.3)") "+R=", grid%cs%planet%R
+                else
+                    write(ellps,"(a,f0.3,a,f0.9)") "+a=", grid%cs%planet%a, " +rf=", 1.d0/grid%cs%planet%f
+                end if
+                write(fnum,"(a,f0.9,a,f0.9,a,f0.9,a,f0.6,a,f0.6,a)") &
+                    'proj_params = "+proj=tmerc +lon_0=', grid%cs%proj%lambda, &
+                    " +lat_0=", grid%cs%proj%phi, " +k=", grid%cs%proj%k0, &
+                    " +x_0=", grid%cs%proj%x_e, " +y_0=", grid%cs%proj%y_n, &
+                    " "//trim(ellps)//' +units=m"'
+
             case("latitude_longitude","latlon","gaussian")
                 write(fnum,"(a,a)") "grid_mapping_name = ", "latitude_longitude"
                 if (grid%cs%planet%is_sphere) then
@@ -187,7 +203,7 @@ contains
         ! Coordinate-system definition (comment header)
         character(len=256) :: mtype, units, planet
         logical  :: lon180
-        real(dp) :: lambda, phi, alpha, x_e, y_n
+        real(dp) :: lambda, phi, alpha, x_e, y_n, k0
 
         ! Axis definition (cdo body)
         integer  :: nx, ny
@@ -200,6 +216,7 @@ contains
         ! only used as a fallback for files lacking that header. The header is
         ! written before the cdo body, so its keys are always seen first.
         logical  :: has_mtype, has_units, has_lambda, has_phi, has_alpha
+        logical  :: has_x_e, has_y_n, has_k0
 
         filename = trim(fldr)//"/"//"grid_"//trim(name)//".txt"
         inquire(file=trim(filename), exist=file_exists)
@@ -214,12 +231,13 @@ contains
         units  = "degrees"
         planet = "WGS84"
         lon180 = .false.
-        lambda = 0.0_dp; phi = 0.0_dp; alpha = 0.0_dp; x_e = 0.0_dp; y_n = 0.0_dp
+        lambda = 0.0_dp; phi = 0.0_dp; alpha = 0.0_dp; x_e = 0.0_dp; y_n = 0.0_dp; k0 = 1.0_dp
         nx = 0; ny = 0
         x0 = 0.0_dp; dx = 0.0_dp; y0 = 0.0_dp; dy = 0.0_dp
         is_gaussian = .false.
         has_mtype = .false.; has_units = .false.
         has_lambda = .false.; has_phi = .false.; has_alpha = .false.
+        has_x_e = .false.; has_y_n = .false.; has_k0 = .false.
 
         fnum = 98
         open(fnum,file=trim(filename),status='old',action='read')
@@ -240,8 +258,9 @@ contains
                 case ("lambda"); read(val,*) lambda; has_lambda = .true.
                 case ("phi");    read(val,*) phi;    has_phi    = .true.
                 case ("alpha");  read(val,*) alpha;  has_alpha  = .true.
-                case ("x_e");    read(val,*) x_e
-                case ("y_n");    read(val,*) y_n
+                case ("x_e");    read(val,*) x_e; has_x_e = .true.
+                case ("y_n");    read(val,*) y_n; has_y_n = .true.
+                case ("k0");     read(val,*) k0;  has_k0  = .true.
 
                 ! --- CF/CDO-native coordinate-system keys (fallback when the
                 !     fesm-utils '#' header is absent, e.g. cdo-generated files) ---
@@ -267,6 +286,9 @@ contains
                     if (.not. has_phi) read(val,*) phi
                 case ("latitude_of_projection_origin")           ! stereographic (polar: pole marker, ignore)
                     if (.not. has_phi .and. trim(mtype) == "stereographic") read(val,*) phi
+                case ("proj_params")                             ! transverse_mercator (PROJ string)
+                    call read_proj_tmerc(val, has_mtype, has_lambda, has_phi, has_k0, has_x_e, has_y_n, &
+                                         mtype, lambda, phi, k0, x_e, y_n)
                 case ("angle_of_oblique_tangent")                ! stereographic
                     if (.not. has_alpha) read(val,*) alpha
 
@@ -297,12 +319,12 @@ contains
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
                            planet=planet, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y=yvals, &
-                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n)
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0)
         else
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
                            planet=planet, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y0=y0, dy=dy, ny=ny, &
-                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n)
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0)
         end if
 
         if (allocated(yvals)) deallocate(yvals)
@@ -310,6 +332,49 @@ contains
         return
 
     end subroutine grid_cdo_read_desc
+
+    subroutine read_proj_tmerc(str, has_mtype, has_lambda, has_phi, has_k0, has_x_e, has_y_n, &
+                               mtype, lambda, phi, k0, x_e, y_n)
+        ! Projection parameters of a transverse Mercator PROJ string
+        ! ("+proj=tmerc +lon_0= +lat_0= +k= +x_0= +y_0= ... +units=m"), for
+        ! files without the fesm-utils header. Other PROJ strings are ignored.
+        character(len=*), intent(in)    :: str
+        logical,          intent(in)    :: has_mtype, has_lambda, has_phi, has_k0, has_x_e, has_y_n
+        character(len=*), intent(inout) :: mtype
+        real(dp),         intent(inout) :: lambda, phi, k0, x_e, y_n
+
+        character(len=len(str)) :: s
+        character(len=64) :: v
+
+        s = str
+        if (index(s,"+proj=tmerc") == 0) return
+        if (.not. has_mtype) mtype = "transverse_mercator"
+        if (.not. has_lambda .and. proj_value(s,"+lon_0=",v)) read(v,*) lambda
+        if (.not. has_phi    .and. proj_value(s,"+lat_0=",v)) read(v,*) phi
+        if (.not. has_k0     .and. proj_value(s,"+k=",v))     read(v,*) k0
+        if (.not. has_k0     .and. proj_value(s,"+k_0=",v))   read(v,*) k0
+        if (.not. has_x_e    .and. proj_value(s,"+x_0=",v))   read(v,*) x_e
+        if (.not. has_y_n    .and. proj_value(s,"+y_0=",v))   read(v,*) y_n
+    end subroutine read_proj_tmerc
+
+    logical function proj_value(s, key, v)
+        ! Value of key (e.g. "+lon_0=") in a PROJ string, up to the next blank or quote.
+        character(len=*), intent(in)  :: s, key
+        character(len=*), intent(out) :: v
+        integer :: i, j
+
+        v = ""
+        i = index(s, key)
+        proj_value = (i > 0)
+        if (.not. proj_value) return
+        i = i + len(key)
+        j = i
+        do while (j <= len_trim(s))
+            if (s(j:j) == " " .or. s(j:j) == '"') exit
+            j = j + 1
+        end do
+        v = s(i:j-1)
+    end function proj_value
 
     subroutine parse_key_value(line, key, val)
         ! Split a description line "key = value" into trimmed key/value,

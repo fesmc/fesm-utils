@@ -1907,7 +1907,7 @@ $:write_attr(scope, tsfx, vtype, '_1D', True)
 #:endfor
 
     subroutine nc_write_map(filename,grid_mapping_name,lambda,phi,alpha,x_e,y_n, &
-                            is_sphere,semi_major_axis,inverse_flattening,ncid)
+                            is_sphere,semi_major_axis,inverse_flattening,ncid,k0)
         ! CF map conventions can be found here:
         ! http://cfconventions.org/Data/cf-conventions/cf-conventions-1.6/build/cf-conventions.html#appendix-grid-mappings
         
@@ -1920,6 +1920,7 @@ $:write_attr(scope, tsfx, vtype, '_1D', True)
         double precision, intent(IN), optional :: semi_major_axis
         double precision, intent(IN), optional :: inverse_flattening
         integer,          intent(in), optional :: ncid
+        double precision, intent(IN), optional :: k0     ! scale factor (transverse_mercator)
         
         ! Local variables 
         integer :: nc_id, varid, stat
@@ -2004,6 +2005,28 @@ $:write_attr(scope, tsfx, vtype, '_1D', True)
                     call nc_check( nf90_put_att(nc_id,varid, "standard_parallel", phi), ec, "nf90_put_att" )
                     
                         
+                    call nc_check( nf90_put_att(nc_id,varid, "false_easting",  x_e), ec, "nf90_put_att" )
+                    call nc_check( nf90_put_att(nc_id,varid, "false_northing", y_n), ec, "nf90_put_att" )
+
+                case("transverse_mercator")
+
+                    if ( (.not. present(lambda)) .or. &
+                         (.not. present(phi))    .or. &
+                         (.not. present(k0))     .or. &
+                         (.not. present(x_e))    .or. &
+                         (.not. present(y_n))    ) then
+
+                        call nc_abort(op="nc_write_map", ec=ec, &
+                            msg="all grid_mapping arguments must be provided for "// &
+                                trim(grid_mapping_name)//" (lambda, phi, k0, x_e, y_n).")
+
+                    end if
+
+                    ! Add grid mapping attributes (x_e, y_n in the units of the axes)
+                    call nc_check( nf90_put_att(nc_id,varid, "grid_mapping_name", trim(grid_mapping_name)), ec, "nf90_put_att" )
+                    call nc_check( nf90_put_att(nc_id,varid, "longitude_of_central_meridian", lambda), ec, "nf90_put_att" )
+                    call nc_check( nf90_put_att(nc_id,varid, "latitude_of_projection_origin", phi), ec, "nf90_put_att" )
+                    call nc_check( nf90_put_att(nc_id,varid, "scale_factor_at_central_meridian", k0), ec, "nf90_put_att" )
                     call nc_check( nf90_put_att(nc_id,varid, "false_easting",  x_e), ec, "nf90_put_att" )
                     call nc_check( nf90_put_att(nc_id,varid, "false_northing", y_n), ec, "nf90_put_att" )
 

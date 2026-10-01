@@ -220,7 +220,8 @@ contains
                                  planet=grid0%cs%planet%name,lon180=grid0%cs%is_lon180, &
                                  x=x,y=y,x0=x0,dx=dx,nx=nx,y0=y0,dy=dy,ny=ny, &
                                  lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
-                                 alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n)
+                                 alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
+                                 k0=grid0%cs%proj%k0)
 
         return
 
@@ -242,7 +243,8 @@ contains
                                  planet=pts0%cs%planet%name,lon180=pts0%cs%is_lon180, &
                                  x=x,y=y,x0=x0,dx=dx,nx=nx,y0=y0,dy=dy,ny=ny, &
                                  lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
-                                 alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n)
+                                 alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
+                                 k0=pts0%cs%proj%k0)
 
         return
 
@@ -260,17 +262,18 @@ contains
         character(len=256)   :: name, mtype, units
         character(len=256)   :: planet  
         logical              :: lon180
-        real(dp)             :: lambda, phi, alpha, x_e, y_n 
+        real(dp)             :: lambda, phi, alpha, x_e, y_n, k0
 
         namelist /map/ name, mtype, units, planet, lon180, &
-                       lambda, phi, alpha, x_e, y_n  
+                       lambda, phi, alpha, x_e, y_n, k0
 
+        k0 = 1.0_dp
         open(7,file=trim(filename))
         read(7,nml=map)
         close(7)
 
         call grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
-                       x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n)
+                       x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0)
 
         return
 
@@ -331,9 +334,9 @@ contains
         character(len=56)  :: x_name, y_name, lon_name
         character(len=56)  :: file_units, out_units, crs_name, mtype, planet
         real(dp), allocatable :: xc(:), yc(:), lon(:,:)
-        real(dp) :: lambda, phi, alpha, x_e, y_n
+        real(dp) :: lambda, phi, alpha, x_e, y_n, k0
         real(dp) :: semi_major_axis, inverse_flattening
-        real(dp) :: conv
+        real(dp) :: conv, file_to_m
         logical  :: is_projection, lon180_in
 
         ! Argument defaults
@@ -363,10 +366,12 @@ contains
         call nc_read_attr(filename,x_name,"units",file_units)
         select case(trim(file_units))
             case("kilometers","km")
+                file_to_m = 1.d3
                 xc = xc*1.d3
                 yc = yc*1.d3
             case("meters","m")
                 ! already in meters
+                file_to_m = 1.d0
             case DEFAULT
                 call coordinates_error("grid_init_from_netcdf_file", &
                     "axis units not recognized.", &
@@ -407,7 +412,7 @@ contains
         mtype  = "cartesian"
         planet = "Spherical Earth"
         lambda = 0.d0 ; phi = 0.d0 ; alpha = 0.d0
-        x_e = 0.d0 ; y_n = 0.d0
+        x_e = 0.d0 ; y_n = 0.d0 ; k0 = 1.d0
         semi_major_axis = 0.d0 ; inverse_flattening = 0.d0
 
         if (is_projection) then
@@ -436,10 +441,21 @@ contains
                             call nc_read_attr(filename,crs_name,"false_northing",y_n)
                             call nc_read_attr(filename,crs_name,"semi_major_axis",semi_major_axis)
                             call nc_read_attr(filename,crs_name,"inverse_flattening",inverse_flattening)
+                        case("transverse_mercator")
+                            call nc_read_attr(filename,crs_name,"longitude_of_central_meridian",lambda)
+                            call nc_read_attr(filename,crs_name,"latitude_of_projection_origin",phi)
+                            call nc_read_attr(filename,crs_name,"scale_factor_at_central_meridian",k0)
+                            call nc_read_attr(filename,crs_name,"false_easting",x_e)
+                            call nc_read_attr(filename,crs_name,"false_northing",y_n)
+                            call nc_read_attr(filename,crs_name,"semi_major_axis",semi_major_axis)
+                            call nc_read_attr(filename,crs_name,"inverse_flattening",inverse_flattening)
                         case DEFAULT
                             write(*,*) "grid_init_from_netcdf_file:: warning: unsupported projection '" &
                                         //trim(mtype)//"'. Projection parameters not loaded."
                     end select
+                    ! CF false easting/northing are in axis units; x_e/y_n in meters.
+                    x_e = x_e*file_to_m
+                    y_n = y_n*file_to_m
                     ! Choose planet/ellipsoid from the flattening
                     if (inverse_flattening .ne. 0.d0) then
                         planet = "WGS84"
@@ -455,14 +471,14 @@ contains
         ! from the projection.
         call grid_init_from_opts(grid,name=trim(grid_name),mtype=trim(mtype),units=trim(out_units), &
                                  planet=trim(planet),lon180=lon180_in,x=xc,y=yc, &
-                                 lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n)
+                                 lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n,k0=k0)
 
         return
 
     end subroutine grid_init_from_netcdf_file
 
     subroutine grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
-                                   x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n)
+                                   x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0)
 
         implicit none 
 
@@ -474,6 +490,7 @@ contains
         integer, optional  :: nx, ny 
         real(dp), optional :: x(:), y(:), x0, dx, y0, dy 
         real(dp), optional :: lambda, phi, alpha, x_e, y_n 
+        real(dp), optional :: k0                 ! scale factor (transverse_mercator)
         real(dp) :: tmp1, tmp2
         integer :: i, j 
         real(dp), allocatable :: tmpvec1(:), tmpvec2(:) 
@@ -548,7 +565,8 @@ contains
 
         ! Initialize data as points, then convert back to grid using axis info
         call points_init_from_opts(pts,name,mtype,units,planet,lon180,reshape(grid%x,[grid%npts]),&
-                         reshape(grid%y,[grid%npts]),lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n)
+                         reshape(grid%y,[grid%npts]),lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n, &
+                         k0=k0)
         call points_to_grid(pts,grid)
 
         ! Calculate grid cell areas 
@@ -644,6 +662,7 @@ contains
                                        lon180=pts0%cs%is_lon180, &
                                        lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
                                        alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
+                                 k0=pts0%cs%proj%k0, &
                                        latlon=latlon,skip=skip)
 
         else
@@ -651,6 +670,7 @@ contains
                                      planet=pts0%cs%planet%name,lon180=pts0%cs%is_lon180,x=x,y=y,dx=dx,dy=dy, &
                                      lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
                                      alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
+                                 k0=pts0%cs%proj%k0, &
                                      latlon=latlon)
         end if 
 
@@ -676,6 +696,7 @@ contains
                                        dx=grid0%G%dx,dy=grid0%G%dy,lon180=grid0%cs%is_lon180, &
                                        lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
                                        alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
+                                 k0=grid0%cs%proj%k0, &
                                        latlon=latlon,skip=skip)
 
         else
@@ -683,6 +704,7 @@ contains
                                        planet=grid0%cs%planet%name,lon180=grid0%cs%is_lon180,x=x,y=y,dx=dx,dy=dy, &
                                        lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
                                        alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
+                                 k0=grid0%cs%proj%k0, &
                                        latlon=latlon)
         end if
 
@@ -703,24 +725,25 @@ contains
         character(len=256)   :: name, mtype, units
         character(len=256)   :: planet  
         logical              :: lon180
-        real(dp)             :: lambda, phi, alpha, x_e, y_n 
+        real(dp)             :: lambda, phi, alpha, x_e, y_n, k0
 
         namelist /map/ name, mtype, units, planet, lon180, &
-                       lambda, phi, alpha, x_e, y_n  
+                       lambda, phi, alpha, x_e, y_n, k0
 
+        k0 = 1.0_dp
         open(7,file=trim(filename))
         read(7,nml=map)
         close(7)
 
         call points_init_from_opts(pts,name,mtype,units,planet,lon180, &
-                         x,y,dx,dy,lambda,phi,alpha,x_e,y_n,latlon)
+                         x,y,dx,dy,lambda,phi,alpha,x_e,y_n,latlon,k0=k0)
 
         return
 
     end subroutine points_init_from_par
 
     subroutine points_init_from_file(pts,name,mtype,units,filename,planet,dx,dy,lon180, &
-                                     lambda,phi,alpha,x_e,y_n,latlon,skip)
+                                     lambda,phi,alpha,x_e,y_n,latlon,skip,k0)
 
 
         implicit none
@@ -734,6 +757,7 @@ contains
         real(dp), optional :: lambda, phi, alpha, x_e, y_n 
         logical,  optional :: latlon 
         integer,  optional :: skip 
+        real(dp), optional :: k0
 
         integer :: i, io, n, nskip   
         integer, parameter :: nmax = 1000000
@@ -774,7 +798,7 @@ contains
         if (present(dy)) dy_vec = dy 
          
         call points_init_from_opts(pts,name,mtype,units,planet,lon180, &
-                         x,y,dx_vec,dy_vec,lambda,phi,alpha,x_e,y_n,latlon)
+                         x,y,dx_vec,dy_vec,lambda,phi,alpha,x_e,y_n,latlon,k0=k0)
 
         write(*,*) "points_init_from_file: ", minval(pts%lon), maxval(pts%lon)
         write(*,*) "points_init_from_file: ", minval(pts%lat), maxval(pts%lat)
@@ -784,7 +808,7 @@ contains
     end subroutine points_init_from_file
 
     subroutine points_init_from_opts(pts,name,mtype,units,planet,lon180,x,y,dx,dy, &
-                                     lambda,phi,alpha,x_e,y_n,latlon,verbose)
+                                     lambda,phi,alpha,x_e,y_n,latlon,verbose,k0)
 
         use oblimap_projection_module 
 
@@ -800,6 +824,7 @@ contains
         real(dp), optional :: lambda, phi, alpha, x_e, y_n 
         logical, optional :: latlon 
         logical, optional :: verbose 
+        real(dp), optional :: k0                 ! scale factor (transverse_mercator)
         
         ! Local variables 
         logical :: latlon_in 
@@ -820,7 +845,8 @@ contains
             case("latitude_longitude","latlon","gaussian")
                 pts%cs%is_cartesian  = .FALSE. 
                 pts%cs%is_projection = .FALSE. 
-            case("stereographic","polar_stereographic","lambert_azimuthal_equal_area")
+            case("stereographic","polar_stereographic","lambert_azimuthal_equal_area", &
+                 "transverse_mercator")
                 pts%cs%is_cartesian  = .TRUE.
                 pts%cs%is_projection = .TRUE.
             case("rotated_pole","rotated_latitude_longitude")
@@ -842,7 +868,8 @@ contains
                     "    cartesian"//new_line("a")// &
                     "    stereographic"//new_line("a")// &
                     "    polar_stereographic"//new_line("a")// &
-                    "    lambert_azimuthal_equal_area")
+                    "    lambert_azimuthal_equal_area"//new_line("a")// &
+                    "    transverse_mercator")
         end select
 
         ! Make sure we can convert the units of the points as needed
@@ -926,7 +953,7 @@ contains
             
             ! Initialize projection information
             call projection_init(pts%cs%proj,trim(pts%cs%mtype),pts%cs%planet, &
-                                 lambda,phi,alpha,x_e,y_n)
+                                 lambda,phi,alpha,x_e,y_n,k0=k0)
 
             if (latlon_in) then 
                 ! Starting with latlon points 
@@ -1392,7 +1419,9 @@ contains
         if (grid%cs%is_projection) then 
             ! Add coordinate reference system information 
             call nc_write_map(fnm,grid%cs%mtype,grid%cs%proj%lambda,phi=grid%cs%proj%phi, &
-                              alpha=grid%cs%proj%alpha,x_e=grid%cs%proj%x_e,y_n=grid%cs%proj%y_n, &
+                              alpha=grid%cs%proj%alpha,x_e=grid%cs%proj%x_e/grid%cs%xy_conv, &
+                              y_n=grid%cs%proj%y_n/grid%cs%xy_conv, &
+                              k0=grid%cs%proj%k0, &
                               is_sphere=grid%cs%planet%is_sphere,semi_major_axis=grid%cs%planet%a, &
                               inverse_flattening=1.d0/grid%cs%planet%f)
         end if 
@@ -1467,7 +1496,9 @@ contains
         ! Add projection information if needed
         if (pts%cs%is_projection) then 
             call nc_write_map(fnm,pts%cs%mtype,pts%cs%proj%lambda,phi=pts%cs%proj%phi,&
-                            alpha=pts%cs%proj%alpha,x_e=pts%cs%proj%x_e,y_n=pts%cs%proj%y_n, &
+                            alpha=pts%cs%proj%alpha,x_e=pts%cs%proj%x_e/pts%cs%xy_conv, &
+                            y_n=pts%cs%proj%y_n/pts%cs%xy_conv, &
+                            k0=pts%cs%proj%k0, &
                             is_sphere=pts%cs%planet%is_sphere,semi_major_axis=pts%cs%planet%a, &
                             inverse_flattening=1.d0/pts%cs%planet%f)
         end if 

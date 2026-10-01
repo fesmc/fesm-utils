@@ -3,7 +3,8 @@ program test_grid_cdo_rw
     !   grid_cdo_write_desc_short  ->  grid_<name>.txt  ->  grid_cdo_read_desc
     ! A grid reconstructed from its description file must match the original
     ! (axes + coordinate system) for every grid family the writer emits:
-    ! latlon, polar_stereographic, oblique stereographic, cartesian, gaussian.
+    ! latlon, polar_stereographic, oblique stereographic, transverse Mercator,
+    ! cartesian, gaussian.
 
     use coords
 
@@ -35,6 +36,22 @@ program test_grid_cdo_rw
                    x0=-800.0_dp, dx=32.0_dp, nx=50, y0=-3400.0_dp, dy=32.0_dp, ny=90, &
                    lambda=-39.0_dp, phi=72.0_dp, alpha=8.4_dp)
     call roundtrip(g, g2, fldr, "stereographic", fails)
+
+    ! --- transverse Mercator (UTM 18S, 250 m, the SRG grid) ---
+    call grid_init(g, name="SRG-250M", mtype="transverse_mercator", units="kilometers", planet="WGS84", &
+                   x0=583.0871714699872_dp, dx=0.25_dp, nx=208, y0=4811.102314639904_dp, dy=0.25_dp, ny=120, &
+                   lambda=-75.0_dp, phi=0.0_dp, k0=0.9996_dp, x_e=500000.0_dp, y_n=10000000.0_dp)
+    call roundtrip(g, g2, fldr, "transverse_mercator", fails)
+    ! Without the fesm-utils header, the projection comes from the PROJ string.
+    call execute_command_line("grep -v '^#' "//fldr//"/grid_SRG-250M.txt > "//fldr//"/grid_SRG-nohdr.txt")
+    call grid_cdo_read_desc(g2, "SRG-nohdr", fldr)
+    if (trim(g2%cs%mtype) /= "transverse_mercator" .or. &
+        maxval(abs(g2%lon - g%lon)) > 1.0e-6_dp .or. maxval(abs(g2%lat - g%lat)) > 1.0e-6_dp) then
+        write(*,"(a)") " BAD: transverse_mercator (PROJ string, no header)"
+        fails = fails + 1
+    else
+        write(*,"(a)") " ok: transverse_mercator (PROJ string, no header)"
+    end if
 
     ! --- cartesian ---
     call grid_init(g, name="cart", mtype="cartesian", units="kilometers", planet="WGS84", &
@@ -101,6 +118,9 @@ contains
             call eq_r(g0%cs%proj%lambda, gr%cs%proj%lambda, tol, "proj%lambda", nbad)
             call eq_r(g0%cs%proj%phi,    gr%cs%proj%phi,    tol, "proj%phi",    nbad)
             call eq_r(g0%cs%proj%alpha,  gr%cs%proj%alpha,  tol, "proj%alpha",  nbad)
+            call eq_r(g0%cs%proj%k0,     gr%cs%proj%k0,     tol, "proj%k0",     nbad)
+            call eq_r(g0%cs%proj%x_e,    gr%cs%proj%x_e,    tol, "proj%x_e",    nbad)
+            call eq_r(g0%cs%proj%y_n,    gr%cs%proj%y_n,    tol, "proj%y_n",    nbad)
         end if
 
         ! Derived lon/lat fields (the strongest end-to-end check). Skipped for a

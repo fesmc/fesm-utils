@@ -17,6 +17,14 @@ All notable changes to fesm-utils are documented here.
   silently returned a field of missing values.
 
 ### Added
+- **coords**: transverse Mercator projection (`mtype = "transverse_mercator"`,
+  ellipsoidal, Snyder 1987), e.g. for UTM grids. `lambda` is the central meridian,
+  `phi` the latitude of origin, the new `k0` the scale factor (default 1) and
+  `x_e`/`y_n` the false easting/northing [m]. CF netCDF grids and `nc_write_map`
+  (new optional `k0`) read/write its CF keys, with false easting/northing in the
+  units of the axes. Grid descriptions (`grid_cdo_*`) write it as a PROJ string
+  (`proj_params`; cdo has no CF `transverse_mercator`), which cdo uses for its
+  weights. Within 1 mm / 1e-8 deg of pyproj in a UTM zone (`test_proj`).
 - **varslice**: `varslice_sub_mean(vs)` returns the mean of the current slice
   over its time-like axis (e.g. the sub-annual cycle after `rep=varslice_nsub(vs)`)
   as an `(x,y,z)` field, for any rank: the time-like axis is axis `ndim`, so a
