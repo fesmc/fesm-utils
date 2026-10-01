@@ -13,6 +13,10 @@ All notable changes to fesm-utils are documented here.
   calling `tstep_update`, and exit there once `ts%is_finished`.
 
 ### Added
+- **gaussian_quadrature**: optional `act` mask in `gq2D_to_nodes_aa` and
+  `gq3D_to_nodes_aa` (cells carrying a value; 2D horizontal mask for 3D), as for
+  the `_acx`/`_acy` routines: the corner means use only the active cells, the
+  plain mean if none is active. Without `act`, unchanged.
 - **timestepping**: `tstep_init` is a generic interface. Besides the explicit
   form, `tstep_init(ts, filename, group, dtt [, time_ref, cal])` reads
   `tstep_method`, `tstep_const`, `time_init`, `time_end` and `dtt` from a
