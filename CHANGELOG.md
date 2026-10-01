@@ -11,6 +11,10 @@ All notable changes to fesm-utils are documented here.
   ran its first pass as a zero-length step at `time_init`. Drivers that wrote the
   initial state on that pass should write the state at the top of the loop, before
   calling `tstep_update`, and exit there once `ts%is_finished`.
+- **varslice**: `varslice_update` with a `range_*` method (`range_mean`,
+  `range_sd`, `range_min`, `range_max`, `range_sum`) stops with an error when the
+  requested time range is not within the time axis of the file. Before, it
+  silently returned a field of missing values.
 
 ### Added
 - **varslice**: `varslice_sub_mean(vs)` returns the mean of the current slice
