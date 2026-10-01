@@ -86,6 +86,7 @@ module varslice
     public :: varslice_class
     public :: varslice_update
     public :: varslice_nsub
+    public :: varslice_sub_mean
     public :: varslice_init_nml
     public :: varslice_init_arg
     public :: varslice_init_data
@@ -1347,6 +1348,56 @@ contains
         return
 
     end function varslice_nsub
+
+    function varslice_sub_mean(vs) result(v)
+        ! Mean of the current slice over its time-like axis (e.g. the sub-annual
+        ! cycle after an update with rep=varslice_nsub(vs)), as an (x,y,z) field.
+        ! The time-like axis is axis ndim of the natural-rank storage (var(:,:,:,k)
+        ! for 3D space, var(:,:,k,1) for 2D space, ...), so the caller does not
+        ! need to know the variable's rank: spatial axes the variable lacks are
+        ! singleton, e.g. a 2D field gives (nx,ny,1), the same layout as
+        ! var(:,:,:,1) of a rep=1 slice. Missing values are excluded from the
+        ! mean (mv where none is available). A variable without time is returned
+        ! unchanged.
+
+        implicit none
+
+        type(varslice_class), intent(IN) :: vs
+        real(wp), allocatable :: v(:,:,:)
+
+        ! Local variables
+        integer :: nd, nt, nsp, s
+        integer :: shp(3)
+        real(wp), allocatable :: src(:,:), dst(:)
+
+        if (.not. vs%par%with_time) then
+            v = vs%var(:,:,:,1)
+            return
+        end if
+
+        nd  = vs%par%ndim
+        nt  = size(vs%var,nd)
+        nsp = size(vs%var) / nt
+
+        ! Spatial extents (axes 1..nd-1), singleton for absent axes
+        shp = 1
+        do s = 1, nd-1
+            shp(s) = size(vs%var,s)
+        end do
+
+        ! Axes after nd are singleton, so the storage is (space, time) in memory order
+        src = reshape(vs%var, [nsp,nt])
+
+        allocate(dst(nsp))
+        do s = 1, nsp
+            call calc_vec_value(dst(s),src(s,:),"mean",mv)
+        end do
+
+        v = reshape(dst, shp)
+
+        return
+
+    end function varslice_sub_mean
 
     subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose,subs)
 
