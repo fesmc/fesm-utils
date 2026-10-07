@@ -11,6 +11,12 @@ ifeq ($(openmp), 1)
     FFLAGS += $(FFLAGS_OPENMP)
 endif
 
+# Position-independent code (make pic=1): needed when libfesmutils.a is linked
+# into a shared library on Linux (e.g. yelmo's C API).
+ifeq ($(pic), 1)
+    FFLAGS += -fPIC
+endif
+
 # Extra link flags. -Wl,-zmuldefs is the default for Linux targets; the macbook
 # machine fragment disables it (macOS ld rejects it) by setting LFLAGS_EXTRA =.
 LFLAGS_EXTRA ?= -Wl,-zmuldefs

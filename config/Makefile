@@ -4,6 +4,7 @@
 # Command-line options at make call
 debug  ?= 0
 openmp ?= 0 
+pic    ?= 0
 
 # PATH options
 srcdir = src
@@ -28,8 +29,8 @@ endif
 
 ## SHARED DEPENDENCY WIRING ##
 # Pulled in after the compiler/machine fragment so it can reference FFLAGS,
-# FFLAGS_OPENMP, LIB_NC, and LFLAGS_EXTRA set there. Applies the openmp=
-# build switch and sets LFLAGS.
+# FFLAGS_OPENMP, LIB_NC, and LFLAGS_EXTRA set there. Applies the openmp= /
+# pic= build switches and sets LFLAGS.
 
 include config/common.mk
 
@@ -399,7 +400,8 @@ bench-apply : fesmutils-static
 ## Each target runs the vendored package's own autotools build
 ## (configure/make/make install) into <lib>/<lib>-{serial,omp}. The
 ## machine/compiler configure flags come from config/libs.mk. Pick the variant
-## with openmp=0 (serial, default) or openmp=1:
+## with openmp=0 (serial, default) or openmp=1; pic=1 builds FFTW/LIS
+## position-independent (for linking into a shared library):
 ##   make fftw openmp=0      make lis openmp=1      make shtns openmp=0
 ##   make libs openmp=1      # fftw + lis + shtns, one variant
 ##
@@ -418,13 +420,13 @@ SHTNS_PREFIX = $(CURDIR)/SHTns/shtns-$(LIB_VARIANT)
 
 fftw:
 	@echo "=== fftw ($(LIB_VARIANT)) [machine=$(MACHINE) compiler=$(COMPILER)] ==="
-	cd $(FFTW_SRC) && ./configure --prefix=$(FFTW_PREFIX) --disable-doc $(FFTW_OMP_OPT) \
+	cd $(FFTW_SRC) && ./configure --prefix=$(FFTW_PREFIX) --disable-doc $(FFTW_OMP_OPT) $(CONF_PIC) \
 		$(FFTW_CONF_VARS) && $(MAKE) clean && $(MAKE) && $(MAKE) install
 	@echo "    installed: $(FFTW_PREFIX)"
 
 lis:
 	@echo "=== lis ($(LIB_VARIANT)) [machine=$(MACHINE) compiler=$(COMPILER)] ==="
-	cd $(LIS_SRC) && ./configure --prefix=$(LIS_PREFIX) --enable-f90 --enable-saamg $(LIS_OMP_OPT) \
+	cd $(LIS_SRC) && ./configure --prefix=$(LIS_PREFIX) --enable-f90 --enable-saamg $(LIS_OMP_OPT) $(CONF_PIC) \
 		$(LIS_CONF_VARS) && $(MAKE) clean && $(MAKE) && $(MAKE) install
 	@echo "    installed: $(LIS_PREFIX)"
 
@@ -450,9 +452,9 @@ usage:
 	@echo ""
 	@echo "    * USAGE * "
 	@echo ""
-	@echo " make fesmutils-static : builds libfesmutils.a (openmp=0|1)"
+	@echo " make fesmutils-static : builds libfesmutils.a (openmp=0|1, pic=0|1)"
 	@echo " make test-phys-constants : builds the phys_constants test program"
-	@echo " make fftw|lis|shtns   : builds one external library (openmp=0|1)"
+	@echo " make fftw|lis|shtns   : builds one external library (openmp=0|1; pic=0|1 fftw/lis only)"
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"

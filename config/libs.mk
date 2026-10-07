@@ -26,6 +26,15 @@ ifeq ($(openmp),1)
     SHTNS_OMP_OPT = --enable-openmp
 endif
 
+# ---- Position-independent code (pic=1) ---------------------------------------
+# libtool builds static archives non-PIC by default; --with-pic makes them
+# linkable into a shared library on Linux. FFTW and LIS only: SHTns' configure
+# has no --with-pic.
+CONF_PIC =
+ifeq ($(pic),1)
+    CONF_PIC = --with-pic
+endif
+
 # ---- Defaults: rely on autotools autodetection (generic linux / gfortran) -----
 # Empty => the variable is omitted from ./configure, so autotools uses its own
 # default (finds gcc/gfortran on PATH). Machine blocks below override as needed.
