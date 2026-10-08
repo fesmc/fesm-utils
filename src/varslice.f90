@@ -433,6 +433,11 @@ contains
                     nt_rep   = vs%range_rep
                     nt_major = max(nt_tot / nt_rep, 1)
 
+        ! A range over a variable with a sub-annual axis selects whole years
+        ! (all their sub-annual steps) also when it is collapsed to one field
+        ! (rep=1), e.g. the annual mean of a monthly series over [y0,y1].
+        if (par%with_time_sub .and. index(slice_method,"range") .eq. 1) with_time_sub = .TRUE.
+
                     if (nt_major .ne. int(real(nt_tot)/real(nt_rep))) then
                         call varslice_error("varslice_update", &
                             "number of major time axis points does not match number of total "// &
