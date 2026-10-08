@@ -41,6 +41,7 @@ module nml
     public :: nml_set_verbose
     public :: nml_replace
     public :: nml_validate
+    public :: nml_has_param
 
 contains
 
@@ -88,6 +89,21 @@ contains
     ! nml parameter reading functions
     !
     ! =============================================================
+
+    function nml_has_param(filename,group,name) result(found)
+        ! Is parameter `name` set in `group` of `filename`? Lets a caller
+        ! treat a parameter as optional (nml_read stops on a missing one).
+
+        implicit none
+
+        character(len=*), intent(IN) :: filename, group, name
+        logical :: found
+
+        character(len=1000) :: value
+
+        call nml_find_param(filename,group,name,value,found)
+
+    end function nml_has_param
 
     ! This is the basic nml reading subroutine.
     ! All interfaces use this to read the parameter, then it
