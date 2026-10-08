@@ -280,27 +280,71 @@ contains
     end subroutine map_load_wm
 
     subroutine map_save_wm(map, fldr, filename)
-        ! Write map%wm to its cache file, creating the folder if needed.
+        ! Write map%wm to its cache file, creating the folder if needed. The
+        ! file is written under a per-process name and then renamed into place
+        ! (see cache_tmp_name / cache_commit).
         type(map_class),  intent(in) :: map
         character(len=*), intent(in) :: fldr, filename
+        character(len=512) :: tmp
         call execute_command_line("mkdir -p '"//trim(fldr)//"'")
-        call weight_map_write(map%wm, trim(filename))
+        tmp = cache_tmp_name(filename)
+        call weight_map_write(map%wm, trim(tmp))
+        call cache_commit(tmp, filename)
     end subroutine map_save_wm
+
+    function cache_tmp_name(filename) result(tmp)
+        ! Per-process name to write a map cache file under before it is
+        ! renamed into place. Concurrent runs sharing a map folder (e.g. an
+        ! ensemble submitted on a fresh checkout) may all miss the cache and
+        ! generate the same map; each then writes its own file, and no run
+        ! can read a file another one is still writing.
+        use, intrinsic :: iso_c_binding, only: c_int
+        character(len=*), intent(in) :: filename
+        character(len=512) :: tmp
+        interface
+            function c_getpid() bind(c, name="getpid")
+                import :: c_int
+                integer(c_int) :: c_getpid
+            end function c_getpid
+        end interface
+        write(tmp,"(a,a,i0,a)") trim(filename), ".", c_getpid(), ".tmp"
+    end function cache_tmp_name
+
+    subroutine cache_commit(tmp, filename)
+        ! Move a finished cache file into place with POSIX rename(), which is
+        ! atomic within a filesystem: readers see either no file or the whole
+        ! file. When several runs generate the same map, the last rename wins.
+        use, intrinsic :: iso_c_binding, only: c_int, c_char, c_null_char
+        character(len=*), intent(in) :: tmp, filename
+        interface
+            function c_rename(old, new) bind(c, name="rename")
+                import :: c_int, c_char
+                character(kind=c_char), intent(in) :: old(*), new(*)
+                integer(c_int) :: c_rename
+            end function c_rename
+        end interface
+        if (c_rename(trim(tmp)//c_null_char, trim(filename)//c_null_char) /= 0) then
+            write(*,*) "mapping:: cache_commit: could not rename "//trim(tmp)// &
+                       " to "//trim(filename)
+            error stop 1
+        end if
+    end subroutine cache_commit
 
     subroutine map_init_cdo(map, grid1, grid2, method, fldr, filename, clean)
         ! Generate a grid -> grid SCRIP map via an external cdo call and load it.
         ! This reproduces the climber-x flow: write short grid descriptions for
         ! both grids, write a source-grid NetCDF for cdo input, then
         !   cdo gen<method>,<dst.txt> -setgrid,<src.txt> <src.nc> <filename>
-        ! and load the resulting SCRIP file. cdo writes `filename` directly, so
-        ! the map is its own cache.
+        ! and load the resulting SCRIP file. The SCRIP file is the cache: cdo
+        ! writes it under a per-process name, which is then renamed into place
+        ! (see cache_tmp_name / cache_commit).
         type(map_class),  intent(inout) :: map
         type(grid_class), intent(in)    :: grid1, grid2
         character(len=*), intent(in)    :: method, fldr, filename
         logical, optional, intent(in)   :: clean
 
         type(map_scrip_class) :: mps
-        character(len=512)     :: src_nc, desc1, desc2, cmd
+        character(len=512)     :: src_nc, desc1, desc2, cmd, tmp
         character(len=12)      :: xnm, ynm
         logical                :: do_clean
 
@@ -330,9 +374,11 @@ contains
         ! Build and run the cdo command
         desc1 = trim(fldr)//"/grid_"//trim(grid1%name)//".txt"
         desc2 = trim(fldr)//"/grid_"//trim(grid2%name)//".txt"
+        tmp = cache_tmp_name(filename)
         cmd = "cdo gen"//trim(method)//","//trim(desc2)//" -setgrid,"//trim(desc1)// &
-              " "//trim(src_nc)//" "//trim(filename)
+              " "//trim(src_nc)//" "//trim(tmp)
         call call_system_cdo(cmd)
+        call cache_commit(tmp, filename)
 
         ! Load the generated SCRIP map into the weight store
         call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(fldr), trim(method))
