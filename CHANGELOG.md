@@ -5,6 +5,16 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Changed
+- **varslice**: optional online remapping (`remap`, `grid_src` group keys; target
+  grid passed to `varslice_init_nml`): regular lon-lat files via a cached map,
+  curvilinear files (2D lon/lat, e.g. tripolar oceans) as a point set.
+- **varslice**: `range_*` on a variable with a sub-annual axis selects whole years
+  also with `rep = 1` (before: the range missed year 0 and returned/stopped on
+  missing values). A file longer than the declared time axis is accepted (its
+  leading steps are used, with a note).
+- **mapping**: map caches are written under a per-process name and renamed into
+  place, so concurrent runs sharing `maps/` no longer read half-written files.
+- **nml**: `nml_has_param` (is a parameter set?).
 - **timestepping**: `tstep_update` advances the time keepers on every call,
   including the first one. Before, the first call left `time == time_init`, so a
   driver loop of the form `do while (.not. ts%is_finished); call tstep_update(...)`
