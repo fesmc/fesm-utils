@@ -253,12 +253,16 @@ fesmutils_libs = 	$(objdir)/constants.o \
 ##
 ###############################################
 
-# Static library compilation
-fesmutils-static: $(fesmutils_libs)
-	ar rc $(objdir)/libfesmutils.a $(fesmutils_libs)
-	ranlib $(objdir)/libfesmutils.a
+# Static library compilation. The archive is a file target, so its mtime only
+# changes when an object does (hosts such as yelmo depend on it to rebuild
+# after a type change).
+fesmutils-static: $(objdir)/libfesmutils.a
+
+$(objdir)/libfesmutils.a: $(fesmutils_libs)
+	ar rc $@ $(fesmutils_libs)
+	ranlib $@
 	@echo " "
-	@echo "    $(objdir)/libfesmutils.a is ready."
+	@echo "    $@ is ready."
 	@echo " "
 
 # coords library test programs
