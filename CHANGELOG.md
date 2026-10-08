@@ -5,6 +5,10 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Changed
+- **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)
+  promote only the 3x3 neighbourhood of the cell, not the whole field (O(nx*ny) per
+  call). Results unchanged; Yelmo ANT-8KM with `bmb_gl_method = "pmpt"`: 10-yr loop
+  196 -> 120 s (16 threads).
 - **varslice**: optional online remapping (`remap`, `grid_src` group keys; target
   grid passed to `varslice_init_nml`): regular lon-lat files via a cached map,
   curvilinear files (2D lon/lat, e.g. tripolar oceans) as a point set.
