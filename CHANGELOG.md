@@ -17,6 +17,14 @@ All notable changes to fesm-utils are documented here.
   silently returned a field of missing values.
 
 ### Added
+- **subgrid**: `calc_subgrid_array_quad(vint,v,nxi,i,j,im1,ip1,jm1,jp1)`, the
+  subgrid values of a cell from the bilinear interpolation of `v` between cell
+  centres (per quadrant: centre, face midpoints, corner mean), at the centres of
+  an `nxi` x `nxi` partition of the cell. Unlike `calc_subgrid_array`, which
+  interpolates between the four corner means, the field passes through `v(i,j)`,
+  so a positive centre surrounded by negative neighbours keeps a positive area
+  (e.g. a grounded cell next to deep ocean). Same quadrants as the grounded
+  fractions of Leguy et al. (2021).
 - **coords**: transverse Mercator projection (`mtype = "transverse_mercator"`,
   ellipsoidal, Snyder 1987), e.g. for UTM grids. `lambda` is the central meridian,
   `phi` the latitude of origin, the new `k0` the scale factor (default 1) and

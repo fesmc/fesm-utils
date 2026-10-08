@@ -9,9 +9,11 @@ module subgrid
     public :: calc_subgrid_array            ! generic (sp/dp)
     public :: calc_subgrid_array_mask       ! generic (sp/dp), with mask
     public :: calc_subgrid_array_cell       ! generic (sp/dp)
+    public :: calc_subgrid_array_quad       ! generic (sp/dp)
     public :: calc_subgrid_array_dp         ! double-precision worker
     public :: calc_subgrid_array_mask_dp    ! double-precision worker (mask)
     public :: calc_subgrid_array_cell_dp    ! double-precision worker
+    public :: calc_subgrid_array_quad_dp    ! double-precision worker
 
     ! The subgrid interpolation is always performed in double precision (the _dp
     ! procedures). The _sp procedures are thin wrappers that promote their
@@ -34,6 +36,11 @@ module subgrid
         module procedure calc_subgrid_array_cell_sp
         module procedure calc_subgrid_array_cell_dp
     end interface calc_subgrid_array_cell
+
+    interface calc_subgrid_array_quad
+        module procedure calc_subgrid_array_quad_sp
+        module procedure calc_subgrid_array_quad_dp
+    end interface calc_subgrid_array_quad
 
 contains
 
@@ -110,6 +117,30 @@ contains
         return
 
     end subroutine calc_subgrid_array_cell_sp
+
+    subroutine calc_subgrid_array_quad_sp(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Single-precision wrapper for calc_subgrid_array_quad_dp.
+
+        implicit none
+
+        real(sp), intent(INOUT) :: vint(:,:)
+        real(sp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        real(dp), allocatable :: vint_dble(:,:)
+
+        allocate(vint_dble(nxi,nxi))
+
+        call calc_subgrid_array_quad_dp(vint_dble,real(v,dp),nxi,i,j,im1,ip1,jm1,jp1)
+
+        vint = real(vint_dble,sp)
+
+        return
+
+    end subroutine calc_subgrid_array_quad_sp
 
     ! ===================================================================
     ! Double-precision workers: the actual computation
@@ -315,6 +346,59 @@ contains
         return
 
     end subroutine calc_subgrid_array_cell_dp
+
+    subroutine calc_subgrid_array_quad_dp(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Subgrid values of cell (i,j) from the bilinear interpolation of v
+        ! between cell centres. Each quadrant of the cell is bilinear between
+        ! the cell centre v(i,j), the two face midpoints (mean of v(i,j) and
+        ! the neighbour across the face) and the cell corner (mean of the four
+        ! cells around it), as the grounded-fraction quadrants of Leguy et al.
+        ! (2021). Unlike calc_subgrid_array, which interpolates between the
+        ! corner means only, the field passes through v(i,j) at the centre.
+        ! The nxi*nxi points are the centres of an nxi x nxi partition of the
+        ! cell, so each point stands for the same area (nxi = 1: v(i,j)).
+        ! vint(i1,j1): i1 along x, j1 along y.
+
+        implicit none
+
+        real(dp), intent(INOUT) :: vint(:,:)
+        real(dp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points per side
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        integer  :: i1, j1, ii, jj
+        real(dp) :: x, y, s, t
+        real(dp) :: v_x, v_y, v_xy
+
+        do j1 = 1, nxi
+
+            ! Quadrant in y and distance from the centre (0) to the face (1)
+            y  = (real(j1,dp)-0.5_dp)/real(nxi,dp)
+            jj = merge(jp1,jm1,y .ge. 0.5_dp)
+            t  = abs(2.0_dp*y-1.0_dp)
+
+            do i1 = 1, nxi
+
+                x  = (real(i1,dp)-0.5_dp)/real(nxi,dp)
+                ii = merge(ip1,im1,x .ge. 0.5_dp)
+                s  = abs(2.0_dp*x-1.0_dp)
+
+                ! Face midpoints and corner of the quadrant
+                v_x  = 0.5_dp *(v(i,j)+v(ii,j))
+                v_y  = 0.5_dp *(v(i,j)+v(i,jj))
+                v_xy = 0.25_dp*(v(i,j)+v(ii,j)+v(i,jj)+v(ii,jj))
+
+                vint(i1,j1) = (1.0_dp-s)*(1.0_dp-t)*v(i,j) + s*(1.0_dp-t)*v_x &
+                            + (1.0_dp-s)*t*v_y + s*t*v_xy
+
+            end do
+        end do
+
+        return
+
+    end subroutine calc_subgrid_array_quad_dp
 
     function interp_bilin_pt(z1,z2,z3,z4,xout,yout) result(zout)
         ! Interpolate a point given four neighbors at corners of square (0:1,0:1)
