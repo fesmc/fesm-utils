@@ -17,6 +17,7 @@ program test_regions
 
     type(regions_class) :: reg, reg32, regr, regc
     integer, allocatable :: ids(:,:)
+    logical :: lmask(551,551)
     type(grid_class)    :: grid32
     character(len=1024) :: fldr, path16, path32, basins16, basins32
     integer, allocatable :: codes(:)
@@ -112,6 +113,10 @@ program test_regions
     call check("custom ids",      all(regc%basins(2)%basin .eq. reg%basins(1)%basin), nfail)
     call check("custom names",    all(regc%basins(2)%tab_basin%codes .eq. reg%basins(1)%tab_basin%codes) .and. &
                                   trim(regc%basins(2)%tab_basin%names(1)) .eq. "11", nfail)
+    call check("basin_ids extent", all(regions_basin_ids(regc, "custom", extent=lmask) .eq. reg%basins(1)%basin) &
+                                  .and. all(lmask .eqv. (reg%basins(1)%basin .gt. 0)), nfail)
+    call check("basin_ids group", all(regions_basin_ids(regc, "Zwally2012.group", extent=lmask) .eq. &
+                                  reg%basins(1)%basin_group) .and. all(lmask .eqv. (reg%basins(1)%basin_mask .eq. 1)), nfail)
     call check("custom no group", .not. regc%basins(2)%with_group .and. .not. regc%basins(2)%with_mask, nfail)
     call check("custom select",   all(regions_select(regc, "custom:11,12") .eqv. &
                                       regions_select(regc, "Zwally2012:11,12")), nfail)

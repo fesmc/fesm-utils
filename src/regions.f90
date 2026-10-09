@@ -515,14 +515,16 @@ contains
 
     end function regions_mask
 
-    function regions_basin_ids(reg, spec) result(ids)
+    function regions_basin_ids(reg, spec, extent) result(ids)
         ! Basin ids of a loaded basin set: spec = "<set>" (basin) or
-        ! "<set>.group" (basin_group); 0 = no basin.
+        ! "<set>.group" (basin_group); 0 = no basin. extent: the original
+        ! extent of the basins (basin_mask), or where ids > 0 without one.
 
         implicit none
 
         type(regions_class), intent(IN) :: reg
         character(len=*),    intent(IN) :: spec
+        logical, optional,   intent(OUT) :: extent(:,:)
         integer :: ids(reg%nx,reg%ny)
 
         integer :: q, ks
@@ -542,6 +544,14 @@ contains
             ids = reg%basins(ks)%basin_group
         else
             call regions_error("regions_basin_ids", "spec is <set> or <set>.group.", "spec = "//trim(spec))
+        end if
+
+        if (present(extent)) then
+            if (reg%basins(ks)%with_mask) then
+                extent = (reg%basins(ks)%basin_mask .eq. 1)
+            else
+                extent = (ids .gt. 0)
+            end if
         end if
 
     end function regions_basin_ids
