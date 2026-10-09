@@ -29,6 +29,7 @@ program test_htopo
 
     call write_griddes("maps", "NHT-16KM")
     call write_griddes("maps", "NH-16KM")
+    call write_custom_basins("test_htopo_custom.nc")
 
     ! ========================================================================
     ! Full configuration
@@ -53,6 +54,8 @@ program test_htopo
         regions_select(ht%reg, "region:Svalbard"))), nfail)
     call check("basins",           all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin) &
                                    .and. maxval(htopo_basins(ht)) .gt. 0, nfail)
+    call check("custom basins",    all(ht%reg%basins(2)%basin .eq. 3) .and. &
+                                   trim(ht%reg%basins(2)%varname) .eq. "my_basins", nfail)
     call check("named mask",       count(regions_mask(ht%reg, "grl")) .gt. 0, nfail)
 
     ! Current geometry: starts from the reference; no anomaly keeps it
@@ -99,6 +102,7 @@ program test_htopo
     call check("gaps: valid kept",  .not. any(.not. gap .and. ht_gaps%ref%z_bed .ne. ht_def%ref%z_bed), nfail)
 
     call delete_file("test_htopo_gaps.nc")
+    call delete_file("test_htopo_custom.nc")
     call delete_file("test_htopo_out.nc")
 
     write(*,*)
@@ -128,6 +132,18 @@ contains
         open(newunit=u, file=filename, status="old")
         close(u, status="delete")
     end subroutine delete_file
+
+    subroutine write_custom_basins(filename)
+        ! A custom basin field (id 3 everywhere) on the 16 km NorthTest grid,
+        ! without flag attributes or grid_name
+        character(len=*), intent(in) :: filename
+        integer :: ids(551,551)
+        ids = 3
+        call nc_create(filename)
+        call nc_write_dim(filename, "xc", x=1.0_dp, dx=1.0_dp, nx=551)
+        call nc_write_dim(filename, "yc", x=1.0_dp, dx=1.0_dp, nx=551)
+        call nc_write(filename, "my_basins", ids, dim1="xc", dim2="yc")
+    end subroutine write_custom_basins
 
     subroutine write_gaps_file(filename, ht, gap)
         ! A FesmData-like topography file on the hub grid with all fields

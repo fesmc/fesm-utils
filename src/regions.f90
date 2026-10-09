@@ -21,6 +21,10 @@ module regions
     !   <set>:11,12                 basins of a loaded basin set (names or ids)
     !   <set>.group:1               basin groups of the set
     !   <set>.mask:1                original extent of the basins of the set
+    ! A basin set may also be a custom file (path_basins_<set>, var_basins_<set>
+    ! in the namelist): a 2D integer field of basin ids on the grid of the
+    ! regions file; without flag attributes its names are the ids, and values
+    ! below 1 (or missing) are no basin.
     ! A term prefixed by ~ is negated, & joins terms (AND) and | joins
     ! clauses (OR, binding weaker than &). "all" and "none" select every cell
     ! and no cell. Names are matched ignoring case, with spaces read as
@@ -52,7 +56,8 @@ module regions
     type basin_set_class
         character(len=56)    :: name                ! e.g. "Zwally2012"
         character(len=1024)  :: filename
-        logical              :: with_group
+        character(len=56)    :: varname             ! "basin" for FesmData files
+        logical              :: with_group, with_mask
         integer, allocatable :: basin(:,:)
         integer, allocatable :: basin_group(:,:)
         integer, allocatable :: basin_mask(:,:)
@@ -69,6 +74,8 @@ module regions
         character(len=1024) :: path_regions         ! <GRID>_REGIONS.nc
         character(len=1024) :: path_basins          ! template with {set}
         character(len=56),       allocatable :: basin_sets(:)
+        character(len=1024),     allocatable :: basin_paths(:)  ! per set (template or custom)
+        character(len=56),       allocatable :: basin_vars(:)   ! per set ("basin" or custom)
         character(len=56),       allocatable :: mask_names(:)
         character(len=len_expr), allocatable :: mask_exprs(:)
 
@@ -138,9 +145,12 @@ contains
 
     end subroutine regions_init_nml
 
-    subroutine regions_init_arg(reg, path_regions, path_basins, basin_sets, mask_names, mask_exprs, grid)
+    subroutine regions_init_arg(reg, path_regions, path_basins, basin_sets, mask_names, mask_exprs, grid, &
+                                basin_paths, basin_vars)
         ! Load regions, basin sets and named masks from explicit arguments
-        ! (see regions_init_nml). path_basins is a template with {set}.
+        ! (see regions_init_nml). path_basins is a template with {set};
+        ! basin_paths and basin_vars give the file and variable of each set
+        ! instead (custom sets; "" = from the template, "basin").
 
         implicit none
 
@@ -151,16 +161,26 @@ contains
         character(len=*),    intent(IN), optional :: mask_names(:)
         character(len=*),    intent(IN), optional :: mask_exprs(:)
         type(grid_class),    intent(IN), optional :: grid
+        character(len=*),    intent(IN), optional :: basin_paths(:)
+        character(len=*),    intent(IN), optional :: basin_vars(:)
 
-        integer :: n_sets, n_masks
+        integer :: n_sets, n_masks, k
 
         n_sets = 0
         if (present(basin_sets)) n_sets = size(basin_sets)
         n_masks = 0
         if (present(mask_names)) n_masks = size(mask_names)
 
-        if (n_sets .gt. 0 .and. .not. present(path_basins)) then
-            call regions_error("regions_init_arg", "basin_sets are given, but no path_basins.")
+        if (n_sets .gt. 0 .and. .not. (present(path_basins) .or. present(basin_paths))) then
+            call regions_error("regions_init_arg", "basin_sets are given, but no path_basins or basin_paths.")
+        end if
+        if (present(basin_paths)) then
+            if (size(basin_paths) .ne. n_sets) &
+                call regions_error("regions_init_arg", "basin_sets and basin_paths differ in length.")
+        end if
+        if (present(basin_vars)) then
+            if (size(basin_vars) .ne. n_sets) &
+                call regions_error("regions_init_arg", "basin_sets and basin_vars differ in length.")
         end if
         if (n_masks .gt. 0) then
             if (.not. present(mask_exprs)) then
@@ -175,8 +195,19 @@ contains
         reg%par%path_basins  = ""
         if (present(path_basins)) reg%par%path_basins = trim(path_basins)
 
-        allocate(reg%par%basin_sets(n_sets))
+        allocate(reg%par%basin_sets(n_sets), reg%par%basin_paths(n_sets), reg%par%basin_vars(n_sets))
+        reg%par%basin_paths = ""
+        reg%par%basin_vars  = "basin"
         if (n_sets .gt. 0) reg%par%basin_sets = basin_sets
+        if (present(basin_paths)) reg%par%basin_paths = basin_paths
+        if (present(basin_vars))  reg%par%basin_vars  = basin_vars
+        do k = 1, n_sets
+            if (len_trim(reg%par%basin_paths(k)) .eq. 0) then
+                reg%par%basin_paths(k) = reg%par%path_basins
+                call nml_replace(reg%par%basin_paths(k), "{set}", trim(reg%par%basin_sets(k)))
+            end if
+            if (len_trim(reg%par%basin_vars(k)) .eq. 0) reg%par%basin_vars(k) = "basin"
+        end do
 
         allocate(reg%par%mask_names(n_masks), reg%par%mask_exprs(n_masks))
         if (n_masks .gt. 0) then
@@ -256,7 +287,8 @@ contains
         if (allocated(reg%basins)) deallocate(reg%basins)
         allocate(reg%basins(size(reg%par%basin_sets)))
         do k = 1, size(reg%basins)
-            call basin_set_load(reg, reg%basins(k), reg%par%basin_sets(k))
+            call basin_set_load(reg, reg%basins(k), reg%par%basin_sets(k), &
+                                reg%par%basin_paths(k), reg%par%basin_vars(k))
         end do
 
         ! Named masks
@@ -273,35 +305,66 @@ contains
 
     end subroutine regions_init_data
 
-    subroutine basin_set_load(reg, bs, name)
+    subroutine basin_set_load(reg, bs, name, filename, varname)
+        ! A basin set: a FesmData basins file (varname = "basin", with
+        ! basin_group and basin_mask if present) or a custom field of basin ids.
 
         implicit none
 
         type(regions_class),   intent(INOUT) :: reg
         type(basin_set_class), intent(INOUT) :: bs
-        character(len=*),      intent(IN)    :: name
+        character(len=*),      intent(IN)    :: name, filename, varname
 
-        character(len=256) :: grid_name
+        character(len=256)   :: grid_name
+        character(len=64), allocatable :: dim_names(:)
+        integer, allocatable :: dims(:)
+        logical :: fesm
 
         bs%name     = trim(name)
-        bs%filename = reg%par%path_basins
-        call nml_replace(bs%filename, "{set}", trim(name))
+        bs%filename = trim(filename)
+        bs%varname  = trim(varname)
+        fesm = (trim(varname) .eq. "basin")
 
-        ! All files must be on the same grid (one map)
-        grid_name = fesmdata_grid_name(bs%filename)
-        if (trim(grid_name) .ne. trim(reg%par%grid_src)) then
-            call regions_error("basin_set_load", &
-                "the basins file is on another grid than the regions file.", &
-                "file      = "//trim(bs%filename)//new_line("a")// &
-                "grid_name = "//trim(grid_name)//new_line("a")// &
-                "regions   = "//trim(reg%par%grid_src))
+        ! All files must be on the grid of the regions file (one map): by the
+        ! name of the grid if the file has one, else by the size of the field
+        if (nc_exists_attr(bs%filename, "grid_name")) then
+            grid_name = fesmdata_grid_name(bs%filename)
+            if (trim(grid_name) .ne. trim(reg%par%grid_src)) then
+                call regions_error("basin_set_load", &
+                    "the basins file is on another grid than the regions file.", &
+                    "file      = "//trim(bs%filename)//new_line("a")// &
+                    "grid_name = "//trim(grid_name)//new_line("a")// &
+                    "regions   = "//trim(reg%par%grid_src))
+            end if
+        else
+            call nc_dims(bs%filename, bs%varname, dim_names, dims)
+            if (size(dims) .lt. 2) then
+                call regions_error("basin_set_load", "the basins are not a 2D field.", &
+                    "file = "//trim(bs%filename)//new_line("a")//"variable = "//trim(bs%varname))
+            end if
+            if (dims(1) .ne. nc_size(reg%par%path_regions, "xc") .or. &
+                dims(2) .ne. nc_size(reg%par%path_regions, "yc")) then
+                call regions_error("basin_set_load", &
+                    "the basins file (without grid_name) differs in size from the regions file.", &
+                    "file = "//trim(bs%filename)//new_line("a")//"variable = "//trim(bs%varname))
+            end if
         end if
 
-        call fesmdata_read_field(bs%filename, "basin", bs%basin, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        call fesmdata_read_field(bs%filename, "basin_mask", bs%basin_mask, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        call flag_table_read(bs%tab_basin, bs%filename, "basin")
+        call fesmdata_read_field(bs%filename, bs%varname, bs%basin, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        where (bs%basin .lt. 1) bs%basin = 0
 
-        bs%with_group = nc_exists_var(bs%filename, "basin_group")
+        if (nc_exists_attr(bs%filename, bs%varname, "flag_values")) then
+            call flag_table_read(bs%tab_basin, bs%filename, bs%varname)
+        else
+            call flag_table_from_values(bs%tab_basin, bs%basin)
+        end if
+
+        bs%with_mask = fesm .and. nc_exists_var(bs%filename, "basin_mask")
+        if (bs%with_mask) then
+            call fesmdata_read_field(bs%filename, "basin_mask", bs%basin_mask, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        end if
+
+        bs%with_group = fesm .and. nc_exists_var(bs%filename, "basin_group")
         if (bs%with_group) then
             call fesmdata_read_field(bs%filename, "basin_group", bs%basin_group, reg%nx, reg%ny, reg%remap, reg%map, 0)
             call flag_table_read(bs%tab_group, bs%filename, "basin_group")
@@ -347,16 +410,37 @@ contains
         call nml_read(filename, group, "path_regions", par%path_regions)
         call fesmdata_parse_path(par%path_regions, domain, grid_name, subs)
 
+        ! Basin sets: from the template path_basins, or custom (path_basins_<set>,
+        ! var_basins_<set>)
         par%path_basins = ""
         sets = ""
         if (nml_has_param(filename, group, "basin_sets")) then
             call nml_read(filename, group, "basin_sets",  sets)
+        end if
+        if (nml_has_param(filename, group, "path_basins")) then
             call nml_read(filename, group, "path_basins", par%path_basins)
             call fesmdata_parse_path(par%path_basins, domain, grid_name, subs)
         end if
         n = count(len_trim(sets) .gt. 0)
-        allocate(par%basin_sets(n))
+        allocate(par%basin_sets(n), par%basin_paths(n), par%basin_vars(n))
         par%basin_sets = pack(sets, len_trim(sets) .gt. 0)
+        do k = 1, n
+            if (nml_has_param(filename, group, "path_basins_"//trim(par%basin_sets(k)))) then
+                call nml_read(filename, group, "path_basins_"//trim(par%basin_sets(k)), par%basin_paths(k))
+                call fesmdata_parse_path(par%basin_paths(k), domain, grid_name, subs)
+            else if (len_trim(par%path_basins) .gt. 0) then
+                par%basin_paths(k) = par%path_basins
+                call nml_replace(par%basin_paths(k), "{set}", trim(par%basin_sets(k)))
+            else
+                call regions_error("regions_par_load", "a basin set without a file.", &
+                    "set = "//trim(par%basin_sets(k))//new_line("a")// &
+                    "give path_basins (template with {set}) or path_basins_"//trim(par%basin_sets(k)))
+            end if
+            par%basin_vars(k) = "basin"
+            if (nml_has_param(filename, group, "var_basins_"//trim(par%basin_sets(k)))) then
+                call nml_read(filename, group, "var_basins_"//trim(par%basin_sets(k)), par%basin_vars(k))
+            end if
+        end do
 
         names = ""
         if (nml_has_param(filename, group, "masks")) then
@@ -372,10 +456,10 @@ contains
         if (print_summary) then
             write(*,*) "Loading: ", trim(filename), ":: ", trim(group)
             write(*,*) "path_regions  = ", trim(par%path_regions)
-            if (size(par%basin_sets) .gt. 0) then
-                write(*,*) "path_basins   = ", trim(par%path_basins)
-                write(*,*) "basin_sets    = ", (trim(par%basin_sets(k))//" ", k=1,size(par%basin_sets))
-            end if
+            do k = 1, size(par%basin_sets)
+                write(*,*) "basins "//trim(par%basin_sets(k))//" = ", trim(par%basin_paths(k)), &
+                           " :: ", trim(par%basin_vars(k))
+            end do
             do k = 1, size(par%mask_names)
                 write(*,*) "mask_"//trim(par%mask_names(k))//" = ", trim(par%mask_exprs(k))
             end do
@@ -556,6 +640,10 @@ contains
                             mask = mask .or. (bs%basin_group .eq. codes(k))
                         end do
                     else if (trim(field(q+1:)) .eq. "mask") then
+                        if (.not. bs%with_mask) then
+                            call regions_error("regions_select", "the basin set has no basin_mask.", &
+                                "set        = "//trim(bs%name)//new_line("a")//"expression = "//trim(expr))
+                        end if
                         tab_mask%codes = [0, 1]
                         tab_mask%names = [character(len=len_name) :: "0", "1"]
                         codes = resolve_values(tab_mask, values, .false., field, expr)

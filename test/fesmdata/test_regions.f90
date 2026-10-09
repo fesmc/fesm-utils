@@ -10,12 +10,13 @@ program test_regions
     use precision
     use coordinates, only : grid_class
     use grid_cdo,    only : grid_cdo_read_desc
-    use ncio,        only : nc_read
+    use ncio,        only : nc_read, nc_create, nc_write_dim, nc_write
     use regions
 
     implicit none
 
-    type(regions_class) :: reg, reg32, regr
+    type(regions_class) :: reg, reg32, regr, regc
+    integer, allocatable :: ids(:,:)
     type(grid_class)    :: grid32
     character(len=1024) :: fldr, path16, path32, basins16, basins32
     integer, allocatable :: codes(:)
@@ -96,6 +97,28 @@ program test_regions
     call check("named non-empty", count(regions_mask(reg, "grl_land")) .gt. 0, nfail)
 
     ! ========================================================================
+    ! Custom basin set: a field of ids without flag attributes or grid_name
+    ! (the Zwally2012 basins, with -1 for no basin)
+    ! ========================================================================
+    ids = merge(reg%basins(1)%basin, -1, reg%basins(1)%basin .gt. 0)
+    call nc_create("test_regions_custom.nc")
+    call nc_write_dim("test_regions_custom.nc", "xc", x=1.0_dp, dx=1.0_dp, nx=551)
+    call nc_write_dim("test_regions_custom.nc", "yc", x=1.0_dp, dx=1.0_dp, nx=551)
+    call nc_write("test_regions_custom.nc", "my_basins", ids, dim1="xc", dim2="yc")
+
+    call regions_init_arg(regc, path16, basins16, ["Zwally2012", "custom    "], &
+                          basin_paths=["                      ", "test_regions_custom.nc"], &
+                          basin_vars=["         ", "my_basins"])
+    call check("custom ids",      all(regc%basins(2)%basin .eq. reg%basins(1)%basin), nfail)
+    call check("custom names",    all(regc%basins(2)%tab_basin%codes .eq. reg%basins(1)%tab_basin%codes) .and. &
+                                  trim(regc%basins(2)%tab_basin%names(1)) .eq. "11", nfail)
+    call check("custom no group", .not. regc%basins(2)%with_group .and. .not. regc%basins(2)%with_mask, nfail)
+    call check("custom select",   all(regions_select(regc, "custom:11,12") .eqv. &
+                                      regions_select(regc, "Zwally2012:11,12")), nfail)
+    call regions_end(regc)
+    call delete_file("test_regions_custom.nc")
+
+    ! ========================================================================
     ! Remapping NHT-16KM -> NHT-32KM, against the 32 km files (made by a
     ! dominant-class remap, so nearest neighbour agrees on most cells)
     ! ========================================================================
@@ -150,6 +173,13 @@ contains
             nfail = nfail + 1
         end if
     end subroutine check
+
+    subroutine delete_file(filename)
+        character(len=*), intent(in) :: filename
+        integer :: u
+        open(newunit=u, file=filename, status="old")
+        close(u, status="delete")
+    end subroutine delete_file
 
     subroutine write_griddes(fldr, name, n, dx)
         ! cdo grid description of a NorthTest grid, as FesmData writes it

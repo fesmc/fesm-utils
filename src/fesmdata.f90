@@ -34,7 +34,7 @@ module fesmdata
 
     private
     public :: len_name
-    public :: flag_table_class, flag_table_read, flag_table_merge
+    public :: flag_table_class, flag_table_read, flag_table_merge, flag_table_from_values
     public :: flag_codes, flag_name, flag_names_joined
     public :: fesmdata_grid_name, fesmdata_grid_read
     public :: fesmdata_read_field
@@ -94,6 +94,38 @@ contains
         return
 
     end subroutine flag_table_read
+
+    subroutine flag_table_from_values(tab, field)
+        ! A table of the positive values of a field, named by their values
+        ! (for fields without flag attributes).
+
+        implicit none
+
+        type(flag_table_class), intent(OUT) :: tab
+        integer,                intent(IN)  :: field(:,:)
+
+        integer :: c
+
+        allocate(tab%codes(0), tab%names(0))
+        if (.not. any(field .gt. 0)) return
+
+        c = minval(field, mask=field .gt. 0)
+        do
+            tab%codes = [tab%codes, c]
+            tab%names = [tab%names, int_to_name(c)]
+            if (.not. any(field .gt. c)) exit
+            c = minval(field, mask=field .gt. c)
+        end do
+
+        return
+
+    end subroutine flag_table_from_values
+
+    pure function int_to_name(c) result(name)
+        integer, intent(IN) :: c
+        character(len=len_name) :: name
+        write(name, "(i0)") c
+    end function int_to_name
 
     subroutine flag_table_merge(tab, tab_add)
         ! Add the entries of tab_add with codes not yet in tab, keeping tab
@@ -293,13 +325,14 @@ contains
         type(map_class),      intent(IN)  :: map
         integer,              intent(IN)  :: none
 
-        integer, allocatable :: src(:,:)
+        integer, allocatable :: src(:,:), dims(:)
         logical, allocatable :: filled(:,:)
 
         allocate(var(nx,ny))
 
         if (remap) then
-            allocate(src(nc_size(fname,"xc"),nc_size(fname,"yc")))
+            call nc_dims(fname, varname, dims=dims)
+            allocate(src(dims(1),dims(2)))
             allocate(filled(nx,ny))
             call nc_read(fname, varname, src)
             call map_field(map, varname, src, var, mask2=filled, reset=.true.)
@@ -325,11 +358,13 @@ contains
         type(map_class),       intent(IN)  :: map
 
         real(wp), allocatable :: src(:,:)
+        integer,  allocatable :: dims(:)
 
         allocate(var(nx,ny))
 
         if (remap) then
-            allocate(src(nc_size(fname,"xc"),nc_size(fname,"yc")))
+            call nc_dims(fname, varname, dims=dims)
+            allocate(src(dims(1),dims(2)))
             call nc_read(fname, varname, src, missing_value=mv)
             call map_field(map, varname, src, var, missing_value=mv, reset=.true.)
         else
