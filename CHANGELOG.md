@@ -4,6 +4,14 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Added
+- **regions**: FesmData v2 regions, zones and basins (`<GRID>_REGIONS.nc`,
+  `<GRID>_BASINS-<set>.nc`) in a `regions_class` (`regions_init_nml`,
+  `regions_init_arg`), with names from `flag_values`/`flag_meanings`, masks from
+  selection expressions (`regions_select(reg, "region:Greenland & zone:land")`,
+  named masks in the namelist, `regions_mask`), region-code arithmetic as in
+  FesmUtils.jl, and optional nearest-neighbour remapping onto a target grid.
+
 ### Changed
 - **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)
   promote only the 3x3 neighbourhood of the cell, not the whole field (O(nx*ny) per

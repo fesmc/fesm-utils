@@ -198,6 +198,10 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/mapping.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
+					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
 					$(objdir)/interp1D.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
@@ -244,6 +248,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o \
+					$(objdir)/regions.o \
 					$(objdir)/series.o \
 					$(objdir)/tsgen.o
 
@@ -379,6 +384,14 @@ test-multitopo : fesmutils-static
 		@echo "    multitopo test program ready: $(bindir)/test_multitopo.x"
 		@echo " "
 
+# regions (FesmData regions, zones and basins) test program
+test-regions : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_regions.x $(testdir)/regions/test_regions.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    regions test program ready: $(bindir)/test_regions.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
@@ -462,6 +475,7 @@ usage:
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
+	@echo " make test-regions     : compiles the regions test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

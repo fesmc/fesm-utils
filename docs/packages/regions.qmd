@@ -1,0 +1,129 @@
+---
+title: "regions"
+subtitle: "FesmData regions, zones and basins, and masks derived from them"
+---
+
+## Overview
+
+`regions` loads the regions, zones and basins that
+[FesmData](https://github.com/fesmc/FesmData) (Regions v2) provides for every
+domain grid, and derives logical masks from them with short selection
+expressions. Each grid folder `$ICE_DATA/v2/<Domain>/<GRID>/` holds:
+
+| File | Variables |
+|---|---|
+| `<GRID>_REGIONS.nc` | `region_1`, `region_2`, `region_3`, `zone`, `dist_shelfbreak` |
+| `<GRID>_BASINS-<set>.nc` | `basin`, `basin_group` (optional), `basin_mask` |
+
+The names of the codes are read from the CF attributes `flag_values` and
+`flag_meanings` of each variable, which list only the codes present on that
+grid.
+
+**Region codes** have two decimal digits per level below the first: the
+path `1.3.1` (Canadian Arctic Archipelago) is the code `10301`, `1.3`
+(Greenland) is `103`. `region_n` holds the code of the deepest region at or
+above level `n`, so `region_3` places every cell at all levels, and
+`in_region(region_3, 103)` selects Greenland with all its subregions. Codes
+of ocean regions start at 51.
+
+**Zones**: 0 open ocean, 1 shelf-break buffer, 2 continental shelf, 3 land.
+
+**Remapping**: given a target grid whose name differs from the grid of the
+files (their global attribute `grid_name`), all fields are remapped onto it
+by nearest neighbour. The grid of the files is read from its cdo
+description `grid_<GRID>.txt` next to the files (as FesmData writes it), else
+from `maps/`; the map is cached in `maps/`. Target cells without a source
+value get code 0 (regions, basins) and `zone_undefined = -1` (zone).
+
+FesmData v1 regions files (one variable `mask`) are rejected.
+
+## Selection expressions
+
+| Term | Selects |
+|---|---|
+| `region:Greenland,1.5,10203` | regions by name, path or code, at any level, with their subregions |
+| `zone:land,continental_shelf` | zones by name or code |
+| `<set>:11,12` | basins of a loaded basin set, by name or id |
+| `<set>.group:1` | basin groups of the set |
+| `<set>.mask:1` | the original extent of the basins of the set |
+| `all`, `none` | every cell, no cell |
+
+A comma within a term is an OR. A term prefixed by `~` is negated, `&` joins
+terms (AND) and `|` joins clauses (OR, binding weaker than `&`); there are no
+parentheses. Names are matched ignoring case, with spaces read as
+underscores (`region:North America`). A name may have several codes
+(`Africa` lies in both hemispheres); all are selected. A name not on the
+grid is an error that lists the available names.
+
+```
+region:Greenland & ~zone:open_ocean | Zwally2012:11
+```
+
+`!` cannot be used for negation, since the namelist reader takes it as the
+start of a comment.
+
+## Derived types
+
+### `regions_class`
+
+| Component | Type | Meaning |
+|---|---|---|
+| `par` | `regions_param_class` | Paths, basin sets, named masks; `grid_src`, `grid_tgt` |
+| `nx`, `ny` | `integer` | Size of the fields (the target grid) |
+| `region_1`, `region_2`, `region_3` | `integer(:,:)` | Region codes per level |
+| `zone` | `integer(:,:)` | Zone |
+| `dist_shelfbreak` | `real(wp)(:,:)` | Distance to the shelf break (km, positive in the open ocean) |
+| `tab_region`, `tab_zone` | `flag_table_class` | Codes and names (`codes(:)`, `names(:)`); `tab_region` joins all levels |
+| `basins(:)` | `basin_set_class` | Per set: `name`, `basin`, `basin_group`, `basin_mask`, `with_group`, `tab_basin`, `tab_group` |
+| `masks(:)` | `region_mask_class` | Named masks: `name`, `expr`, `mask(:,:)` |
+| `remap`, `map` | `logical`, `map_class` | Online remapping from the grid of the files |
+
+## Public API
+
+| Procedure | Purpose |
+|---|---|
+| `regions_init_nml(reg, filename, group, domain, grid_name, subs, grid, verbose)` | Load from a namelist group |
+| `regions_init_arg(reg, path_regions, path_basins, basin_sets, mask_names, mask_exprs, grid)` | Load from arguments |
+| `regions_select(reg, expr)` | `logical(nx,ny)` of an expression |
+| `regions_mask(reg, name)` | `logical(nx,ny)` of a named mask |
+| `regions_end(reg)` | Deallocate |
+| `flag_codes(tab, name)`, `flag_name(tab, code)` | Look-up of names and codes |
+| `region_code(path)`, `region_path(code)` | `"1.3.1"` ↔ `10301` |
+| `region_level(code)`, `region_ancestor(code, level)`, `in_region(codes, code)` | Code arithmetic (elemental), as in FesmUtils.jl |
+
+## Namelist configuration
+
+```
+&regions
+    path_regions   = "ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+    path_basins    = "ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+    basin_sets     = "Zwally2012" "Mouginot2019"     ! optional
+    masks          = "grl_land" "grl_shelf"         ! optional
+    mask_grl_land  = "region:Greenland & zone:land"
+    mask_grl_shelf = "region:Greenland & zone:continental_shelf"
+/
+```
+
+`{grid_name}` is the grid of the files; pass the model grid as `grid` to
+remap onto it. Extra `{key}` placeholders are filled from `subs`.
+
+## Usage example
+
+```fortran
+use regions
+
+type(regions_class) :: reg
+logical, allocatable :: mask(:,:)
+
+call regions_init_nml(reg, "par/test.nml", "regions", domain="Greenland", &
+                      grid_name="GRL-16KM", grid=grid_model)
+
+mask = regions_mask(reg, "grl_shelf")
+mask = regions_select(reg, "Zwally2012.group:1,2 & zone:land")
+```
+
+## See also
+
+- [coords](coords.qmd) — grids and the maps used for remapping
+- [ncio](ncio.qmd) — the underlying netCDF layer
+- FesmData `Regions/README.md` — how the regions, zones and basins are made
