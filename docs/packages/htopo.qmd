@@ -10,8 +10,8 @@ yelmox). Its grid is the finest in the setup, and a coupler remaps *from*
 it when a coarser module needs the topography or the masks. It holds:
 
 - `ref` ([topodata](topodata.qmd)): the reference `z_bed`, `H_ice`, `z_srf`
-  and `z_bed_sd` of a FesmData topography product (`z_bed_sd` is 0 if not
-  loaded);
+  and `z_bed_sd` of a FesmData topography product, or another file via
+  `names` (`z_bed_sd` is 0 if not loaded);
 - `reg` ([regions](regions.qmd)): regions, zones, basins and the named
   masks of the regions namelist group;
 - `z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl`: the current geometry,

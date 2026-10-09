@@ -5,6 +5,7 @@ program test_topodata
     !   - conservative remapping NH-16KM -> NHT-32KM (fractions sum to one,
     !     the area-weighted mean bed elevation is kept within the interior of
     !     the 32 km grid; its outer ring reaches 8 km beyond the 16 km grid)
+    !   - another file (no grid_name, other variable names) via names
     ! The data folder is the first command-line argument, by default
     ! ../ice_data/v2/NorthTest (fesm-utils next to ice_data).
 
@@ -12,15 +13,15 @@ program test_topodata
     use constants,   only : mv
     use coordinates, only : grid_class
     use grid_cdo,    only : grid_cdo_read_desc
-    use ncio,        only : nc_read
+    use ncio,        only : nc_read, nc_create, nc_write_dim, nc_write
     use fesmdata,    only : flag_name
     use topodata
 
     implicit none
 
-    type(topodata_class) :: td, tdr
+    type(topodata_class) :: td, tdr, tdo
     type(grid_class)     :: grid16, grid32
-    character(len=1024)  :: fldr, path
+    character(len=1024)  :: fldr, path, path_other
     real(wp), allocatable :: z_bed(:,:), fsum(:,:)
     real(dp), allocatable :: w16(:,:), w32(:,:)
     logical,  allocatable :: valid(:,:)
@@ -76,6 +77,26 @@ program test_topodata
     ! 3..549 fully, 2 and 550 half
     w16 = edge_weights(551)*grid16%area
     mean16 = sum(td%z_bed*w16, mask=valid) / sum(w16, mask=valid)
+
+    ! ========================================================================
+    ! Another file: no grid_name, variables bed and thickness
+    ! ========================================================================
+    path_other = "topo_other.nc"
+    call nc_create(path_other)
+    call nc_write_dim(path_other, "x", x=1.0_dp, nx=551, dx=1.0_dp)
+    call nc_write_dim(path_other, "y", x=1.0_dp, nx=551, dx=1.0_dp)
+    call nc_write(path_other, "bed",       td%z_bed, dim1="x", dim2="y", missing_value=mv)
+    call nc_write(path_other, "thickness", td%H_ice, dim1="x", dim2="y", missing_value=mv)
+
+    call topodata_init_arg(tdo, path_other, vars=["z_bed", "H_ice"], &
+                           names=["bed      ", "thickness"], grid=grid16)
+
+    call check("other: grid_src", len_trim(tdo%par%grid_src) .eq. 0, nfail)
+    call check("other: no remap", .not. tdo%remap .and. tdo%nx .eq. 551, nfail)
+    call check("other: fields",   all(tdo%z_bed .eq. td%z_bed) .and. &
+                                  all(tdo%H_ice .eq. td%H_ice), nfail)
+
+    call topodata_end(tdo)
 
     ! ========================================================================
     ! Conservative remapping NH-16KM -> NHT-32KM

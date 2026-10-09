@@ -16,7 +16,8 @@ All notable changes to fesm-utils are documented here.
   `topodata_class` (`topodata_init_nml`, `topodata_init_arg`): only the listed
   variables are loaded (default `z_bed z_srf H_ice z_bed_sd`); optional remapping
   onto a target grid (real fields `con` by default, `mask`/`src_id` nearest
-  neighbour).
+  neighbour). Other files (e.g. ISMIP7) via `names` (variables of the file);
+  a file without `grid_name` must be on the target grid.
 - **htopo**: the hi-res geometry hub of a domain, moved from yelmox and built on
   `topodata` and `regions`: `htopo_init(htopo, filename, group, group_topo,
   group_regions, domain, grid_name, cnst)` (one set of groups per domain),

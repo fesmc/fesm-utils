@@ -13,6 +13,10 @@ module topodata
     ! real fields are remapped onto it with par%remap (default "con",
     ! conservative), mask and src_id by nearest neighbour. Missing values are
     ! mv; mask and src_id of target cells without a source value are -1.
+    !
+    ! Other files (e.g. ISMIP7) may be read too: par%names gives the variable
+    ! of the file for each of par%vars. A file without the global attribute
+    ! grid_name must be on the target grid (not remapped).
 
     use, intrinsic :: iso_fortran_env, only : error_unit
 
@@ -41,10 +45,11 @@ module topodata
     type topodata_param_class
         character(len=1024) :: path                 ! <GRID>_TOPO-<product>.nc
         character(len=56), allocatable :: vars(:)   ! variables to load
+        character(len=56), allocatable :: names(:)  ! their names in the file
         character(len=32)  :: remap                 ! method for the real fields
 
         ! Internal parameters
-        character(len=256) :: grid_src              ! grid of the file
+        character(len=256) :: grid_src              ! grid of the file ("": none)
         character(len=256) :: grid_tgt              ! grid of the fields
         character(len=256) :: product               ! global attributes of the file
         character(len=512) :: sources
@@ -76,6 +81,7 @@ contains
         ! Load the topography as given by a namelist group:
         !   path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
         !   vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"   (optional; this default)
+        !   names = "bed" "surface" "thickness" ""       (optional; "" = as vars)
         !   remap = "con"                                (optional; this default)
         ! {grid_name} is the grid of the file. grid: the target grid, onto which
         ! the fields are remapped if it differs from the grid of the file.
@@ -99,7 +105,7 @@ contains
 
     end subroutine topodata_init_nml
 
-    subroutine topodata_init_arg(td, path, vars, remap, grid)
+    subroutine topodata_init_arg(td, path, vars, names, remap, grid)
         ! Load the topography from explicit arguments (see topodata_init_nml).
 
         implicit none
@@ -107,6 +113,7 @@ contains
         type(topodata_class), intent(INOUT) :: td
         character(len=*),     intent(IN)    :: path
         character(len=*),     intent(IN), optional :: vars(:)
+        character(len=*),     intent(IN), optional :: names(:)
         character(len=*),     intent(IN), optional :: remap
         type(grid_class),     intent(IN), optional :: grid
 
@@ -119,6 +126,16 @@ contains
             allocate(td%par%vars(size(vars_default)))
             td%par%vars = vars_default
         end if
+
+        allocate(td%par%names(size(td%par%vars)))
+        td%par%names = ""
+        if (present(names)) then
+            if (size(names) .ne. size(td%par%vars)) then
+                call topodata_error("topodata_init_arg", "vars and names differ in length.")
+            end if
+            td%par%names = names
+        end if
+        where (len_trim(td%par%names) .eq. 0) td%par%names = td%par%vars
 
         td%par%remap = "con"
         if (present(remap)) td%par%remap = trim(remap)
@@ -141,6 +158,7 @@ contains
         type(grid_class) :: grid_src
         logical :: with_int
         integer :: k
+        integer, allocatable :: dims(:)
 
         fname = td%par%path
 
@@ -150,13 +168,14 @@ contains
                     "variable  = "//trim(td%par%vars(k))//new_line("a")// &
                     "variables = z_bed z_srf H_ice z_bed_sd f_ocn f_land f_grnd f_flt mask src_id")
             end if
-            if (.not. nc_exists_var(fname, td%par%vars(k))) then
+            if (.not. nc_exists_var(fname, td%par%names(k))) then
                 call topodata_error("topodata_init_data", "variable not in the file.", &
-                    "file     = "//trim(fname)//new_line("a")//"variable = "//trim(td%par%vars(k)))
+                    "file     = "//trim(fname)//new_line("a")//"variable = "//trim(td%par%names(k)))
             end if
         end do
 
-        td%par%grid_src = fesmdata_grid_name(fname)
+        td%par%grid_src = ""
+        if (nc_exists_attr(fname, "grid_name")) td%par%grid_src = fesmdata_grid_name(fname)
         td%par%product  = ""
         td%par%sources  = ""
         if (nc_exists_attr(fname, "product")) call nc_read_attr(fname, "product", td%par%product)
@@ -167,7 +186,8 @@ contains
         td%remap = .false.
         if (present(grid)) then
             td%par%grid_tgt = grid%name
-            if (trim(grid%name) .ne. trim(td%par%grid_src)) then
+            if (len_trim(td%par%grid_src) .gt. 0 .and. &
+                trim(grid%name) .ne. trim(td%par%grid_src)) then
                 with_int = any(td%par%vars .eq. "mask") .or. any(td%par%vars .eq. "src_id")
                 call fesmdata_grid_read(grid_src, fname)
                 call map_init(td%map, grid_src, grid, method=trim(td%par%remap), fldr="maps")
@@ -182,42 +202,51 @@ contains
             td%nx = grid%G%nx
             td%ny = grid%G%ny
         else
-            td%nx = nc_size(fname, "xc")
-            td%ny = nc_size(fname, "yc")
+            call nc_dims(fname, td%par%names(1), dims=dims)
+            td%nx = dims(1)
+            td%ny = dims(2)
             if (present(grid)) then
                 if (grid%G%nx .ne. td%nx .or. grid%G%ny .ne. td%ny) then
-                    call topodata_error("topodata_init_data", &
-                        "the target grid has the name of the grid of the file, but another size.", &
-                        "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
+                    if (len_trim(td%par%grid_src) .gt. 0) then
+                        call topodata_error("topodata_init_data", &
+                            "the target grid has the name of the grid of the file, but another size.", &
+                            "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
+                    else
+                        call topodata_error("topodata_init_data", &
+                            "the file (without grid_name) differs in size from the target grid.", &
+                            "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
+                    end if
                 end if
             end if
         end if
 
         do k = 1, size(td%par%vars)
-            select case(trim(td%par%vars(k)))
-                case("z_bed")
-                    call fesmdata_read_field(fname, "z_bed",    td%z_bed,    td%nx, td%ny, td%remap, td%map)
-                case("z_srf")
-                    call fesmdata_read_field(fname, "z_srf",    td%z_srf,    td%nx, td%ny, td%remap, td%map)
-                case("H_ice")
-                    call fesmdata_read_field(fname, "H_ice",    td%H_ice,    td%nx, td%ny, td%remap, td%map)
-                case("z_bed_sd")
-                    call fesmdata_read_field(fname, "z_bed_sd", td%z_bed_sd, td%nx, td%ny, td%remap, td%map)
-                case("f_ocn")
-                    call fesmdata_read_field(fname, "f_ocn",    td%f_ocn,    td%nx, td%ny, td%remap, td%map)
-                case("f_land")
-                    call fesmdata_read_field(fname, "f_land",   td%f_land,   td%nx, td%ny, td%remap, td%map)
-                case("f_grnd")
-                    call fesmdata_read_field(fname, "f_grnd",   td%f_grnd,   td%nx, td%ny, td%remap, td%map)
-                case("f_flt")
-                    call fesmdata_read_field(fname, "f_flt",    td%f_flt,    td%nx, td%ny, td%remap, td%map)
-                case("mask")
-                    call read_field_nn(td, fname, "mask", td%mask)
-                    call flag_table_read(td%tab_mask, fname, "mask")
-                case("src_id")
-                    call read_field_nn(td, fname, "src_id", td%src_id)
-                    call flag_table_read(td%tab_src, fname, "src_id")
-            end select
+            associate(name => td%par%names(k))
+                select case(trim(td%par%vars(k)))
+                    case("z_bed")
+                        call fesmdata_read_field(fname, trim(name), td%z_bed,    td%nx, td%ny, td%remap, td%map)
+                    case("z_srf")
+                        call fesmdata_read_field(fname, trim(name), td%z_srf,    td%nx, td%ny, td%remap, td%map)
+                    case("H_ice")
+                        call fesmdata_read_field(fname, trim(name), td%H_ice,    td%nx, td%ny, td%remap, td%map)
+                    case("z_bed_sd")
+                        call fesmdata_read_field(fname, trim(name), td%z_bed_sd, td%nx, td%ny, td%remap, td%map)
+                    case("f_ocn")
+                        call fesmdata_read_field(fname, trim(name), td%f_ocn,    td%nx, td%ny, td%remap, td%map)
+                    case("f_land")
+                        call fesmdata_read_field(fname, trim(name), td%f_land,   td%nx, td%ny, td%remap, td%map)
+                    case("f_grnd")
+                        call fesmdata_read_field(fname, trim(name), td%f_grnd,   td%nx, td%ny, td%remap, td%map)
+                    case("f_flt")
+                        call fesmdata_read_field(fname, trim(name), td%f_flt,    td%nx, td%ny, td%remap, td%map)
+                    case("mask")
+                        call read_field_nn(td, fname, trim(name), td%mask)
+                        call flag_table_read(td%tab_mask, fname, trim(name))
+                    case("src_id")
+                        call read_field_nn(td, fname, trim(name), td%src_id)
+                        call flag_table_read(td%tab_src, fname, trim(name))
+                end select
+            end associate
         end do
 
         return
@@ -269,7 +298,7 @@ contains
         character(len=*), intent(IN), optional :: subs(:,:)
         logical,          intent(IN), optional :: verbose
 
-        character(len=56) :: vars(n_vars_max)
+        character(len=56) :: vars(n_vars_max), names(n_vars_max)
         logical :: print_summary
         integer :: k
 
@@ -288,6 +317,19 @@ contains
         allocate(par%vars(count(len_trim(vars) .gt. 0)))
         par%vars = pack(vars, len_trim(vars) .gt. 0)
 
+        ! Names in the file, by position in vars ("" = as vars)
+        names = ""
+        if (nml_has_param(filename, group, "names")) then
+            call nml_read(filename, group, "names", names)
+        end if
+        if (any(len_trim(vars) .eq. 0 .and. len_trim(names) .gt. 0)) then
+            call topodata_error("topodata_par_load", "more names than vars.", &
+                "file = "//trim(filename)//new_line("a")//"group = "//trim(group))
+        end if
+        allocate(par%names(size(par%vars)))
+        par%names = pack(names, len_trim(vars) .gt. 0)
+        where (len_trim(par%names) .eq. 0) par%names = par%vars
+
         par%remap = "con"
         if (nml_has_param(filename, group, "remap")) then
             call nml_read(filename, group, "remap", par%remap)
@@ -297,6 +339,7 @@ contains
             write(*,*) "Loading: ", trim(filename), ":: ", trim(group)
             write(*,*) "path  = ", trim(par%path)
             write(*,*) "vars  = ", (trim(par%vars(k))//" ", k=1,size(par%vars))
+            write(*,*) "names = ", (trim(par%names(k))//" ", k=1,size(par%names))
             write(*,*) "remap = ", trim(par%remap)
         end if
 

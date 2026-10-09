@@ -32,13 +32,18 @@ source value are -1. A conservative map is partial where the target grid
 reaches beyond the file's grid, so values there are means over the covered
 part.
 
+**Other files** (e.g. ISMIP7) are read too: `names` gives the variable of
+the file for each entry of `vars`. A file without the global attribute
+`grid_name` must be on the target grid (only its size is checked; no
+remapping), as for custom basin sets in [regions](regions.qmd).
+
 ## Derived types
 
 ### `topodata_class`
 
 | Component | Type | Meaning |
 |---|---|---|
-| `par` | `topodata_param_class` | `path`, `vars(:)`, `remap`, `grid_src`, `grid_tgt`, `product`, `sources` |
+| `par` | `topodata_param_class` | `path`, `vars(:)`, `names(:)`, `remap`, `grid_src` (`""` without `grid_name`), `grid_tgt`, `product`, `sources` |
 | `nx`, `ny` | `integer` | Size of the fields (the target grid) |
 | fields | see above | Allocated if listed in `par%vars` |
 | `tab_mask`, `tab_src` | `flag_table_class` | Codes and names of `mask` and `src_id` (see [regions](regions.qmd)) |
@@ -49,7 +54,7 @@ part.
 | Procedure | Purpose |
 |---|---|
 | `topodata_init_nml(td, filename, group, domain, grid_name, subs, grid, verbose)` | Load from a namelist group |
-| `topodata_init_arg(td, path, vars, remap, grid)` | Load from arguments |
+| `topodata_init_arg(td, path, vars, names, remap, grid)` | Load from arguments |
 | `topodata_end(td)` | Deallocate |
 
 ## Namelist configuration
@@ -59,6 +64,11 @@ part.
     path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
     vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"     ! optional; this default
     remap = "con"                                   ! optional; this default
+/
+&topo   ! another file
+    path  = "ice_data/ISMIP7/{domain}/{grid_name}/obs/{grid_name}_ObsISMIP7-v1.3.nc"
+    vars  = "z_bed" "H_ice" "z_srf"
+    names = "bed" "thickness" "surface_grimp"       ! optional; "" = as vars
 /
 ```
 
