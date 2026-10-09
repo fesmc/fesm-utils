@@ -117,6 +117,8 @@ program test_regions
                                   .and. all(lmask .eqv. (reg%basins(1)%basin .gt. 0)), nfail)
     call check("basin_ids group", all(regions_basin_ids(regc, "Zwally2012.group", extent=lmask) .eq. &
                                   reg%basins(1)%basin_group) .and. all(lmask .eqv. (reg%basins(1)%basin_mask .eq. 1)), nfail)
+    call check("basin_ids None",  all(regions_basin_ids(regc, "None") .eq. 0), nfail)
+    call check("basin_ids domain", all(regions_basin_ids(regc, "domain", extent=lmask) .eq. 1) .and. all(lmask), nfail)
     call check("custom no group", .not. regc%basins(2)%with_group .and. .not. regc%basins(2)%with_mask, nfail)
     call check("custom select",   all(regions_select(regc, "custom:11,12") .eqv. &
                                       regions_select(regc, "Zwally2012:11,12")), nfail)

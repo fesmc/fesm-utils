@@ -517,8 +517,10 @@ contains
 
     function regions_basin_ids(reg, spec, extent) result(ids)
         ! Basin ids of a loaded basin set: spec = "<set>" (basin) or
-        ! "<set>.group" (basin_group); 0 = no basin. extent: the original
-        ! extent of the basins (basin_mask), or where ids > 0 without one.
+        ! "<set>.group" (basin_group); 0 = no basin. Also "None" (no basins,
+        ! 0 everywhere) and "domain" (the whole domain is one basin, 1).
+        ! extent: the original extent of the basins (basin_mask), or where
+        ! ids > 0 without one.
 
         implicit none
 
@@ -528,6 +530,17 @@ contains
         integer :: ids(reg%nx,reg%ny)
 
         integer :: q, ks
+
+        select case(trim(spec))
+            case("None")
+                ids = 0
+                if (present(extent)) extent = .false.
+                return
+            case("domain")
+                ids = 1
+                if (present(extent)) extent = .true.
+                return
+        end select
 
         q  = index(spec, ".")
         ks = find_set(reg, spec(1:merge(len_trim(spec), q-1, q .eq. 0)))
