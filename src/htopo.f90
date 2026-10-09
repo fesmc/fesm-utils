@@ -32,7 +32,7 @@ module htopo
     use interp2D,       only : fill_nearest
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
     use topodata,       only : topodata_class, topodata_init_nml
-    use regions,        only : regions_class, regions_init_nml
+    use regions,        only : regions_class, regions_init_nml, regions_basin_ids
 
     implicit none
     private
@@ -40,7 +40,7 @@ module htopo
     type htopo_par_class
         character(len=256)      :: domain
         character(len=256)      :: grid_name        ! hub grid, e.g. "ANT-16KM"
-        character(len=56)       :: basins           ! basin set of htopo_basins ("" = none)
+        character(len=56)       :: basins           ! "<set>" or "<set>.group" of htopo_basins ("" = none)
         real(wp)                :: rho_ice          ! [kg m-3] ice density (from the domain's constants)
         real(wp)                :: rho_sw           ! [kg m-3] seawater density
     end type
@@ -117,13 +117,8 @@ contains
 
         call htopo_fill_missing(htopo)
 
-        if (len_trim(htopo%par%basins) > 0) then
-            if (.not. any([(trim(htopo%reg%basins(k)%name) == trim(htopo%par%basins), &
-                            k = 1, size(htopo%reg%basins))])) then
-                call htopo_error("htopo_init", "basins = "//trim(htopo%par%basins)// &
-                                 " is not a basin set of ["//trim(group_regions)//"].")
-            end if
-        end if
+        ! Check par%basins against the loaded basin sets
+        if (len_trim(htopo%par%basins) > 0) k = maxval(regions_basin_ids(htopo%reg, htopo%par%basins))
 
         ! The current geometry starts from the reference.
         htopo%z_bed = htopo%ref%z_bed
@@ -162,20 +157,13 @@ contains
     end subroutine htopo_update
 
     function htopo_basins(htopo) result(basins)
-        ! Basin ids of the basin set par%basins on the hub grid (0 = no basin;
-        ! 0 everywhere without a basin set).
+        ! Basin ids of par%basins ("<set>" or "<set>.group") on the hub grid
+        ! (0 = no basin; 0 everywhere without par%basins).
         type(htopo_class), intent(in) :: htopo
         integer :: basins(htopo%nx,htopo%ny)
 
-        integer :: k
-
         basins = 0
-        do k = 1, size(htopo%reg%basins)
-            if (trim(htopo%reg%basins(k)%name) == trim(htopo%par%basins)) then
-                basins = htopo%reg%basins(k)%basin
-                exit
-            end if
-        end do
+        if (len_trim(htopo%par%basins) > 0) basins = regions_basin_ids(htopo%reg, htopo%par%basins)
 
     end function htopo_basins
 

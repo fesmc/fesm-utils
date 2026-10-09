@@ -107,7 +107,7 @@ module regions
     public :: flag_table_class, basin_set_class, region_mask_class
     public :: regions_param_class, regions_class
     public :: regions_init_nml, regions_init_arg, regions_end
-    public :: regions_select, regions_mask
+    public :: regions_select, regions_mask, regions_basin_ids
     public :: flag_codes, flag_name
     public :: region_code, region_level, region_ancestor, region_path, in_region
     public :: zone_undefined
@@ -514,6 +514,37 @@ contains
         call regions_error("regions_mask", "no mask with this name.", "name = "//trim(name))
 
     end function regions_mask
+
+    function regions_basin_ids(reg, spec) result(ids)
+        ! Basin ids of a loaded basin set: spec = "<set>" (basin) or
+        ! "<set>.group" (basin_group); 0 = no basin.
+
+        implicit none
+
+        type(regions_class), intent(IN) :: reg
+        character(len=*),    intent(IN) :: spec
+        integer :: ids(reg%nx,reg%ny)
+
+        integer :: q, ks
+
+        q  = index(spec, ".")
+        ks = find_set(reg, spec(1:merge(len_trim(spec), q-1, q .eq. 0)))
+        if (ks .eq. 0) then
+            call regions_error("regions_basin_ids", "not a loaded basin set.", "spec = "//trim(spec))
+        end if
+
+        if (q .eq. 0) then
+            ids = reg%basins(ks)%basin
+        else if (lower(spec(q+1:)) .eq. "group") then
+            if (.not. reg%basins(ks)%with_group) then
+                call regions_error("regions_basin_ids", "the basin set has no basin_group.", "spec = "//trim(spec))
+            end if
+            ids = reg%basins(ks)%basin_group
+        else
+            call regions_error("regions_basin_ids", "spec is <set> or <set>.group.", "spec = "//trim(spec))
+        end if
+
+    end function regions_basin_ids
 
     function regions_select(reg, expr) result(mask)
         ! Cells selected by an expression (see the module header).

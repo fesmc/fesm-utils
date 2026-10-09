@@ -46,6 +46,9 @@ program test_htopo
 
     call check("basins",           all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin) &
                                    .and. maxval(htopo_basins(ht)) .gt. 0, nfail)
+    ht%par%basins = "Zwally2012.group"
+    call check("basins group",     all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin_group), nfail)
+    ht%par%basins = "Zwally2012"
     call check("custom basins",    all(ht%reg%basins(2)%basin .eq. 3) .and. &
                                    trim(ht%reg%basins(2)%varname) .eq. "my_basins", nfail)
     call check("named mask",       count(regions_mask(ht%reg, "grl")) .gt. 0, nfail)

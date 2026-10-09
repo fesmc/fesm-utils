@@ -29,7 +29,7 @@ from flotation at sea level 0.
 |---|---|
 | `htopo_init(htopo, filename, group, group_topo, group_regions, domain, grid_name, cnst, map_fldr)` | Load the hub on grid `grid_name` (`<map_fldr>/grid_<name>.txt`, default `maps`) |
 | `htopo_update(htopo, dz_bed, dH_ice, z_sl)` | Current geometry from the reference and anomalies |
-| `htopo_basins(htopo)` | Basin ids of the basin set `basins` (0 everywhere without one) |
+| `htopo_basins(htopo)` | Basin (or group) ids of `basins` (0 everywhere without one) |
 | `htopo_write_init(htopo, filename, time_init)` | Output file with the static masks |
 | `htopo_write_step(htopo, filename, time)` | Append the current geometry |
 
@@ -40,7 +40,7 @@ Three groups; a domain of a multi-domain setup passes its own (e.g.
 
 ```
 &domain
-    basins = "Zwally2012"       ! basin set of htopo_basins (default "": none)
+    basins = "Zwally2012.group" ! "<set>" or "<set>.group" of htopo_basins (default "": none)
 /
 &topo
     path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
