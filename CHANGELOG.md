@@ -11,6 +11,9 @@ All notable changes to fesm-utils are documented here.
   selection expressions (`regions_select(reg, "region:Greenland & zone:land")`,
   named masks in the namelist, `regions_mask`), region-code arithmetic as in
   FesmUtils.jl, and optional nearest-neighbour remapping onto a target grid.
+- **fesmdata**: helpers shared by the readers of FesmData v2 files (flag tables,
+  the grid of a file from `grid_<GRID>.txt`, reading with remapping, path
+  placeholders).
 
 ### Changed
 - **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)

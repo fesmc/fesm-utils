@@ -34,27 +34,20 @@ module regions
     use, intrinsic :: iso_fortran_env, only : error_unit
 
     use precision
-    use constants,   only : mv
     use ncio
     use nml
     use coordinates, only : grid_class
-    use grid_cdo,    only : grid_cdo_read_desc
-    use mapping,     only : map_class, map_init, map_field
+    use mapping,     only : map_class, map_init
+    use fesmdata
 
     implicit none
 
-    integer, parameter :: len_name = 128
     integer, parameter :: len_expr = 1000
     integer, parameter :: n_sets_max  = 20
     integer, parameter :: n_masks_max = 50
 
     ! Zone of a remapped target cell without a source value
     integer, parameter :: zone_undefined = -1
-
-    type flag_table_class
-        integer,                 allocatable :: codes(:)
-        character(len=len_name), allocatable :: names(:)
-    end type
 
     type basin_set_class
         character(len=56)    :: name                ! e.g. "Zwally2012"
@@ -220,7 +213,7 @@ contains
         end if
 
         ! Grid of the files, and the map onto the target grid if it differs
-        call nc_read_attr(fname, "grid_name", reg%par%grid_src)
+        reg%par%grid_src = fesmdata_grid_name(fname)
         reg%par%grid_tgt = reg%par%grid_src
         reg%remap = .false.
         if (present(grid)) then
@@ -246,11 +239,11 @@ contains
         end if
 
         ! Regions and zones
-        call read_int(reg, fname, "region_1", 0, reg%region_1)
-        call read_int(reg, fname, "region_2", 0, reg%region_2)
-        call read_int(reg, fname, "region_3", 0, reg%region_3)
-        call read_int(reg, fname, "zone", zone_undefined, reg%zone)
-        call read_real(reg, fname, "dist_shelfbreak", reg%dist_shelfbreak)
+        call fesmdata_read_field(fname, "region_1", reg%region_1, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        call fesmdata_read_field(fname, "region_2", reg%region_2, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        call fesmdata_read_field(fname, "region_3", reg%region_3, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        call fesmdata_read_field(fname, "zone", reg%zone, reg%nx, reg%ny, reg%remap, reg%map, zone_undefined)
+        call fesmdata_read_field(fname, "dist_shelfbreak", reg%dist_shelfbreak, reg%nx, reg%ny, reg%remap, reg%map)
 
         call flag_table_read(reg%tab_region, fname, "region_1")
         do k = 2, 3
@@ -295,7 +288,7 @@ contains
         call nml_replace(bs%filename, "{set}", trim(name))
 
         ! All files must be on the same grid (one map)
-        call nc_read_attr(bs%filename, "grid_name", grid_name)
+        grid_name = fesmdata_grid_name(bs%filename)
         if (trim(grid_name) .ne. trim(reg%par%grid_src)) then
             call regions_error("basin_set_load", &
                 "the basins file is on another grid than the regions file.", &
@@ -304,13 +297,13 @@ contains
                 "regions   = "//trim(reg%par%grid_src))
         end if
 
-        call read_int(reg, bs%filename, "basin",      0, bs%basin)
-        call read_int(reg, bs%filename, "basin_mask", 0, bs%basin_mask)
+        call fesmdata_read_field(bs%filename, "basin", bs%basin, reg%nx, reg%ny, reg%remap, reg%map, 0)
+        call fesmdata_read_field(bs%filename, "basin_mask", bs%basin_mask, reg%nx, reg%ny, reg%remap, reg%map, 0)
         call flag_table_read(bs%tab_basin, bs%filename, "basin")
 
         bs%with_group = nc_exists_var(bs%filename, "basin_group")
         if (bs%with_group) then
-            call read_int(reg, bs%filename, "basin_group", 0, bs%basin_group)
+            call fesmdata_read_field(bs%filename, "basin_group", bs%basin_group, reg%nx, reg%ny, reg%remap, reg%map, 0)
             call flag_table_read(bs%tab_group, bs%filename, "basin_group")
         end if
 
@@ -352,14 +345,14 @@ contains
         if (present(verbose)) print_summary = verbose
 
         call nml_read(filename, group, "path_regions", par%path_regions)
-        call parse_path(par%path_regions, domain, grid_name, subs)
+        call fesmdata_parse_path(par%path_regions, domain, grid_name, subs)
 
         par%path_basins = ""
         sets = ""
         if (nml_has_param(filename, group, "basin_sets")) then
             call nml_read(filename, group, "basin_sets",  sets)
             call nml_read(filename, group, "path_basins", par%path_basins)
-            call parse_path(par%path_basins, domain, grid_name, subs)
+            call fesmdata_parse_path(par%path_basins, domain, grid_name, subs)
         end if
         n = count(len_trim(sets) .gt. 0)
         allocate(par%basin_sets(n))
@@ -392,37 +385,11 @@ contains
 
     end subroutine regions_par_load
 
-    subroutine parse_path(path, domain, grid_name, subs)
-        ! Substitute {domain}, {grid_name} and any extra {key}->value pairs
-        ! (subs(k,1) = key without braces, subs(k,2) = value).
-
-        implicit none
-
-        character(len=*), intent(INOUT) :: path
-        character(len=*), intent(IN), optional :: domain, grid_name
-        character(len=*), intent(IN), optional :: subs(:,:)
-
-        integer :: k
-
-        if (present(domain))    call nml_replace(path, "{domain}",    trim(domain))
-        if (present(grid_name)) call nml_replace(path, "{grid_name}", trim(grid_name))
-
-        if (present(subs)) then
-            do k = 1, size(subs,1)
-                call nml_replace(path, "{"//trim(subs(k,1))//"}", trim(subs(k,2)))
-            end do
-        end if
-
-        return
-
-    end subroutine parse_path
-
     ! ===== Reading and remapping ==============================================
 
     subroutine regions_remap_init(reg, fname, grid)
-        ! Nearest-neighbour map from the grid of the files onto grid. The grid
-        ! of the files is read from grid_<name>.txt next to the file, else in
-        ! maps/; the map is cached in maps/.
+        ! Nearest-neighbour map from the grid of the files onto grid (cached
+        ! in maps/).
 
         implicit none
 
@@ -430,234 +397,15 @@ contains
         character(len=*),    intent(IN)    :: fname
         type(grid_class),    intent(IN)    :: grid
 
-        type(grid_class)    :: grid_src
-        character(len=1024) :: fldr
-        logical :: found
-        integer :: q
+        type(grid_class) :: grid_src
 
-        q = index(fname, "/", back=.true.)
-        fldr = "."
-        if (q .gt. 0) fldr = fname(1:q-1)
-
-        inquire(file=trim(fldr)//"/grid_"//trim(reg%par%grid_src)//".txt", exist=found)
-        if (.not. found) then
-            fldr = "maps"
-            inquire(file=trim(fldr)//"/grid_"//trim(reg%par%grid_src)//".txt", exist=found)
-        end if
-        if (.not. found) then
-            call regions_error("regions_remap_init", &
-                "no description of the grid of the files.", &
-                "grid_src = "//trim(reg%par%grid_src)//new_line("a")// &
-                "looked for grid_"//trim(reg%par%grid_src)//".txt next to "//trim(fname)// &
-                " and in maps/")
-        end if
-
-        call grid_cdo_read_desc(grid_src, trim(reg%par%grid_src), trim(fldr))
+        call fesmdata_grid_read(grid_src, fname)
         call map_init(reg%map, grid_src, grid, method="nn", fldr="maps")
         reg%remap = .true.
 
         return
 
     end subroutine regions_remap_init
-
-    subroutine read_int(reg, fname, varname, none, var)
-        ! Read an integer field, remapped onto the target grid if needed.
-        ! none: the value of target cells without a source value.
-
-        implicit none
-
-        type(regions_class),  intent(IN)  :: reg
-        character(len=*),     intent(IN)  :: fname, varname
-        integer,              intent(IN)  :: none
-        integer, allocatable, intent(OUT) :: var(:,:)
-
-        integer, allocatable :: src(:,:)
-        logical, allocatable :: filled(:,:)
-
-        allocate(var(reg%nx,reg%ny))
-
-        if (reg%remap) then
-            allocate(src(nc_size(fname,"xc"),nc_size(fname,"yc")))
-            allocate(filled(reg%nx,reg%ny))
-            call nc_read(fname, varname, src)
-            call map_field(reg%map, varname, src, var, mask2=filled, reset=.true.)
-            where (.not. filled) var = none
-        else
-            call nc_read(fname, varname, var)
-        end if
-
-        return
-
-    end subroutine read_int
-
-    subroutine read_real(reg, fname, varname, var)
-        ! Read a real field, remapped onto the target grid if needed (missing
-        ! values are mv).
-
-        implicit none
-
-        type(regions_class),   intent(IN)  :: reg
-        character(len=*),      intent(IN)  :: fname, varname
-        real(wp), allocatable, intent(OUT) :: var(:,:)
-
-        real(wp), allocatable :: src(:,:)
-
-        allocate(var(reg%nx,reg%ny))
-
-        if (reg%remap) then
-            allocate(src(nc_size(fname,"xc"),nc_size(fname,"yc")))
-            call nc_read(fname, varname, src, missing_value=mv)
-            call map_field(reg%map, varname, src, var, missing_value=mv, reset=.true.)
-        else
-            call nc_read(fname, varname, var, missing_value=mv)
-        end if
-
-        return
-
-    end subroutine read_real
-
-    ! ===== Flag tables ========================================================
-
-    subroutine flag_table_read(tab, fname, varname)
-        ! Codes and names of a variable from its flag_values and flag_meanings.
-
-        implicit none
-
-        type(flag_table_class), intent(OUT) :: tab
-        character(len=*),       intent(IN)  :: fname, varname
-
-        character(len=:), allocatable :: meanings
-        integer :: n, nm, k, i0, i1
-
-        if (.not. nc_exists_attr(fname, varname, "flag_values")) then
-            call regions_error("flag_table_read", "variable without flag_values.", &
-                "file = "//trim(fname)//new_line("a")//"variable = "//trim(varname))
-        end if
-
-        n = nc_size_attr(fname, varname, "flag_values")
-        allocate(tab%codes(n), tab%names(n))
-        call nc_read_attr(fname, varname, "flag_values", tab%codes)
-
-        nm = nc_size_attr(fname, varname, "flag_meanings")
-        allocate(character(len=nm) :: meanings)
-        call nc_read_attr(fname, varname, "flag_meanings", meanings)
-
-        ! Space-separated names, one per code
-        i0 = 1
-        do k = 1, n
-            do while (i0 .le. nm)
-                if (meanings(i0:i0) .ne. " ") exit
-                i0 = i0 + 1
-            end do
-            if (i0 .gt. nm) exit
-            i1 = index(meanings(i0:), " ")
-            if (i1 .eq. 0) then
-                i1 = nm
-            else
-                i1 = i0 + i1 - 2
-            end if
-            tab%names(k) = meanings(i0:i1)
-            i0 = i1 + 2
-        end do
-
-        if (k .le. n .or. len_trim(meanings(min(i0,nm+1):)) .gt. 0) then
-            call regions_error("flag_table_read", "flag_values and flag_meanings differ in length.", &
-                "file = "//trim(fname)//new_line("a")//"variable = "//trim(varname))
-        end if
-
-        return
-
-    end subroutine flag_table_read
-
-    subroutine flag_table_merge(tab, tab_add)
-        ! Add the entries of tab_add with codes not yet in tab, keeping tab
-        ! sorted by code.
-
-        implicit none
-
-        type(flag_table_class), intent(INOUT) :: tab
-        type(flag_table_class), intent(IN)    :: tab_add
-
-        integer,                 allocatable :: codes(:)
-        character(len=len_name), allocatable :: names(:)
-        logical, allocatable :: new(:)
-        integer :: k, j, n
-
-        allocate(new(size(tab_add%codes)))
-        do k = 1, size(tab_add%codes)
-            new(k) = .not. any(tab%codes .eq. tab_add%codes(k))
-        end do
-
-        codes = [tab%codes, pack(tab_add%codes, new)]
-        names = [tab%names, pack(tab_add%names, new)]
-
-        ! Insertion sort by code
-        n = size(codes)
-        do k = 2, n
-            j = k
-            do while (j .gt. 1)
-                if (codes(j-1) .le. codes(j)) exit
-                codes(j-1:j) = codes([j,j-1])
-                names(j-1:j) = names([j,j-1])
-                j = j - 1
-            end do
-        end do
-
-        call move_alloc(codes, tab%codes)
-        call move_alloc(names, tab%names)
-
-        return
-
-    end subroutine flag_table_merge
-
-    function flag_codes(tab, name) result(codes)
-        ! All codes with the name (ignoring case; spaces read as underscores).
-        ! A name may have several codes, e.g. "Africa" in both hemispheres.
-
-        implicit none
-
-        type(flag_table_class), intent(IN) :: tab
-        character(len=*),       intent(IN) :: name
-        integer, allocatable :: codes(:)
-
-        character(len=len_name) :: key
-        logical, allocatable :: match(:)
-        integer :: k
-
-        key = normalize_name(name)
-
-        allocate(match(size(tab%codes)))
-        do k = 1, size(tab%codes)
-            match(k) = (normalize_name(tab%names(k)) .eq. key)
-        end do
-        codes = pack(tab%codes, match)
-
-        return
-
-    end function flag_codes
-
-    function flag_name(tab, code) result(name)
-        ! Name of a code ("" if the code is not in the table).
-
-        implicit none
-
-        type(flag_table_class), intent(IN) :: tab
-        integer,                intent(IN) :: code
-        character(len=len_name) :: name
-
-        integer :: k
-
-        name = ""
-        do k = 1, size(tab%codes)
-            if (tab%codes(k) .eq. code) then
-                name = tab%names(k)
-                exit
-            end if
-        end do
-
-        return
-
-    end function flag_name
 
     ! ===== Selection ==========================================================
 
@@ -878,7 +626,7 @@ contains
                         "field      = "//trim(field)//new_line("a")// &
                         "name       = "//trim(v)//new_line("a")// &
                         "expression = "//trim(expr)//new_line("a")// &
-                        "names      = "//join_names(tab))
+                        "names      = "//flag_names_joined(tab))
                 end if
                 codes = [codes, c]
             end if
@@ -1051,39 +799,6 @@ contains
         end do
 
     end function lower
-
-    pure function normalize_name(name) result(key)
-        ! Lower case, spaces between words as underscores.
-
-        implicit none
-
-        character(len=*), intent(IN) :: name
-        character(len=len_name) :: key
-
-        integer :: k
-
-        key = lower(adjustl(name))
-        do k = 1, len_trim(key)
-            if (key(k:k) .eq. " ") key(k:k) = "_"
-        end do
-
-    end function normalize_name
-
-    function join_names(tab) result(str)
-
-        implicit none
-
-        type(flag_table_class), intent(IN) :: tab
-        character(len=:), allocatable :: str
-
-        integer :: k
-
-        str = ""
-        do k = 1, size(tab%names)
-            str = str//trim(tab%names(k))//" "
-        end do
-
-    end function join_names
 
     subroutine regions_error(proc, msg, detail)
         ! Abort with a framed message on error_unit.
