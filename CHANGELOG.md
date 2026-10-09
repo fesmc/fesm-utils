@@ -16,6 +16,12 @@ All notable changes to fesm-utils are documented here.
   variables are loaded (default `z_bed z_srf H_ice z_bed_sd`); optional remapping
   onto a target grid (real fields `con` by default, `mask`/`src_id` nearest
   neighbour).
+- **htopo**: the hi-res geometry hub of a domain, moved from yelmox and built on
+  `topodata` and `regions`: `htopo_init(htopo, filename, group, group_topo,
+  group_regions, domain, grid_name, cnst)` (one set of groups per domain),
+  `mask_ice` (Yelmo's none/fixed/dynamic) and `tau_relax` from selection
+  expressions (`mask_ice_dynamic`, `mask_ice_fixed`, `relax`), `htopo_basins`.
+  Replaces yelmox's `ice_codes`/`relax_codes`/`region_codes` lists and v1 masks.
 - **fesmdata**: helpers shared by the readers of FesmData v2 files (flag tables,
   the grid of a file from `grid_<GRID>.txt`, reading with remapping, path
   placeholders).

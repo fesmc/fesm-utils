@@ -1,0 +1,71 @@
+---
+title: "htopo"
+subtitle: "Hi-resolution geometry hub of a domain"
+---
+
+## Overview
+
+`htopo` is the reference geometry of a domain in a multigrid setup (e.g.
+yelmox). Its grid is the finest in the setup, and a coupler remaps *from*
+it when a coarser module needs the topography or the masks. It holds:
+
+- `ref` ([topodata](topodata.qmd)): the reference `z_bed`, `H_ice`, `z_srf`
+  and `z_bed_sd` of a FesmData topography product (`z_bed_sd` is 0 if not
+  loaded);
+- `reg` ([regions](regions.qmd)): regions, zones, basins and the named
+  masks of the regions namelist group;
+- `mask_ice`: where ice is dynamic, fixed (prescribed) or not allowed
+  (`htopo_ice_dynamic` = 2, `htopo_ice_fixed` = 1, `htopo_ice_none` = 0, the
+  values of Yelmo's `MASK_ICE_*`);
+- `tau_relax`: the relaxation timescale toward the reference, -1 (free)
+  where no relaxation is selected;
+- `z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl`: the current geometry,
+  refreshed from the models. `htopo_update` sets it on a hub finer than the
+  ice sheet: the reference plus the models' anomalies, with `f_grnd` 0 or 1
+  from flotation.
+
+Gaps of the reference geometry (e.g. outside the coverage of the files) are
+filled at init: no ice, the bed from the nearest valid cell, the surface
+from flotation at sea level 0.
+
+## Public API
+
+| Procedure | Purpose |
+|---|---|
+| `htopo_init(htopo, filename, group, group_topo, group_regions, domain, grid_name, cnst, map_fldr)` | Load the hub on grid `grid_name` (`<map_fldr>/grid_<name>.txt`, default `maps`) |
+| `htopo_update(htopo, dz_bed, dH_ice, z_sl)` | Current geometry from the reference and anomalies |
+| `htopo_basins(htopo)` | Basin ids of the basin set `basins` (0 everywhere without one) |
+| `htopo_write_init(htopo, filename, time_init)` | Output file with the static masks |
+| `htopo_write_step(htopo, filename, time)` | Append the current geometry |
+
+## Namelist configuration
+
+Three groups; a domain of a multi-domain setup passes its own (e.g.
+`domain_south`, `topo_south`, `regions_south`).
+
+```
+&domain
+    mask_ice_dynamic = "region:Greenland,Canadian_Arctic_Archipelago | zone:open_ocean"  ! default "all"
+    mask_ice_fixed   = "none"            ! default; over mask_ice_dynamic
+    relax            = "none"            ! default; where ice relaxes to the reference
+    relax_tau        = 0.0               ! [yr] needed > 0 with relax
+    basins           = "Zwally2012"      ! basin set of htopo_basins (default "": none)
+/
+&topo
+    path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
+    vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+/
+&regions
+    path_regions = "ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+    path_basins  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+    basin_sets   = "Zwally2012"
+/
+```
+
+The masks are selection expressions of [regions](regions.qmd). Everything
+outside `mask_ice_dynamic` and `mask_ice_fixed` has no ice.
+
+## See also
+
+- [topodata](topodata.qmd), [regions](regions.qmd) — the readers it is built on
+- [coords](coords.qmd) — grids and maps

@@ -33,6 +33,8 @@ website:
             href: packages/regions.qmd
           - text: "topodata — topography products"
             href: packages/topodata.qmd
+          - text: "htopo — hi-res geometry hub"
+            href: packages/htopo.qmd
           - text: "ncio — netCDF I/O"
             href: packages/ncio.qmd
           - text: "nml — namelists"
@@ -73,6 +75,7 @@ website:
           - packages/varslice.qmd
           - packages/regions.qmd
           - packages/topodata.qmd
+          - packages/htopo.qmd
           - packages/ncio.qmd
           - packages/nml.qmd
           - packages/root_finder.qmd
