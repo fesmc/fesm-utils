@@ -11,6 +11,11 @@ All notable changes to fesm-utils are documented here.
   selection expressions (`regions_select(reg, "region:Greenland & zone:land")`,
   named masks in the namelist, `regions_mask`), region-code arithmetic as in
   FesmUtils.jl, and optional nearest-neighbour remapping onto a target grid.
+- **topodata**: FesmData v2 topography products (`<GRID>_TOPO-<product>.nc`) in a
+  `topodata_class` (`topodata_init_nml`, `topodata_init_arg`): only the listed
+  variables are loaded (default `z_bed z_srf H_ice z_bed_sd`); optional remapping
+  onto a target grid (real fields `con` by default, `mask`/`src_id` nearest
+  neighbour).
 - **fesmdata**: helpers shared by the readers of FesmData v2 files (flag tables,
   the grid of a file from `grid_<GRID>.txt`, reading with remapping, path
   placeholders).

@@ -206,6 +206,10 @@ $(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/nml.o
 					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/topodata.o: $(srcdir)/topodata.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
 					$(objdir)/interp1D.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
@@ -254,6 +258,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/varslice.o \
 					$(objdir)/fesmdata.o \
 					$(objdir)/regions.o \
+					$(objdir)/topodata.o \
 					$(objdir)/series.o \
 					$(objdir)/tsgen.o
 
@@ -397,6 +402,14 @@ test-regions : fesmutils-static
 		@echo "    regions test program ready: $(bindir)/test_regions.x"
 		@echo " "
 
+# topodata (FesmData topography) test program
+test-topodata : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_topodata.x $(testdir)/fesmdata/test_topodata.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    topodata test program ready: $(bindir)/test_topodata.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
@@ -481,6 +494,7 @@ usage:
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
 	@echo " make test-regions     : compiles the regions test program"
+	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

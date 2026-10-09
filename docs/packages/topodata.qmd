@@ -1,0 +1,85 @@
+---
+title: "topodata"
+subtitle: "FesmData topography products"
+---
+
+## Overview
+
+`topodata` reads a topography product of
+[FesmData](https://github.com/fesmc/FesmData) (Topo v2),
+`$ICE_DATA/v2/<Domain>/<GRID>/<GRID>_TOPO-<product>.nc`, as it is in the file.
+It holds no model state: updates of the geometry belong to the caller (e.g.
+htopo). Only the listed variables are loaded; the others stay unallocated
+(one field of Antarctica at 1 km is about 180 MB).
+
+| Variable | Type | Meaning |
+|---|---|---|
+| `z_bed`, `z_srf`, `H_ice` | `real(wp)` | Bed and surface elevation, ice thickness (m) |
+| `z_bed_sd` | `real(wp)` | Standard deviation of the bed elevation within the cell (m) |
+| `f_ocn`, `f_land`, `f_grnd`, `f_flt` | `real(wp)` | Area fractions of ice-free ocean, ice-free land, grounded and floating ice |
+| `mask` | `integer` | Dominant surface type: `topo_mask_ocean` (0), `_land` (1), `_grnd` (2), `_flt` (3) |
+| `src_id` | `integer` | Source with the largest weight (names in `tab_src`) |
+
+Missing values are `mv`. The global attributes `product` and `sources` of the
+file are kept in `par`.
+
+**Remapping**: given a target grid whose name differs from the grid of the
+file, the real fields are remapped onto it with `remap` (default `"con"`,
+conservative), `mask` and `src_id` by nearest neighbour. The grid of the
+file is read from `grid_<GRID>.txt` next to the file, else from `maps/`; the
+maps are cached in `maps/`. `mask` and `src_id` of target cells without a
+source value are -1. A conservative map is partial where the target grid
+reaches beyond the file's grid, so values there are means over the covered
+part.
+
+## Derived types
+
+### `topodata_class`
+
+| Component | Type | Meaning |
+|---|---|---|
+| `par` | `topodata_param_class` | `path`, `vars(:)`, `remap`, `grid_src`, `grid_tgt`, `product`, `sources` |
+| `nx`, `ny` | `integer` | Size of the fields (the target grid) |
+| fields | see above | Allocated if listed in `par%vars` |
+| `tab_mask`, `tab_src` | `flag_table_class` | Codes and names of `mask` and `src_id` (see [regions](regions.qmd)) |
+| `remap`, `map`, `map_nn` | `logical`, `map_class` | Online remapping from the grid of the file |
+
+## Public API
+
+| Procedure | Purpose |
+|---|---|
+| `topodata_init_nml(td, filename, group, domain, grid_name, subs, grid, verbose)` | Load from a namelist group |
+| `topodata_init_arg(td, path, vars, remap, grid)` | Load from arguments |
+| `topodata_end(td)` | Deallocate |
+
+## Namelist configuration
+
+```
+&topo
+    path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
+    vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"     ! optional; this default
+    remap = "con"                                   ! optional; this default
+/
+```
+
+`{grid_name}` is the grid of the file; pass the model grid as `grid` to
+remap onto it.
+
+## Usage example
+
+```fortran
+use topodata
+
+type(topodata_class) :: td
+
+call topodata_init_nml(td, "par/test.nml", "topo", domain="Greenland", &
+                       grid_name="GRL-1KM", grid=grid_model)
+
+where (td%H_ice .gt. 0.0_wp) ...
+```
+
+## See also
+
+- [regions](regions.qmd) — regions, zones and basins of the same grids
+- [coords](coords.qmd) — grids and the maps used for remapping
+- FesmData `Topo/README.md` — how the products are made

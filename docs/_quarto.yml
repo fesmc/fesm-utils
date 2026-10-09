@@ -31,6 +31,8 @@ website:
             href: packages/varslice.qmd
           - text: "regions — regions, zones & basins"
             href: packages/regions.qmd
+          - text: "topodata — topography products"
+            href: packages/topodata.qmd
           - text: "ncio — netCDF I/O"
             href: packages/ncio.qmd
           - text: "nml — namelists"
@@ -70,6 +72,7 @@ website:
           - packages/series.qmd
           - packages/varslice.qmd
           - packages/regions.qmd
+          - packages/topodata.qmd
           - packages/ncio.qmd
           - packages/nml.qmd
           - packages/root_finder.qmd
