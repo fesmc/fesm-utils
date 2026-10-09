@@ -1,10 +1,6 @@
 ! Namelist of test_htopo (NorthTest data; {domain} = NorthTest)
 
 &domain
-    mask_ice_dynamic = "region:Greenland | zone:open_ocean"
-    mask_ice_fixed   = "region:Iceland"
-    relax            = "region:Svalbard"
-    relax_tau        = 100.0
     basins           = "Zwally2012"
 /
 &topo

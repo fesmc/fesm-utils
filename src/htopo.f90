@@ -13,15 +13,12 @@ module htopo
     !   * z_bed, H_ice, z_srf, f_grnd, z_sl -- the current geometry, refreshed
     !     each step from the models. On a hub finer than the ice sheet it is the
     !     reference plus the models' anomalies (htopo_update).
-    ! From the regions follow two static fields for an ice-sheet model:
-    !   * mask_ice -- where ice is dynamic, fixed (prescribed) or not allowed
-    !     (htopo_ice_*, Yelmo's MASK_ICE_* values), from the selection
-    !     expressions mask_ice_dynamic and mask_ice_fixed;
-    !   * tau_relax -- the timescale of relaxation to the reference where the
-    !     expression relax selects it, -1 (free) elsewhere.
+    ! The masks a physics module needs (e.g. where ice is allowed) are made by
+    ! that module from a regions_class on its own grid; the hub's reg serves
+    ! output and the basins handed to the coupler (htopo_basins).
     !
     ! Namelist groups (a domain of a multi-domain setup passes its own):
-    !   group          mask_ice_dynamic, mask_ice_fixed, relax, relax_tau, basins
+    !   group          basins (the basin set of htopo_basins)
     !   group_topo     topodata (path, vars, remap)
     !   group_regions  regions (path_regions, path_basins, basin_sets, masks, mask_*)
     ! {domain}/{grid_name} in the paths resolve to the domain and the hub grid.
@@ -35,25 +32,14 @@ module htopo
     use interp2D,       only : fill_nearest
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
     use topodata,       only : topodata_class, topodata_init_nml
-    use regions,        only : regions_class, regions_init_nml, regions_select
+    use regions,        only : regions_class, regions_init_nml
 
     implicit none
     private
 
-    ! Classes of mask_ice (the values of Yelmo's MASK_ICE_*)
-    integer, parameter :: htopo_ice_none    = 0     ! no ice
-    integer, parameter :: htopo_ice_fixed   = 1     ! ice thickness prescribed
-    integer, parameter :: htopo_ice_dynamic = 2     ! ice thickness computed
-
-    integer, parameter :: len_expr = 1000
-
     type htopo_par_class
         character(len=256)      :: domain
         character(len=256)      :: grid_name        ! hub grid, e.g. "ANT-16KM"
-        character(len=len_expr) :: mask_ice_dynamic ! where ice is dynamic (else none)
-        character(len=len_expr) :: mask_ice_fixed   ! where ice is fixed (over dynamic)
-        character(len=len_expr) :: relax            ! where ice relaxes to the reference
-        real(wp)                :: relax_tau        ! [yr] relaxation timescale there
         character(len=56)       :: basins           ! basin set of htopo_basins ("" = none)
         real(wp)                :: rho_ice          ! [kg m-3] ice density (from the domain's constants)
         real(wp)                :: rho_sw           ! [kg m-3] seawater density
@@ -66,8 +52,6 @@ module htopo
         ! Reference geometry and masks (static, from file).
         type(topodata_class)  :: ref
         type(regions_class)   :: reg
-        integer,  allocatable :: mask_ice(:,:)  ! htopo_ice_none, _fixed, _dynamic
-        real(wp), allocatable :: tau_relax(:,:) ! [yr] relaxation timescale, -1 = free
         ! Current geometry, refreshed from the models each step.
         real(wp), allocatable :: z_bed(:,:)     ! [m] bedrock elevation
         real(wp), allocatable :: H_ice(:,:)     ! [m] ice thickness
@@ -76,7 +60,6 @@ module htopo
         real(wp), allocatable :: z_sl(:,:)      ! [m] sea-surface / sea-level height
     end type
 
-    public :: htopo_ice_none, htopo_ice_fixed, htopo_ice_dynamic
     public :: htopo_par_class, htopo_class
     public :: htopo_init, htopo_update, htopo_basins
     public :: htopo_write_init, htopo_write_step
@@ -141,16 +124,6 @@ contains
                                  " is not a basin set of ["//trim(group_regions)//"].")
             end if
         end if
-
-        ! Where ice is dynamic, fixed or not allowed, and where it relaxes.
-        allocate(htopo%mask_ice(htopo%nx,htopo%ny))
-        htopo%mask_ice = htopo_ice_none
-        where (regions_select(htopo%reg, htopo%par%mask_ice_dynamic)) htopo%mask_ice = htopo_ice_dynamic
-        where (regions_select(htopo%reg, htopo%par%mask_ice_fixed))   htopo%mask_ice = htopo_ice_fixed
-
-        allocate(htopo%tau_relax(htopo%nx,htopo%ny))
-        htopo%tau_relax = -1.0_wp
-        where (regions_select(htopo%reg, htopo%par%relax)) htopo%tau_relax = htopo%par%relax_tau
 
         ! The current geometry starts from the reference.
         htopo%z_bed = htopo%ref%z_bed
@@ -274,28 +247,10 @@ contains
         par%domain    = trim(domain)
         par%grid_name = trim(grid_name)
 
-        ! Optional keys and their defaults: ice dynamic everywhere, nothing
-        ! fixed, no relaxation, no basin set.
-        par%mask_ice_dynamic = "all"
-        par%mask_ice_fixed   = "none"
-        par%relax            = "none"
-        par%relax_tau        = 0.0_wp
-        par%basins           = ""
-
-        if (nml_has_param(filename, group, "mask_ice_dynamic")) &
-            call nml_read(filename, group, "mask_ice_dynamic", par%mask_ice_dynamic)
-        if (nml_has_param(filename, group, "mask_ice_fixed")) &
-            call nml_read(filename, group, "mask_ice_fixed",   par%mask_ice_fixed)
-        if (nml_has_param(filename, group, "relax")) &
-            call nml_read(filename, group, "relax",            par%relax)
-        if (nml_has_param(filename, group, "relax_tau")) &
-            call nml_read(filename, group, "relax_tau",        par%relax_tau)
+        ! Optional: the basin set of htopo_basins (default none)
+        par%basins = ""
         if (nml_has_param(filename, group, "basins")) &
-            call nml_read(filename, group, "basins",           par%basins)
-
-        if (trim(par%relax) /= "none" .and. par%relax_tau <= 0.0_wp) then
-            call htopo_error("htopo_par_load", "relax needs relax_tau > 0.", "group = "//trim(group))
-        end if
+            call nml_read(filename, group, "basins", par%basins)
 
     end subroutine htopo_par_load
 
@@ -317,10 +272,6 @@ contains
                       start=[1,1], long_name="Zone", units="1")
         call nc_write(filename, "basin", htopo_basins(htopo), dim1="xc", dim2="yc", &
                       start=[1,1], long_name="Basin ("//trim(htopo%par%basins)//")", units="1")
-        call nc_write(filename, "mask_ice", htopo%mask_ice, dim1="xc", dim2="yc", &
-                      start=[1,1], long_name="Ice mask (0: none, 1: fixed, 2: dynamic)", units="1")
-        call nc_write(filename, "tau_relax", htopo%tau_relax, dim1="xc", dim2="yc", &
-                      start=[1,1], long_name="Relaxation timescale (-1: free)", units="yr")
     end subroutine htopo_write_init
 
     subroutine htopo_write_step(htopo, filename, time)

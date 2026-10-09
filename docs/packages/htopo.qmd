@@ -14,11 +14,6 @@ it when a coarser module needs the topography or the masks. It holds:
   loaded);
 - `reg` ([regions](regions.qmd)): regions, zones, basins and the named
   masks of the regions namelist group;
-- `mask_ice`: where ice is dynamic, fixed (prescribed) or not allowed
-  (`htopo_ice_dynamic` = 2, `htopo_ice_fixed` = 1, `htopo_ice_none` = 0, the
-  values of Yelmo's `MASK_ICE_*`);
-- `tau_relax`: the relaxation timescale toward the reference, -1 (free)
-  where no relaxation is selected;
 - `z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl`: the current geometry,
   refreshed from the models. `htopo_update` sets it on a hub finer than the
   ice sheet: the reference plus the models' anomalies, with `f_grnd` 0 or 1
@@ -45,11 +40,7 @@ Three groups; a domain of a multi-domain setup passes its own (e.g.
 
 ```
 &domain
-    mask_ice_dynamic = "region:Greenland,Canadian_Arctic_Archipelago | zone:open_ocean"  ! default "all"
-    mask_ice_fixed   = "none"            ! default; over mask_ice_dynamic
-    relax            = "none"            ! default; where ice relaxes to the reference
-    relax_tau        = 0.0               ! [yr] needed > 0 with relax
-    basins           = "Zwally2012"      ! basin set of htopo_basins (default "": none)
+    basins = "Zwally2012"       ! basin set of htopo_basins (default "": none)
 /
 &topo
     path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
@@ -62,8 +53,9 @@ Three groups; a domain of a multi-domain setup passes its own (e.g.
 /
 ```
 
-The masks are selection expressions of [regions](regions.qmd). Everything
-outside `mask_ice_dynamic` and `mask_ice_fixed` has no ice.
+Masks for the physics (e.g. where ice is allowed) are not made here: each
+module builds its own from a `regions_class` on its grid, with selection
+expressions of [regions](regions.qmd) in its own namelist.
 
 ## See also
 

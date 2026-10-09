@@ -20,9 +20,8 @@ All notable changes to fesm-utils are documented here.
 - **htopo**: the hi-res geometry hub of a domain, moved from yelmox and built on
   `topodata` and `regions`: `htopo_init(htopo, filename, group, group_topo,
   group_regions, domain, grid_name, cnst)` (one set of groups per domain),
-  `mask_ice` (Yelmo's none/fixed/dynamic) and `tau_relax` from selection
-  expressions (`mask_ice_dynamic`, `mask_ice_fixed`, `relax`), `htopo_basins`.
-  Replaces yelmox's `ice_codes`/`relax_codes`/`region_codes` lists and v1 masks.
+  `htopo_basins`. The physics masks (yelmox's `ice_codes`/`relax_codes`/
+  `region_codes`) move to the modules, as selection expressions.
 - **fesmdata**: helpers shared by the readers of FesmData v2 files (flag tables,
   the grid of a file from `grid_<GRID>.txt`, reading with remapping, path
   placeholders).

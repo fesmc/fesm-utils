@@ -9,7 +9,7 @@ program test_htopo
     use ncio
     use coordinates,    only : grid_class
     use phys_constants, only : phys_const_class, phys_const_load
-    use regions,        only : regions_select, regions_mask
+    use regions,        only : regions_mask
     use htopo
 
     implicit none
@@ -44,14 +44,6 @@ program test_htopo
     call check("z_bed (identity remap)", maxval(abs(ht%ref%z_bed - z_bed)) .lt. 1e-2_wp, nfail)
     call check("z_bed_sd",      maxval(ht%ref%z_bed_sd) .gt. 0.0_wp, nfail)
 
-    call check("mask_ice dynamic", all((ht%mask_ice .eq. htopo_ice_dynamic) .eqv. &
-        (regions_select(ht%reg, "region:Greenland | zone:open_ocean") .and. &
-         .not. regions_select(ht%reg, "region:Iceland"))), nfail)
-    call check("mask_ice fixed",   all((ht%mask_ice .eq. htopo_ice_fixed) .eqv. &
-        regions_select(ht%reg, "region:Iceland")), nfail)
-    call check("mask_ice none",    count(ht%mask_ice .eq. htopo_ice_none) .gt. 0, nfail)
-    call check("tau_relax",        all(ht%tau_relax .eq. merge(100.0_wp, -1.0_wp, &
-        regions_select(ht%reg, "region:Svalbard"))), nfail)
     call check("basins",           all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin) &
                                    .and. maxval(htopo_basins(ht)) .gt. 0, nfail)
     call check("custom basins",    all(ht%reg%basins(2)%basin .eq. 3) .and. &
@@ -71,13 +63,11 @@ program test_htopo
     call htopo_write_step(ht, "test_htopo_out.nc", 0.0_wp)
 
     ! ========================================================================
-    ! Defaults (no keys): ice dynamic everywhere, no relaxation, no basins
+    ! Defaults (no keys): no basins, z_bed_sd = 0
     ! ========================================================================
     call htopo_init(ht_def, nml_file, "domain_default", "topo_default", "regions_default", &
                     "NorthTest", "NHT-16KM", cnst)
 
-    call check("default mask_ice",  all(ht_def%mask_ice .eq. htopo_ice_dynamic), nfail)
-    call check("default tau_relax", all(ht_def%tau_relax .eq. -1.0_wp), nfail)
     call check("default basins",    all(htopo_basins(ht_def) .eq. 0), nfail)
     call check("default z_bed_sd",  all(ht_def%ref%z_bed_sd .eq. 0.0_wp), nfail)
 
