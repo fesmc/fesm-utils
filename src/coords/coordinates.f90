@@ -1423,7 +1423,7 @@ contains
                               y_n=grid%cs%proj%y_n/grid%cs%xy_conv, &
                               k0=grid%cs%proj%k0, &
                               is_sphere=grid%cs%planet%is_sphere,semi_major_axis=grid%cs%planet%a, &
-                              inverse_flattening=1.d0/grid%cs%planet%f)
+                              inverse_flattening=grid%cs%planet%inverse_flattening)
         end if 
 
         if (grid%cs%is_projection .or. grid%cs%is_cartesian) then 
@@ -1500,7 +1500,7 @@ contains
                             y_n=pts%cs%proj%y_n/pts%cs%xy_conv, &
                             k0=pts%cs%proj%k0, &
                             is_sphere=pts%cs%planet%is_sphere,semi_major_axis=pts%cs%planet%a, &
-                            inverse_flattening=1.d0/pts%cs%planet%f)
+                            inverse_flattening=pts%cs%planet%inverse_flattening)
         end if 
 
         if (pts%cs%is_projection .or. pts%cs%is_cartesian) then 

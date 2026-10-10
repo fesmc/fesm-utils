@@ -10,7 +10,7 @@ module planet
         character(len=256) :: name 
         logical :: is_sphere
         real(dp) :: a, e, f
-        real(dp) :: R      ! in case of sphere (equivalent to a=R, f=inf)
+        real(dp) :: R      ! in case of sphere (equivalent to a=R, f=0)
 
         ! Parameters for output grid information (above are for internal calcs)
         real(dp) :: semi_major_axis
@@ -28,7 +28,7 @@ module planet
     ! Data-driven planet table. To add a body/ellipsoid, append one entry here.
     type(planet_def), parameter :: PLANETS(2) = [ &
         planet_def("WGS84",           6378137.0_dp,  1.0_dp/298.257223563_dp, 6.371221E6_dp, 0.081819191_dp, .false.), &
-        planet_def("Spherical Earth", 6.371221E6_dp, 1e8_dp,                  6.371221E6_dp, 0.0_dp,         .true.) ]
+        planet_def("Spherical Earth", 6.371221E6_dp, 0.0_dp,                  6.371221E6_dp, 0.0_dp,         .true.) ]
 
     interface cartesian_distance
         module procedure cartesian_distance_float
