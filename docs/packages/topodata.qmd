@@ -35,7 +35,7 @@ part.
 **Other files** (e.g. ISMIP7) are read too: `names` gives the variable of
 the file for each entry of `vars`. A file without the global attribute
 `grid_name` must be on the target grid (only its size is checked; no
-remapping), as for custom basin sets in [regions](regions.qmd).
+remapping), as for the layers of [regions](regions.qmd).
 
 ## Derived types
 
@@ -90,6 +90,6 @@ where (td%H_ice .gt. 0.0_wp) ...
 
 ## See also
 
-- [regions](regions.qmd) — regions, zones and basins of the same grids
+- [regions](regions.qmd) — regions, zones, basins and other layers of the same grids
 - [coords](coords.qmd) — grids and the maps used for remapping
 - FesmData `Topo/README.md` — how the products are made

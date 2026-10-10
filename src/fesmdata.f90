@@ -6,6 +6,9 @@ module fesmdata
     !   - the grid of a file: its global attribute grid_name, and the grid
     !     itself from the cdo description grid_<GRID>.txt next to the file
     !     (as FesmData writes it), else in maps/
+    !   - placing a field of a file on a target grid: remapped from the grid
+    !     of the file if its name differs, else read as it is (a file
+    !     without grid_name must then be on the target grid)
     !   - reading a 2D field, remapped onto a target grid if needed
     !   - {domain}, {grid_name} and {key} placeholders in paths
 
@@ -17,7 +20,7 @@ module fesmdata
     use nml,         only : nml_replace
     use coordinates, only : grid_class
     use grid_cdo,    only : grid_cdo_read_desc
-    use mapping,     only : map_class, map_field
+    use mapping,     only : map_class, map_field, map_init
 
     implicit none
 
@@ -37,7 +40,7 @@ module fesmdata
     public :: flag_table_class, flag_table_read, flag_table_merge, flag_table_from_values
     public :: flag_codes, flag_name, flag_names_joined
     public :: fesmdata_grid_name, fesmdata_grid_read
-    public :: fesmdata_read_field
+    public :: fesmdata_map_init, fesmdata_read_field
     public :: fesmdata_parse_path
 
 contains
@@ -271,50 +274,115 @@ contains
 
     end function fesmdata_grid_name
 
-    subroutine fesmdata_grid_read(grid, fname)
-        ! The grid of a FesmData file, from its cdo description
-        ! grid_<grid_name>.txt next to the file, else in maps/.
+    subroutine fesmdata_grid_read(grid, fname, grid_name)
+        ! The grid of a file (grid_name, by default its global attribute
+        ! grid_name), from its cdo description grid_<grid_name>.txt next to
+        ! the file, else in maps/.
 
         implicit none
 
         type(grid_class), intent(OUT) :: grid
         character(len=*), intent(IN)  :: fname
+        character(len=*), intent(IN), optional :: grid_name
 
-        character(len=256)  :: grid_name
+        character(len=256)  :: gname
         character(len=1024) :: fldr
         logical :: found
         integer :: q
 
-        grid_name = fesmdata_grid_name(fname)
+        if (present(grid_name)) then
+            gname = grid_name
+        else
+            gname = fesmdata_grid_name(fname)
+        end if
 
         q = index(fname, "/", back=.true.)
         fldr = "."
         if (q .gt. 0) fldr = fname(1:q-1)
 
-        inquire(file=trim(fldr)//"/grid_"//trim(grid_name)//".txt", exist=found)
+        inquire(file=trim(fldr)//"/grid_"//trim(gname)//".txt", exist=found)
         if (.not. found) then
             fldr = "maps"
-            inquire(file=trim(fldr)//"/grid_"//trim(grid_name)//".txt", exist=found)
+            inquire(file=trim(fldr)//"/grid_"//trim(gname)//".txt", exist=found)
         end if
         if (.not. found) then
             call fesmdata_error("fesmdata_grid_read", "no description of the grid of the file.", &
                 "file      = "//trim(fname)//new_line("a")// &
-                "grid_name = "//trim(grid_name)//new_line("a")// &
-                "looked for grid_"//trim(grid_name)//".txt next to the file and in maps/")
+                "grid_name = "//trim(gname)//new_line("a")// &
+                "looked for grid_"//trim(gname)//".txt next to the file and in maps/")
         end if
 
-        call grid_cdo_read_desc(grid, trim(grid_name), trim(fldr))
+        call grid_cdo_read_desc(grid, trim(gname), trim(fldr))
 
         return
 
     end subroutine fesmdata_grid_read
+
+    ! ===== Fields on a target grid ============================================
+
+    subroutine fesmdata_map_init(map, remap, nx, ny, fname, varname, method, grid, grid_name, grid_src)
+        ! How a field of a file gets onto the target grid: with grid, and a
+        ! grid of the file (grid_name, else its global attribute grid_name)
+        ! of another name, the field is remapped (remap, with map by method);
+        ! else it is read as it is, and must have the size of grid. nx, ny:
+        ! the size of the field as read. grid_src: the grid of the file ("":
+        ! unknown).
+
+        implicit none
+
+        type(map_class),  intent(INOUT) :: map
+        logical,          intent(OUT)   :: remap
+        integer,          intent(OUT)   :: nx, ny
+        character(len=*), intent(IN)    :: fname, varname, method
+        type(grid_class), intent(IN), optional  :: grid
+        character(len=*), intent(IN), optional  :: grid_name
+        character(len=*), intent(OUT), optional :: grid_src
+
+        character(len=256) :: gsrc
+        type(grid_class) :: grid_file
+        integer, allocatable :: dims(:)
+
+        gsrc = ""
+        if (present(grid_name)) gsrc = grid_name
+        if (len_trim(gsrc) .eq. 0 .and. nc_exists_attr(fname, "grid_name")) gsrc = fesmdata_grid_name(fname)
+        if (present(grid_src)) grid_src = gsrc
+
+        remap = .false.
+        if (present(grid)) remap = (len_trim(gsrc) .gt. 0 .and. trim(gsrc) .ne. trim(grid%name))
+
+        if (remap) then
+            call fesmdata_grid_read(grid_file, fname, gsrc)
+            call map_init(map, grid_file, grid, method=trim(method), fldr="maps")
+            nx = grid%G%nx
+            ny = grid%G%ny
+        else
+            call nc_dims(fname, varname, dims=dims)
+            nx = dims(1)
+            ny = dims(2)
+            if (present(grid)) then
+                if (nx .ne. grid%G%nx .or. ny .ne. grid%G%ny) then
+                    if (len_trim(gsrc) .eq. 0) gsrc = "(none: the file has no grid_name)"
+                    call fesmdata_error("fesmdata_map_init", "the field is not on the target grid.", &
+                        "file        = "//trim(fname)//new_line("a")// &
+                        "variable    = "//trim(varname)//new_line("a")// &
+                        "grid        = "//trim(gsrc)//new_line("a")// &
+                        "target grid = "//trim(grid%name))
+                end if
+            end if
+        end if
+
+        return
+
+    end subroutine fesmdata_map_init
 
     ! ===== Reading fields =====================================================
 
     subroutine fesmdata_read_field_int(fname, varname, var, nx, ny, remap, map, none)
         ! Read an integer 2D field into var(nx,ny). With remap, the field is
         ! mapped from the grid of the file with map, and target cells without
-        ! a source value get none.
+        ! a source value get none, as do negative values (e.g. fill values):
+        ! these are a class of their own, not missing values that the map
+        ! would fill from neighbouring cells.
 
         implicit none
 
@@ -335,10 +403,13 @@ contains
             allocate(src(dims(1),dims(2)))
             allocate(filled(nx,ny))
             call nc_read(fname, varname, src)
-            call map_field(map, varname, src, var, mask2=filled, reset=.true.)
+            where (src .lt. 0) src = none
+            ! (none-1 does not occur: no source value is missing)
+            call map_field(map, varname, src, var, missing_value=none-1, mask2=filled, reset=.true.)
             where (.not. filled) var = none
         else
             call nc_read(fname, varname, var)
+            where (var .lt. 0) var = none
         end if
 
         return

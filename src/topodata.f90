@@ -24,7 +24,7 @@ module topodata
     use ncio
     use nml
     use coordinates, only : grid_class
-    use mapping,     only : map_class, map_init
+    use mapping,     only : map_class
     use fesmdata
 
     implicit none
@@ -155,10 +155,8 @@ contains
         type(grid_class),     intent(IN), optional :: grid
 
         character(len=1024) :: fname
-        type(grid_class) :: grid_src
-        logical :: with_int
-        integer :: k
-        integer, allocatable :: dims(:)
+        logical :: with_int, remap_nn
+        integer :: k, nx, ny
 
         fname = td%par%path
 
@@ -174,51 +172,21 @@ contains
             end if
         end do
 
-        td%par%grid_src = ""
-        if (nc_exists_attr(fname, "grid_name")) td%par%grid_src = fesmdata_grid_name(fname)
         td%par%product  = ""
         td%par%sources  = ""
         if (nc_exists_attr(fname, "product")) call nc_read_attr(fname, "product", td%par%product)
         if (nc_exists_attr(fname, "sources")) call nc_read_attr(fname, "sources", td%par%sources)
 
-        ! Maps onto the target grid if it differs from the grid of the file
+        ! Onto the target grid: remapped if the grid of the file differs
+        ! (mask and src_id by nearest neighbour)
+        call fesmdata_map_init(td%map, td%remap, td%nx, td%ny, fname, td%par%names(1), td%par%remap, &
+                               grid=grid, grid_src=td%par%grid_src)
+        with_int = any(td%par%vars .eq. "mask") .or. any(td%par%vars .eq. "src_id")
+        if (td%remap .and. with_int .and. trim(td%par%remap) .ne. "nn") then
+            call fesmdata_map_init(td%map_nn, remap_nn, nx, ny, fname, td%par%names(1), "nn", grid=grid)
+        end if
         td%par%grid_tgt = td%par%grid_src
-        td%remap = .false.
-        if (present(grid)) then
-            td%par%grid_tgt = grid%name
-            if (len_trim(td%par%grid_src) .gt. 0 .and. &
-                trim(grid%name) .ne. trim(td%par%grid_src)) then
-                with_int = any(td%par%vars .eq. "mask") .or. any(td%par%vars .eq. "src_id")
-                call fesmdata_grid_read(grid_src, fname)
-                call map_init(td%map, grid_src, grid, method=trim(td%par%remap), fldr="maps")
-                if (with_int .and. trim(td%par%remap) .ne. "nn") then
-                    call map_init(td%map_nn, grid_src, grid, method="nn", fldr="maps")
-                end if
-                td%remap = .true.
-            end if
-        end if
-
-        if (td%remap) then
-            td%nx = grid%G%nx
-            td%ny = grid%G%ny
-        else
-            call nc_dims(fname, td%par%names(1), dims=dims)
-            td%nx = dims(1)
-            td%ny = dims(2)
-            if (present(grid)) then
-                if (grid%G%nx .ne. td%nx .or. grid%G%ny .ne. td%ny) then
-                    if (len_trim(td%par%grid_src) .gt. 0) then
-                        call topodata_error("topodata_init_data", &
-                            "the target grid has the name of the grid of the file, but another size.", &
-                            "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
-                    else
-                        call topodata_error("topodata_init_data", &
-                            "the file (without grid_name) differs in size from the target grid.", &
-                            "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
-                    end if
-                end if
-            end if
-        end if
+        if (present(grid)) td%par%grid_tgt = grid%name
 
         do k = 1, size(td%par%vars)
             associate(name => td%par%names(k))

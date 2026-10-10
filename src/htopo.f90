@@ -7,9 +7,9 @@ module htopo
     !
     ! Three kinds of field live here:
     !   * ref (topodata_class) -- the reference geometry z_bed, H_ice, z_srf
-    !     and the bed roughness z_bed_sd, from a FesmData topography product;
-    !   * reg (regions_class) -- regions, zones and basins from FesmData, and
-    !     the named masks of its namelist group;
+    !     and the bed roughness z_bed_sd, from a topography file (e.g. FesmData);
+    !   * reg (regions_class) -- the layers (regions, zones, basins, ...) and
+    !     named masks of its namelist group;
     !   * z_bed, H_ice, z_srf, f_grnd, z_sl -- the current geometry, refreshed
     !     each step from the models. On a hub finer than the ice sheet it is the
     !     reference plus the models' anomalies (htopo_update).
@@ -20,7 +20,7 @@ module htopo
     ! Namelist groups (a domain of a multi-domain setup passes its own):
     !   group          basins (the basin set of htopo_basins)
     !   group_topo     topodata (path, vars, remap)
-    !   group_regions  regions (path_regions, path_basins, basin_sets, masks, mask_*)
+    !   group_regions  regions (path_regions, path_basins, basin_sets, layers, masks, ...)
     ! {domain}/{grid_name} in the paths resolve to the domain and the hub grid.
 
     use precision
@@ -32,7 +32,7 @@ module htopo
     use interp2D,       only : fill_nearest
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
     use topodata,       only : topodata_class, topodata_init_nml
-    use regions,        only : regions_class, regions_init_nml, regions_basin_ids
+    use regions,        only : regions_class, regions_init_nml, regions_basin_ids, regions_write
 
     implicit none
     private
@@ -243,7 +243,8 @@ contains
     end subroutine htopo_par_load
 
     subroutine htopo_write_init(htopo, filename, time_init)
-        ! Create a 2D output file on the hub grid, with the static masks.
+        ! Create a 2D output file on the hub grid, with the layers of the
+        ! regions and the basins of htopo_basins.
         type(htopo_class), intent(in) :: htopo
         character(len=*),  intent(in) :: filename
         real(wp),          intent(in) :: time_init
@@ -254,10 +255,7 @@ contains
         call nc_write_dim(filename, "time", x=time_init, dx=1.0_wp, nx=1, &
                           units="year", unlimited=.TRUE.)
 
-        call nc_write(filename, "region", htopo%reg%region_3, dim1="xc", dim2="yc", &
-                      start=[1,1], long_name="Region code (deepest level)", units="1")
-        call nc_write(filename, "zone", htopo%reg%zone, dim1="xc", dim2="yc", &
-                      start=[1,1], long_name="Zone", units="1")
+        call regions_write(htopo%reg, filename)
         call nc_write(filename, "basin", htopo_basins(htopo), dim1="xc", dim2="yc", &
                       start=[1,1], long_name="Basin ("//trim(htopo%par%basins)//")", units="1")
     end subroutine htopo_write_init

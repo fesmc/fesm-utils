@@ -5,13 +5,16 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
-- **regions**: FesmData v2 regions, zones and basins (`<GRID>_REGIONS.nc`,
-  `<GRID>_BASINS-<set>.nc`) in a `regions_class` (`regions_init_nml`,
-  `regions_init_arg`), with names from `flag_values`/`flag_meanings`, masks from
+- **regions**: named categorical layers (regions, zones, basins, ...) in a
+  `regions_class`, from any file (`regions_load_layer`; namelist `layers`,
+  `path_<layer>`, ...), from the program (`regions_add_layer`), or from FesmData
+  v2 files (`regions_load_fesmdata`: hierarchical `region` and `zone`;
+  `regions_load_basins`: `<set>`, `<set>.group`, `<set>.mask`), with names from
+  `codes`/`names`, `flag_values`/`flag_meanings` or the codes; masks from
   selection expressions (`regions_select(reg, "region:Greenland & zone:land")`,
-  named masks in the namelist, `regions_mask`), region-code arithmetic as in
-  FesmUtils.jl, and optional nearest-neighbour remapping onto a target grid.
-  Custom basin sets from other files (`path_basins_<set>`, `var_basins_<set>`).
+  named masks, `regions_mask`), `regions_basin_ids`, `regions_write` (layers
+  with their tables, to load again), region-code arithmetic as in FesmUtils.jl,
+  and nearest-neighbour remapping onto a target grid (`regions_init(reg, grid)`).
 - **topodata**: FesmData v2 topography products (`<GRID>_TOPO-<product>.nc`) in a
   `topodata_class` (`topodata_init_nml`, `topodata_init_arg`): only the listed
   variables are loaded (default `z_bed z_srf H_ice z_bed_sd`); optional remapping
@@ -23,8 +26,9 @@ All notable changes to fesm-utils are documented here.
   group_regions, domain, grid_name, cnst)` (one set of groups per domain),
   `htopo_basins`. The physics masks (yelmox's `ice_codes`/`relax_codes`/
   `region_codes`) move to the modules, as selection expressions.
-- **fesmdata**: helpers shared by the readers of FesmData v2 files (flag tables,
-  the grid of a file from `grid_<GRID>.txt`, reading with remapping, path
+- **fesmdata**: helpers shared by the readers of FesmData v2 and other files
+  (flag tables, the grid of a file from `grid_<GRID>.txt`, `fesmdata_map_init`:
+  how a field gets onto a target grid, reading with remapping, path
   placeholders).
 
 ### Changed

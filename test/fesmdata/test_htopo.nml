@@ -11,9 +11,10 @@
 &regions
     path_regions = "../ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
     path_basins  = "../ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
-    basin_sets   = "Zwally2012" "custom"
-    path_basins_custom = "test_htopo_custom.nc"
-    var_basins_custom  = "my_basins"
+    basin_sets   = "Zwally2012"
+    layers       = "custom"
+    path_custom  = "test_htopo_custom.nc"
+    var_custom   = "my_basins"
     masks        = "grl"
     mask_grl     = "region:Greenland"
 /

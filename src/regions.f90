@@ -1,39 +1,41 @@
 module regions
-    ! Regions, zones and basins of a FesmData v2 grid, and masks derived from
-    ! them by selection expressions.
+    ! Named categorical layers on a grid (regions, zones, basins, ... from any
+    ! source), and masks derived from them by selection expressions.
     !
-    ! Files (FesmData/Regions, $ICE_DATA/v2/<Domain>/<GRID>/):
-    !   <GRID>_REGIONS.nc       region_1, region_2, region_3, zone, dist_shelfbreak
-    !   <GRID>_BASINS-<set>.nc  basin, basin_group (optional), basin_mask
-    ! The names of the codes come from the CF attributes flag_values and
-    ! flag_meanings of each variable, which list only the codes present on
-    ! the grid.
+    ! A layer is a 2D integer field with a table of names of its codes.
+    ! Layers come from any file (regions_load_layer; namelist keys layers,
+    ! path_<layer>, ...), from the program (regions_add_layer), or from the
+    ! files of FesmData v2 ($ICE_DATA/v2/<Domain>/<GRID>/):
+    !   <GRID>_REGIONS.nc       layers region (hierarchical, from region_1..3)
+    !                           and zone (regions_load_fesmdata)
+    !   <GRID>_BASINS-<set>.nc  layers <set> (basin), <set>.group (basin_group)
+    !                           and <set>.mask (basin_mask) (regions_load_basins)
+    ! The names of the codes are given (codes, names), else the CF attributes
+    ! flag_values and flag_meanings of the variable, else the codes
+    ! themselves. Negative values (e.g. fill values) and cells without a
+    ! source value after remapping are regions_undefined.
     !
-    ! Region codes have two decimal digits per level below the first: the
-    ! path "1.3.1" is the code 10301. region_n holds the code of the deepest
-    ! region at or above level n, so region_3 places every cell at all levels
-    ! and in_region(region_3, code) selects a region with its subregions.
+    ! Hierarchical layers (region) have codes of two decimal digits per level
+    ! below the first: the path "1.3.1" is the code 10301, and a cell holds
+    ! the code of its deepest region, so in_region(values, code) selects a
+    ! region with its subregions.
     !
-    ! Selection expressions (regions_select, and the named masks of the
-    ! namelist) combine terms field:value,value,... where a comma is an OR:
+    ! Selection expressions (regions_select, and the named masks) combine
+    ! terms layer:value,value,... where a comma is an OR:
     !   region:Greenland,1.5        names, paths or codes, at any level
-    !   zone:land,continental_shelf names or codes of the zone
-    !   <set>:11,12                 basins of a loaded basin set (names or ids)
-    !   <set>.group:1               basin groups of the set
-    !   <set>.mask:1                original extent of the basins of the set
-    ! A basin set may also be a custom file (path_basins_<set>, var_basins_<set>
-    ! in the namelist): a 2D integer field of basin ids on the grid of the
-    ! regions file; without flag attributes its names are the ids, and values
-    ! below 1 (or missing) are no basin.
+    !   zone:land,continental_shelf names or codes
+    !   Zwally2012:11,12            any layer, e.g. a basin set
+    !   Zwally2012.group:1
     ! A term prefixed by ~ is negated, & joins terms (AND) and | joins
     ! clauses (OR, binding weaker than &). "all" and "none" select every cell
     ! and no cell. Names are matched ignoring case, with spaces read as
     ! underscores. Example: "region:Greenland & ~zone:open_ocean | Zwally2012:11"
     !
-    ! With a target grid whose name differs from the grid of the files, all
-    ! fields are remapped by nearest neighbour onto it. The grid of the files
-    ! (their global attribute grid_name) is read from its cdo description
-    ! grid_<name>.txt next to the files, else in maps/.
+    ! With a target grid, a file whose grid (its global attribute grid_name,
+    ! or grid_<layer> in the namelist) has another name is remapped onto it by
+    ! nearest neighbour; the grid is read from grid_<name>.txt next to the
+    ! file, else in maps/. A file without a grid name must be on the target
+    ! grid.
 
     use, intrinsic :: iso_fortran_env, only : error_unit
 
@@ -41,27 +43,30 @@ module regions
     use ncio
     use nml
     use coordinates, only : grid_class
-    use mapping,     only : map_class, map_init
+    use mapping,     only : map_class
     use fesmdata
 
     implicit none
 
-    integer, parameter :: len_expr = 1000
-    integer, parameter :: n_sets_max  = 20
-    integer, parameter :: n_masks_max = 50
+    integer, parameter :: len_expr     = 1000
+    integer, parameter :: len_layer    = 56
+    integer, parameter :: n_layers_max = 50
+    integer, parameter :: n_masks_max  = 50
+    integer, parameter :: n_codes_max  = 500
 
-    ! Zone of a remapped target cell without a source value
-    integer, parameter :: zone_undefined = -1
+    ! Code of an undefined cell
+    integer, parameter :: regions_undefined = -1
 
-    type basin_set_class
-        character(len=56)    :: name                ! e.g. "Zwally2012"
-        character(len=1024)  :: filename
-        character(len=56)    :: varname             ! "basin" for FesmData files
-        logical              :: with_group, with_mask
-        integer, allocatable :: basin(:,:)
-        integer, allocatable :: basin_group(:,:)
-        integer, allocatable :: basin_mask(:,:)
-        type(flag_table_class) :: tab_basin, tab_group
+    ! Names that are not layers (namelist keys path_regions and path_basins,
+    ! and the terms all and none)
+    character(len=8), parameter :: names_reserved(4) = &
+        [character(len=8) :: "regions", "basins", "all", "none"]
+
+    type region_layer_class
+        character(len=len_layer) :: name
+        logical                  :: hier = .false.  ! hierarchical codes
+        integer, allocatable     :: values(:,:)
+        type(flag_table_class)   :: tab
     end type
 
     type region_mask_class
@@ -70,61 +75,74 @@ module regions
         logical, allocatable    :: mask(:,:)
     end type
 
-    type regions_param_class
-        character(len=1024) :: path_regions         ! <GRID>_REGIONS.nc
-        character(len=1024) :: path_basins          ! template with {set}
-        character(len=56),       allocatable :: basin_sets(:)
-        character(len=1024),     allocatable :: basin_paths(:)  ! per set (template or custom)
-        character(len=56),       allocatable :: basin_vars(:)   ! per set ("basin" or custom)
-        character(len=56),       allocatable :: mask_names(:)
-        character(len=len_expr), allocatable :: mask_exprs(:)
-
-        ! Internal parameters
-        character(len=256) :: grid_src              ! grid of the files
-        character(len=256) :: grid_tgt              ! grid of the fields
-    end type
-
     type regions_class
-        type(regions_param_class) :: par
-        integer :: nx, ny
+        integer :: nx = 0, ny = 0
+        logical          :: with_grid = .false.
+        type(grid_class) :: grid                    ! target grid (if with_grid)
 
-        integer,  allocatable :: region_1(:,:), region_2(:,:), region_3(:,:)
-        integer,  allocatable :: zone(:,:)
-        real(wp), allocatable :: dist_shelfbreak(:,:)
-
-        ! Region names: the tables of region_1..3 together
-        type(flag_table_class) :: tab_region, tab_zone
-
-        type(basin_set_class),   allocatable :: basins(:)
-        type(region_mask_class), allocatable :: masks(:)
-
-        ! Online remapping from the grid of the files
-        logical         :: remap = .false.
-        type(map_class) :: map
+        type(region_layer_class), allocatable :: layers(:)
+        type(region_mask_class),  allocatable :: masks(:)
     end type
 
     private
-    public :: flag_table_class, basin_set_class, region_mask_class
-    public :: regions_param_class, regions_class
-    public :: regions_init_nml, regions_init_arg, regions_end
-    public :: regions_select, regions_mask, regions_basin_ids
+    public :: flag_table_class, region_layer_class, region_mask_class, regions_class
+    public :: regions_init, regions_init_nml, regions_end
+    public :: regions_load_layer, regions_load_fesmdata, regions_load_basins
+    public :: regions_add_layer, regions_add_mask, regions_write
+    public :: regions_find, regions_select, regions_mask, regions_basin_ids
     public :: flag_codes, flag_name
     public :: region_code, region_level, region_ancestor, region_path, in_region
-    public :: zone_undefined
+    public :: regions_undefined
 
 contains
 
     ! ===== Initialization =====================================================
 
+    subroutine regions_init(reg, grid, nx, ny)
+        ! An empty set of layers on grid (or of size nx, ny; else of the size
+        ! of the first layer). "all", "none", "None" and "domain" work on it.
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        type(grid_class),    intent(IN), optional :: grid
+        integer,             intent(IN), optional :: nx, ny
+
+        call regions_end(reg)
+
+        allocate(reg%layers(0), reg%masks(0))
+
+        if (present(grid)) then
+            reg%with_grid = .true.
+            reg%grid = grid
+            reg%nx = grid%G%nx
+            reg%ny = grid%G%ny
+        else if (present(nx) .and. present(ny)) then
+            reg%nx = nx
+            reg%ny = ny
+        end if
+
+        return
+
+    end subroutine regions_init
+
     subroutine regions_init_nml(reg, filename, group, domain, grid_name, subs, grid, verbose)
-        ! Load regions, basin sets and named masks as given by a namelist group:
+        ! Load layers and named masks as given by a namelist group (all keys
+        ! optional; without any, an empty set on grid):
         !   path_regions = "ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
         !   path_basins  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
-        !   basin_sets   = "Zwally2012"          (optional; none by default)
-        !   masks        = "grl_shelf"           (optional; none by default)
+        !   basin_sets   = "Zwally2012"
+        !   layers       = "glaciers"            layers of any file:
+        !   path_glaciers  = "glaciers.nc"
+        !   var_glaciers   = "id"                (default: the layer name)
+        !   codes_glaciers = 1 2                 (default: flag_values, else the codes)
+        !   names_glaciers = "Rhone" "Aletsch"   (default: flag_meanings, else the codes)
+        !   hier_glaciers  = False               (default: the attribute hierarchical)
+        !   grid_glaciers  = "ALPS-1KM"          (default: the attribute grid_name)
+        !   masks        = "grl_shelf"
         !   mask_grl_shelf = "region:Greenland & zone:continental_shelf"
-        ! {grid_name} is the grid of the files. grid: the target grid, onto
-        ! which the fields are remapped if it differs from the grid of the files.
+        ! {grid_name} in the paths: grid_name. grid: the target grid, onto
+        ! which the layers are remapped from the grids of their files.
 
         implicit none
 
@@ -137,242 +155,113 @@ contains
         type(grid_class),    intent(IN), optional :: grid
         logical,             intent(IN), optional :: verbose
 
-        call regions_par_load(reg%par, filename, group, domain, grid_name, subs, verbose)
+        character(len=1024)      :: path, path_basins
+        character(len=len_layer) :: names(n_layers_max), var, gname
+        character(len=len_name)  :: code_names(n_codes_max)
+        character(len=len_expr)  :: expr
+        integer :: codes(n_codes_max)
+        logical :: print_summary, hier
+        integer :: k, n, nc
 
-        call regions_init_data(reg, grid)
+        print_summary = .true.
+        if (present(verbose)) print_summary = verbose
+
+        call regions_init(reg, grid)
+
+        if (print_summary) write(*,*) "Loading: ", trim(filename), ":: ", trim(group)
+
+        ! FesmData regions and zones
+        if (nml_has_param(filename, group, "path_regions")) then
+            call nml_read(filename, group, "path_regions", path)
+            call fesmdata_parse_path(path, domain, grid_name, subs)
+            if (print_summary) write(*,*) "path_regions = ", trim(path)
+            call regions_load_fesmdata(reg, path)
+        end if
+
+        ! FesmData basin sets
+        names = ""
+        if (nml_has_param(filename, group, "basin_sets")) call nml_read(filename, group, "basin_sets", names)
+        n = count(len_trim(names) .gt. 0)
+        if (n .gt. 0) then
+            if (.not. nml_has_param(filename, group, "path_basins")) then
+                call regions_error("regions_init_nml", "basin_sets without path_basins.", "group = "//trim(group))
+            end if
+            call nml_read(filename, group, "path_basins", path_basins)
+            call fesmdata_parse_path(path_basins, domain, grid_name, subs)
+            names(1:n) = pack(names, len_trim(names) .gt. 0)
+            do k = 1, n
+                path = path_basins
+                call nml_replace(path, "{set}", trim(names(k)))
+                if (print_summary) write(*,*) "basins "//trim(names(k))//" = ", trim(path)
+                call regions_load_basins(reg, names(k), path)
+            end do
+        end if
+
+        ! Layers of any file
+        names = ""
+        if (nml_has_param(filename, group, "layers")) call nml_read(filename, group, "layers", names)
+        n = count(len_trim(names) .gt. 0)
+        names(1:n) = pack(names, len_trim(names) .gt. 0)
+        do k = 1, n
+            associate(l => names(k))
+                call nml_read(filename, group, "path_"//trim(l), path)
+                call fesmdata_parse_path(path, domain, grid_name, subs)
+
+                var = l
+                if (nml_has_param(filename, group, "var_"//trim(l))) &
+                    call nml_read(filename, group, "var_"//trim(l), var)
+                gname = ""
+                if (nml_has_param(filename, group, "grid_"//trim(l))) &
+                    call nml_read(filename, group, "grid_"//trim(l), gname)
+
+                if (print_summary) write(*,*) "layer "//trim(l)//" = ", trim(path), " :: ", trim(var)
+
+                nc = -1
+                if (nml_has_param(filename, group, "codes_"//trim(l))) then
+                    codes = huge(0)
+                    code_names = ""
+                    call nml_read(filename, group, "codes_"//trim(l), codes)
+                    call nml_read(filename, group, "names_"//trim(l), code_names)
+                    nc = count(codes .ne. huge(0))
+                    if (count(len_trim(code_names) .gt. 0) .ne. nc) then
+                        call regions_error("regions_init_nml", "codes_ and names_ of a layer differ in length.", &
+                            "group = "//trim(group)//new_line("a")//"layer = "//trim(l))
+                    end if
+                end if
+
+                if (nml_has_param(filename, group, "hier_"//trim(l))) then
+                    call nml_read(filename, group, "hier_"//trim(l), hier)
+                    if (nc .ge. 0) then
+                        call regions_load_layer(reg, l, path, var, hier=hier, codes=codes(1:nc), &
+                                                names=code_names(1:nc), grid_name=gname)
+                    else
+                        call regions_load_layer(reg, l, path, var, hier=hier, grid_name=gname)
+                    end if
+                else
+                    if (nc .ge. 0) then
+                        call regions_load_layer(reg, l, path, var, codes=codes(1:nc), &
+                                                names=code_names(1:nc), grid_name=gname)
+                    else
+                        call regions_load_layer(reg, l, path, var, grid_name=gname)
+                    end if
+                end if
+            end associate
+        end do
+
+        ! Named masks
+        names = ""
+        if (nml_has_param(filename, group, "masks")) call nml_read(filename, group, "masks", names)
+        n = count(len_trim(names) .gt. 0)
+        names(1:n) = pack(names, len_trim(names) .gt. 0)
+        do k = 1, n
+            call nml_read(filename, group, "mask_"//trim(names(k)), expr)
+            if (print_summary) write(*,*) "mask_"//trim(names(k))//" = ", trim(expr)
+            call regions_add_mask(reg, names(k), expr)
+        end do
 
         return
 
     end subroutine regions_init_nml
-
-    subroutine regions_init_arg(reg, path_regions, path_basins, basin_sets, mask_names, mask_exprs, grid, &
-                                basin_paths, basin_vars)
-        ! Load regions, basin sets and named masks from explicit arguments
-        ! (see regions_init_nml). path_basins is a template with {set};
-        ! basin_paths and basin_vars give the file and variable of each set
-        ! instead (custom sets; "" = from the template, "basin").
-
-        implicit none
-
-        type(regions_class), intent(INOUT) :: reg
-        character(len=*),    intent(IN)    :: path_regions
-        character(len=*),    intent(IN), optional :: path_basins
-        character(len=*),    intent(IN), optional :: basin_sets(:)
-        character(len=*),    intent(IN), optional :: mask_names(:)
-        character(len=*),    intent(IN), optional :: mask_exprs(:)
-        type(grid_class),    intent(IN), optional :: grid
-        character(len=*),    intent(IN), optional :: basin_paths(:)
-        character(len=*),    intent(IN), optional :: basin_vars(:)
-
-        integer :: n_sets, n_masks, k
-
-        n_sets = 0
-        if (present(basin_sets)) n_sets = size(basin_sets)
-        n_masks = 0
-        if (present(mask_names)) n_masks = size(mask_names)
-
-        if (n_sets .gt. 0 .and. .not. (present(path_basins) .or. present(basin_paths))) then
-            call regions_error("regions_init_arg", "basin_sets are given, but no path_basins or basin_paths.")
-        end if
-        if (present(basin_paths)) then
-            if (size(basin_paths) .ne. n_sets) &
-                call regions_error("regions_init_arg", "basin_sets and basin_paths differ in length.")
-        end if
-        if (present(basin_vars)) then
-            if (size(basin_vars) .ne. n_sets) &
-                call regions_error("regions_init_arg", "basin_sets and basin_vars differ in length.")
-        end if
-        if (n_masks .gt. 0) then
-            if (.not. present(mask_exprs)) then
-                call regions_error("regions_init_arg", "mask_names are given, but no mask_exprs.")
-            end if
-            if (size(mask_exprs) .ne. n_masks) then
-                call regions_error("regions_init_arg", "mask_names and mask_exprs differ in length.")
-            end if
-        end if
-
-        reg%par%path_regions = trim(path_regions)
-        reg%par%path_basins  = ""
-        if (present(path_basins)) reg%par%path_basins = trim(path_basins)
-
-        allocate(reg%par%basin_sets(n_sets), reg%par%basin_paths(n_sets), reg%par%basin_vars(n_sets))
-        reg%par%basin_paths = ""
-        reg%par%basin_vars  = "basin"
-        if (n_sets .gt. 0) reg%par%basin_sets = basin_sets
-        if (present(basin_paths)) reg%par%basin_paths = basin_paths
-        if (present(basin_vars))  reg%par%basin_vars  = basin_vars
-        do k = 1, n_sets
-            if (len_trim(reg%par%basin_paths(k)) .eq. 0) then
-                reg%par%basin_paths(k) = reg%par%path_basins
-                call nml_replace(reg%par%basin_paths(k), "{set}", trim(reg%par%basin_sets(k)))
-            end if
-            if (len_trim(reg%par%basin_vars(k)) .eq. 0) reg%par%basin_vars(k) = "basin"
-        end do
-
-        allocate(reg%par%mask_names(n_masks), reg%par%mask_exprs(n_masks))
-        if (n_masks .gt. 0) then
-            reg%par%mask_names = mask_names
-            reg%par%mask_exprs = mask_exprs
-        end if
-
-        call regions_init_data(reg, grid)
-
-        return
-
-    end subroutine regions_init_arg
-
-    subroutine regions_init_data(reg, grid)
-        ! Read the files given by reg%par (remapping onto grid if needed) and
-        ! evaluate the named masks.
-
-        implicit none
-
-        type(regions_class), intent(INOUT) :: reg
-        type(grid_class),    intent(IN), optional :: grid
-
-        character(len=1024) :: fname
-        type(flag_table_class) :: tab
-        integer :: k
-
-        fname = reg%par%path_regions
-
-        if (.not. nc_exists_var(fname, "region_1")) then
-            call regions_error("regions_init_data", &
-                "not a FesmData v2 regions file (no variable region_1).", &
-                "file = "//trim(fname)//new_line("a")// &
-                "FesmData v1 regions files (one variable mask) are not supported.")
-        end if
-
-        ! Grid of the files, and the map onto the target grid if it differs
-        reg%par%grid_src = fesmdata_grid_name(fname)
-        reg%par%grid_tgt = reg%par%grid_src
-        reg%remap = .false.
-        if (present(grid)) then
-            reg%par%grid_tgt = grid%name
-            if (trim(grid%name) .ne. trim(reg%par%grid_src)) then
-                call regions_remap_init(reg, fname, grid)
-            end if
-        end if
-
-        if (reg%remap) then
-            reg%nx = grid%G%nx
-            reg%ny = grid%G%ny
-        else
-            reg%nx = nc_size(fname, "xc")
-            reg%ny = nc_size(fname, "yc")
-            if (present(grid)) then
-                if (grid%G%nx .ne. reg%nx .or. grid%G%ny .ne. reg%ny) then
-                    call regions_error("regions_init_data", &
-                        "the target grid has the name of the grid of the file, but another size.", &
-                        "file = "//trim(fname)//new_line("a")//"grid = "//trim(grid%name))
-                end if
-            end if
-        end if
-
-        ! Regions and zones
-        call fesmdata_read_field(fname, "region_1", reg%region_1, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        call fesmdata_read_field(fname, "region_2", reg%region_2, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        call fesmdata_read_field(fname, "region_3", reg%region_3, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        call fesmdata_read_field(fname, "zone", reg%zone, reg%nx, reg%ny, reg%remap, reg%map, zone_undefined)
-        call fesmdata_read_field(fname, "dist_shelfbreak", reg%dist_shelfbreak, reg%nx, reg%ny, reg%remap, reg%map)
-
-        call flag_table_read(reg%tab_region, fname, "region_1")
-        do k = 2, 3
-            call flag_table_read(tab, fname, "region_"//char(ichar("0")+k))
-            call flag_table_merge(reg%tab_region, tab)
-        end do
-        call flag_table_read(reg%tab_zone, fname, "zone")
-
-        ! Basin sets
-        if (allocated(reg%basins)) deallocate(reg%basins)
-        allocate(reg%basins(size(reg%par%basin_sets)))
-        do k = 1, size(reg%basins)
-            call basin_set_load(reg, reg%basins(k), reg%par%basin_sets(k), &
-                                reg%par%basin_paths(k), reg%par%basin_vars(k))
-        end do
-
-        ! Named masks
-        if (allocated(reg%masks)) deallocate(reg%masks)
-        allocate(reg%masks(size(reg%par%mask_names)))
-        do k = 1, size(reg%masks)
-            reg%masks(k)%name = reg%par%mask_names(k)
-            reg%masks(k)%expr = reg%par%mask_exprs(k)
-            allocate(reg%masks(k)%mask(reg%nx,reg%ny))
-            reg%masks(k)%mask = regions_select(reg, reg%masks(k)%expr)
-        end do
-
-        return
-
-    end subroutine regions_init_data
-
-    subroutine basin_set_load(reg, bs, name, filename, varname)
-        ! A basin set: a FesmData basins file (varname = "basin", with
-        ! basin_group and basin_mask if present) or a custom field of basin ids.
-
-        implicit none
-
-        type(regions_class),   intent(INOUT) :: reg
-        type(basin_set_class), intent(INOUT) :: bs
-        character(len=*),      intent(IN)    :: name, filename, varname
-
-        character(len=256)   :: grid_name
-        character(len=64), allocatable :: dim_names(:)
-        integer, allocatable :: dims(:)
-        logical :: fesm
-
-        bs%name     = trim(name)
-        bs%filename = trim(filename)
-        bs%varname  = trim(varname)
-        fesm = (trim(varname) .eq. "basin")
-
-        ! All files must be on the grid of the regions file (one map): by the
-        ! name of the grid if the file has one, else by the size of the field
-        if (nc_exists_attr(bs%filename, "grid_name")) then
-            grid_name = fesmdata_grid_name(bs%filename)
-            if (trim(grid_name) .ne. trim(reg%par%grid_src)) then
-                call regions_error("basin_set_load", &
-                    "the basins file is on another grid than the regions file.", &
-                    "file      = "//trim(bs%filename)//new_line("a")// &
-                    "grid_name = "//trim(grid_name)//new_line("a")// &
-                    "regions   = "//trim(reg%par%grid_src))
-            end if
-        else
-            call nc_dims(bs%filename, bs%varname, dim_names, dims)
-            if (size(dims) .lt. 2) then
-                call regions_error("basin_set_load", "the basins are not a 2D field.", &
-                    "file = "//trim(bs%filename)//new_line("a")//"variable = "//trim(bs%varname))
-            end if
-            if (dims(1) .ne. nc_size(reg%par%path_regions, "xc") .or. &
-                dims(2) .ne. nc_size(reg%par%path_regions, "yc")) then
-                call regions_error("basin_set_load", &
-                    "the basins file (without grid_name) differs in size from the regions file.", &
-                    "file = "//trim(bs%filename)//new_line("a")//"variable = "//trim(bs%varname))
-            end if
-        end if
-
-        call fesmdata_read_field(bs%filename, bs%varname, bs%basin, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        where (bs%basin .lt. 1) bs%basin = 0
-
-        if (nc_exists_attr(bs%filename, bs%varname, "flag_values")) then
-            call flag_table_read(bs%tab_basin, bs%filename, bs%varname)
-        else
-            call flag_table_from_values(bs%tab_basin, bs%basin)
-        end if
-
-        bs%with_mask = fesm .and. nc_exists_var(bs%filename, "basin_mask")
-        if (bs%with_mask) then
-            call fesmdata_read_field(bs%filename, "basin_mask", bs%basin_mask, reg%nx, reg%ny, reg%remap, reg%map, 0)
-        end if
-
-        bs%with_group = fesm .and. nc_exists_var(bs%filename, "basin_group")
-        if (bs%with_group) then
-            call fesmdata_read_field(bs%filename, "basin_group", bs%basin_group, reg%nx, reg%ny, reg%remap, reg%map, 0)
-            call flag_table_read(bs%tab_group, bs%filename, "basin_group")
-        end if
-
-        return
-
-    end subroutine basin_set_load
 
     subroutine regions_end(reg)
 
@@ -388,113 +277,335 @@ contains
 
     end subroutine regions_end
 
-    subroutine regions_par_load(par, filename, group, domain, grid_name, subs, verbose)
+    ! ===== Layers =============================================================
 
-        implicit none
-
-        type(regions_param_class), intent(OUT) :: par
-        character(len=*), intent(IN) :: filename
-        character(len=*), intent(IN) :: group
-        character(len=*), intent(IN), optional :: domain
-        character(len=*), intent(IN), optional :: grid_name
-        character(len=*), intent(IN), optional :: subs(:,:)
-        logical,          intent(IN), optional :: verbose
-
-        character(len=56) :: sets(n_sets_max), names(n_masks_max)
-        logical :: print_summary
-        integer :: k, n
-
-        print_summary = .true.
-        if (present(verbose)) print_summary = verbose
-
-        call nml_read(filename, group, "path_regions", par%path_regions)
-        call fesmdata_parse_path(par%path_regions, domain, grid_name, subs)
-
-        ! Basin sets: from the template path_basins, or custom (path_basins_<set>,
-        ! var_basins_<set>)
-        par%path_basins = ""
-        sets = ""
-        if (nml_has_param(filename, group, "basin_sets")) then
-            call nml_read(filename, group, "basin_sets",  sets)
-        end if
-        if (nml_has_param(filename, group, "path_basins")) then
-            call nml_read(filename, group, "path_basins", par%path_basins)
-            call fesmdata_parse_path(par%path_basins, domain, grid_name, subs)
-        end if
-        n = count(len_trim(sets) .gt. 0)
-        allocate(par%basin_sets(n), par%basin_paths(n), par%basin_vars(n))
-        par%basin_sets = pack(sets, len_trim(sets) .gt. 0)
-        do k = 1, n
-            if (nml_has_param(filename, group, "path_basins_"//trim(par%basin_sets(k)))) then
-                call nml_read(filename, group, "path_basins_"//trim(par%basin_sets(k)), par%basin_paths(k))
-                call fesmdata_parse_path(par%basin_paths(k), domain, grid_name, subs)
-            else if (len_trim(par%path_basins) .gt. 0) then
-                par%basin_paths(k) = par%path_basins
-                call nml_replace(par%basin_paths(k), "{set}", trim(par%basin_sets(k)))
-            else
-                call regions_error("regions_par_load", "a basin set without a file.", &
-                    "set = "//trim(par%basin_sets(k))//new_line("a")// &
-                    "give path_basins (template with {set}) or path_basins_"//trim(par%basin_sets(k)))
-            end if
-            par%basin_vars(k) = "basin"
-            if (nml_has_param(filename, group, "var_basins_"//trim(par%basin_sets(k)))) then
-                call nml_read(filename, group, "var_basins_"//trim(par%basin_sets(k)), par%basin_vars(k))
-            end if
-        end do
-
-        names = ""
-        if (nml_has_param(filename, group, "masks")) then
-            call nml_read(filename, group, "masks", names)
-        end if
-        n = count(len_trim(names) .gt. 0)
-        allocate(par%mask_names(n), par%mask_exprs(n))
-        par%mask_names = pack(names, len_trim(names) .gt. 0)
-        do k = 1, n
-            call nml_read(filename, group, "mask_"//trim(par%mask_names(k)), par%mask_exprs(k))
-        end do
-
-        if (print_summary) then
-            write(*,*) "Loading: ", trim(filename), ":: ", trim(group)
-            write(*,*) "path_regions  = ", trim(par%path_regions)
-            do k = 1, size(par%basin_sets)
-                write(*,*) "basins "//trim(par%basin_sets(k))//" = ", trim(par%basin_paths(k)), &
-                           " :: ", trim(par%basin_vars(k))
-            end do
-            do k = 1, size(par%mask_names)
-                write(*,*) "mask_"//trim(par%mask_names(k))//" = ", trim(par%mask_exprs(k))
-            end do
-        end if
-
-        return
-
-    end subroutine regions_par_load
-
-    ! ===== Reading and remapping ==============================================
-
-    subroutine regions_remap_init(reg, fname, grid)
-        ! Nearest-neighbour map from the grid of the files onto grid (cached
-        ! in maps/).
+    subroutine regions_load_layer(reg, name, path, var, hier, codes, names, grid_name)
+        ! A layer from the integer variable var (default: name) of any file,
+        ! on the target grid (see the module header). codes, names: the names
+        ! of the codes. hier: hierarchical codes (default: the attribute
+        ! hierarchical of the variable). grid_name: the grid of a file
+        ! without the attribute grid_name.
 
         implicit none
 
         type(regions_class), intent(INOUT) :: reg
-        character(len=*),    intent(IN)    :: fname
-        type(grid_class),    intent(IN)    :: grid
+        character(len=*),    intent(IN)    :: name, path
+        character(len=*),    intent(IN), optional :: var
+        logical,             intent(IN), optional :: hier
+        integer,             intent(IN), optional :: codes(:)
+        character(len=*),    intent(IN), optional :: names(:)
+        character(len=*),    intent(IN), optional :: grid_name
 
-        type(grid_class) :: grid_src
-
-        call fesmdata_grid_read(grid_src, fname)
-        call map_init(reg%map, grid_src, grid, method="nn", fldr="maps")
-        reg%remap = .true.
+        call check_layer_name(name, "regions_load_layer")
+        call load_layer(reg, name, path, var, hier, codes, names, grid_name)
 
         return
 
-    end subroutine regions_remap_init
+    end subroutine regions_load_layer
 
-    ! ===== Selection ==========================================================
+    subroutine regions_load_fesmdata(reg, path)
+        ! The layers region (hierarchical; values of region_3, names of
+        ! region_1..3) and zone of a FesmData v2 regions file.
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        character(len=*),    intent(IN)    :: path
+
+        type(flag_table_class) :: tab
+        integer :: k
+
+        if (.not. nc_exists_var(path, "region_1")) then
+            call regions_error("regions_load_fesmdata", &
+                "not a FesmData v2 regions file (no variable region_1).", &
+                "file = "//trim(path)//new_line("a")// &
+                "FesmData v1 regions files (one variable mask) are not supported.")
+        end if
+
+        call load_layer(reg, "region", path, "region_3", hier=.true.)
+        associate(tab_region => reg%layers(size(reg%layers))%tab)
+            do k = 1, 2
+                call flag_table_read(tab, path, "region_"//char(ichar("0")+k))
+                call flag_table_merge(tab_region, tab)
+            end do
+        end associate
+
+        call load_layer(reg, "zone", path, "zone")
+
+        return
+
+    end subroutine regions_load_fesmdata
+
+    subroutine regions_load_basins(reg, set, path)
+        ! The layers <set> (basin), <set>.group (basin_group) and <set>.mask
+        ! (basin_mask) of a FesmData v2 basins file (the last two if present).
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        character(len=*),    intent(IN)    :: set, path
+
+        call check_layer_name(set, "regions_load_basins")
+
+        call load_layer(reg, set, path, "basin")
+        if (nc_exists_var(path, "basin_group")) call load_layer(reg, trim(set)//".group", path, "basin_group")
+        if (nc_exists_var(path, "basin_mask"))  call load_layer(reg, trim(set)//".mask",  path, "basin_mask")
+
+        return
+
+    end subroutine regions_load_basins
+
+    subroutine regions_add_layer(reg, name, field, codes, names, hier)
+        ! A layer from a field of the program (on the grid of the set).
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        character(len=*),    intent(IN)    :: name
+        integer,             intent(IN)    :: field(:,:)
+        integer,             intent(IN), optional :: codes(:)
+        character(len=*),    intent(IN), optional :: names(:)
+        logical,             intent(IN), optional :: hier
+
+        type(region_layer_class) :: layer
+
+        call check_layer_name(name, "regions_add_layer")
+
+        layer%name   = name
+        layer%values = field
+        where (layer%values .lt. 0) layer%values = regions_undefined
+        if (present(hier)) layer%hier = hier
+        call layer_table(layer, codes, names)
+
+        call add_layer(reg, layer)
+
+        return
+
+    end subroutine regions_add_layer
+
+    subroutine load_layer(reg, name, path, var, hier, codes, names, grid_name)
+        ! Read a layer (see regions_load_layer), without checking its name.
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        character(len=*),    intent(IN)    :: name, path
+        character(len=*),    intent(IN), optional :: var
+        logical,             intent(IN), optional :: hier
+        integer,             intent(IN), optional :: codes(:)
+        character(len=*),    intent(IN), optional :: names(:)
+        character(len=*),    intent(IN), optional :: grid_name
+
+        type(region_layer_class) :: layer
+        character(len=len_layer) :: varname
+        type(map_class) :: map
+        logical :: remap
+        integer :: nx, ny, ival
+
+        varname = name
+        if (present(var)) varname = var
+
+        if (.not. nc_exists_var(path, varname)) then
+            call regions_error("regions_load_layer", "variable not in the file.", &
+                "layer    = "//trim(name)//new_line("a")// &
+                "file     = "//trim(path)//new_line("a")//"variable = "//trim(varname))
+        end if
+
+        if (reg%with_grid) then
+            call fesmdata_map_init(map, remap, nx, ny, path, varname, "nn", grid=reg%grid, grid_name=grid_name)
+        else
+            call fesmdata_map_init(map, remap, nx, ny, path, varname, "nn", grid_name=grid_name)
+        end if
+
+        layer%name = name
+        call fesmdata_read_field(path, varname, layer%values, nx, ny, remap, map, regions_undefined)
+        where (layer%values .lt. 0) layer%values = regions_undefined
+
+        if (present(hier)) then
+            layer%hier = hier
+        else if (nc_exists_attr(path, varname, "hierarchical")) then
+            call nc_read_attr(path, varname, "hierarchical", ival)
+            layer%hier = (ival .eq. 1)
+        end if
+
+        if (.not. present(codes) .and. nc_exists_attr(path, varname, "flag_values")) then
+            call flag_table_read(layer%tab, path, varname)
+        else
+            call layer_table(layer, codes, names)
+        end if
+
+        call add_layer(reg, layer)
+
+        return
+
+    end subroutine load_layer
+
+    subroutine layer_table(layer, codes, names)
+        ! The table of a layer: codes and names, else its positive values
+        ! (named by themselves).
+
+        implicit none
+
+        type(region_layer_class), intent(INOUT) :: layer
+        integer,          intent(IN), optional  :: codes(:)
+        character(len=*), intent(IN), optional  :: names(:)
+
+        if (present(codes) .neqv. present(names)) then
+            call regions_error("regions", "codes and names of a layer go together.", "layer = "//trim(layer%name))
+        end if
+
+        if (present(codes)) then
+            if (size(codes) .ne. size(names)) then
+                call regions_error("regions", "codes and names of a layer differ in length.", &
+                    "layer = "//trim(layer%name))
+            end if
+            layer%tab%codes = codes
+            allocate(layer%tab%names(size(names)))
+            layer%tab%names = names
+        else
+            call flag_table_from_values(layer%tab, layer%values)
+        end if
+
+        return
+
+    end subroutine layer_table
+
+    subroutine add_layer(reg, layer)
+        ! Append a layer (of the size of the set; the first sets it).
+
+        implicit none
+
+        type(regions_class),      intent(INOUT) :: reg
+        type(region_layer_class), intent(IN)    :: layer
+
+        if (.not. allocated(reg%layers)) call regions_init(reg)
+
+        if (regions_find(reg, layer%name) .gt. 0) then
+            call regions_error("regions", "a layer of this name exists already.", "layer = "//trim(layer%name))
+        end if
+
+        if (reg%nx .eq. 0 .and. reg%ny .eq. 0) then
+            reg%nx = size(layer%values,1)
+            reg%ny = size(layer%values,2)
+        else if (size(layer%values,1) .ne. reg%nx .or. size(layer%values,2) .ne. reg%ny) then
+            call regions_error("regions", "the layer differs in size from the set.", "layer = "//trim(layer%name))
+        end if
+
+        reg%layers = [reg%layers, layer]
+
+        return
+
+    end subroutine add_layer
+
+    subroutine check_layer_name(name, proc)
+        ! Names of layers: not reserved, and without "." (kept for the
+        ! layers <set>.group and <set>.mask of basin sets).
+
+        implicit none
+
+        character(len=*), intent(IN) :: name, proc
+
+        if (len_trim(name) .eq. 0 .or. index(name, ".") .gt. 0 .or. &
+            any(names_reserved .eq. lower(name))) then
+            call regions_error(proc, "invalid layer name (empty, with '.', or reserved: regions basins all none).", &
+                "name = "//trim(name))
+        end if
+
+    end subroutine check_layer_name
+
+    integer function regions_find(reg, name)
+        ! Index of the layer name (ignoring case), 0 if there is none.
+
+        implicit none
+
+        type(regions_class), intent(IN) :: reg
+        character(len=*),    intent(IN) :: name
+
+        integer :: k
+
+        regions_find = 0
+        if (.not. allocated(reg%layers)) return
+        do k = 1, size(reg%layers)
+            if (lower(reg%layers(k)%name) .eq. lower(adjustl(name))) then
+                regions_find = k
+                exit
+            end if
+        end do
+
+    end function regions_find
+
+    subroutine regions_write(reg, filename, grid, layers)
+        ! Write layers (default: all) with their tables (flag_values,
+        ! flag_meanings) and the attribute hierarchical, so that they load
+        ! again as they are. With grid, a new file on it (dimensions xc, yc,
+        ! global attribute grid_name); else into the existing file filename
+        ! (dimensions xc, yc).
+
+        implicit none
+
+        type(regions_class), intent(IN) :: reg
+        character(len=*),    intent(IN) :: filename
+        type(grid_class),    intent(IN), optional :: grid
+        character(len=*),    intent(IN), optional :: layers(:)
+
+        character(len=:), allocatable :: meanings
+        integer :: k, j
+
+        if (present(grid)) then
+            call nc_create(filename)
+            call nc_write_dim(filename, "xc", x=grid%G%x, units="km")
+            call nc_write_dim(filename, "yc", x=grid%G%y, units="km")
+            call nc_write_attr(filename, "grid_name", trim(grid%name))
+        end if
+
+        do k = 1, size(reg%layers)
+            associate(l => reg%layers(k))
+                if (present(layers)) then
+                    if (.not. any([(lower(layers(j)) .eq. lower(l%name), j=1,size(layers))])) cycle
+                end if
+
+                call nc_write(filename, trim(l%name), l%values, dim1="xc", dim2="yc", units="1")
+                if (size(l%tab%codes) .gt. 0) then
+                    meanings = trim(l%tab%names(1))
+                    do j = 2, size(l%tab%names)
+                        meanings = meanings//" "//trim(l%tab%names(j))
+                    end do
+                    call nc_write_attr(filename, trim(l%name), "flag_values", l%tab%codes)
+                    call nc_write_attr(filename, trim(l%name), "flag_meanings", meanings)
+                end if
+                if (l%hier) call nc_write_attr(filename, trim(l%name), "hierarchical", 1)
+            end associate
+        end do
+
+        return
+
+    end subroutine regions_write
+
+    ! ===== Masks ==============================================================
+
+    subroutine regions_add_mask(reg, name, expr)
+        ! A named mask from a selection expression.
+
+        implicit none
+
+        type(regions_class), intent(INOUT) :: reg
+        character(len=*),    intent(IN)    :: name, expr
+
+        type(region_mask_class) :: m
+
+        if (.not. allocated(reg%masks)) allocate(reg%masks(0))
+
+        m%name = name
+        m%expr = expr
+        m%mask = regions_select(reg, expr)
+        reg%masks = [reg%masks, m]
+
+        return
+
+    end subroutine regions_add_mask
 
     function regions_mask(reg, name) result(mask)
-        ! A named mask of the namelist (or of regions_init_arg).
+        ! A named mask (of the namelist, or of regions_add_mask).
 
         implicit none
 
@@ -516,11 +627,11 @@ contains
     end function regions_mask
 
     function regions_basin_ids(reg, spec, extent) result(ids)
-        ! Basin ids of a loaded basin set: spec = "<set>" (basin) or
-        ! "<set>.group" (basin_group); 0 = no basin. Also "None" (no basins,
-        ! 0 everywhere) and "domain" (the whole domain is one basin, 1).
-        ! extent: the original extent of the basins (basin_mask), or where
-        ! ids > 0 without one.
+        ! Basin ids of a layer (spec = its name, e.g. "Zwally2012" or
+        ! "Zwally2012.group"); 0 = no basin. Also "None" (no basins, 0
+        ! everywhere) and "domain" (the whole domain is one basin, 1).
+        ! extent: the original extent of the basins (the layer <set>.mask of
+        ! a basin set), else where ids > 0.
 
         implicit none
 
@@ -529,7 +640,7 @@ contains
         logical, optional,   intent(OUT) :: extent(:,:)
         integer :: ids(reg%nx,reg%ny)
 
-        integer :: q, ks
+        integer :: q, k, km
 
         select case(trim(spec))
             case("None")
@@ -542,26 +653,18 @@ contains
                 return
         end select
 
-        q  = index(spec, ".")
-        ks = find_set(reg, spec(1:merge(len_trim(spec), q-1, q .eq. 0)))
-        if (ks .eq. 0) then
-            call regions_error("regions_basin_ids", "not a loaded basin set.", "spec = "//trim(spec))
+        k = regions_find(reg, spec)
+        if (k .eq. 0) then
+            call regions_error("regions_basin_ids", "no layer of this name (or None, domain).", &
+                "spec   = "//trim(spec)//new_line("a")//"layers = "//layer_names(reg))
         end if
-
-        if (q .eq. 0) then
-            ids = reg%basins(ks)%basin
-        else if (lower(spec(q+1:)) .eq. "group") then
-            if (.not. reg%basins(ks)%with_group) then
-                call regions_error("regions_basin_ids", "the basin set has no basin_group.", "spec = "//trim(spec))
-            end if
-            ids = reg%basins(ks)%basin_group
-        else
-            call regions_error("regions_basin_ids", "spec is <set> or <set>.group.", "spec = "//trim(spec))
-        end if
+        ids = max(reg%layers(k)%values, 0)
 
         if (present(extent)) then
-            if (reg%basins(ks)%with_mask) then
-                extent = (reg%basins(ks)%basin_mask .eq. 1)
+            q  = index(spec, ".")
+            km = regions_find(reg, spec(1:merge(len_trim(spec), q-1, q .eq. 0))//".mask")
+            if (km .gt. 0) then
+                extent = (reg%layers(km)%values .eq. 1)
             else
                 extent = (ids .gt. 0)
             end if
@@ -612,7 +715,7 @@ contains
     end function regions_select
 
     function select_term(reg, term, expr) result(mask)
-        ! Cells selected by one term [~]field:value,value,... (or all, none).
+        ! Cells selected by one term [~]layer:value,value,... (or all, none).
 
         implicit none
 
@@ -621,11 +724,10 @@ contains
         character(len=*),    intent(IN) :: expr       ! for error messages
         logical :: mask(reg%nx,reg%ny)
 
-        character(len=len_expr) :: t, field, values
-        type(flag_table_class) :: tab_mask
+        character(len=len_expr) :: t
         integer, allocatable :: codes(:)
         logical :: negate
-        integer :: q, k, ks
+        integer :: q, k, kl
 
         t = adjustl(term)
         negate = (t(1:1) .eq. "~")
@@ -644,74 +746,28 @@ contains
                     mask = .false.
                 case default
                     call regions_error("regions_select", &
-                        "a term must be field:values, all or none.", &
+                        "a term must be layer:values, all or none.", &
                         "term       = "//trim(t)//new_line("a")//"expression = "//trim(expr))
             end select
         else
-            field  = lower(adjustl(t(1:q-1)))
-            values = t(q+1:)
+            kl = regions_find(reg, t(1:q-1))
+            if (kl .eq. 0) then
+                call regions_error("regions_select", "unknown layer.", &
+                    "layer      = "//trim(adjustl(t(1:q-1)))//new_line("a")// &
+                    "expression = "//trim(expr)//new_line("a")//"layers     = "//layer_names(reg))
+            end if
 
-            select case(trim(field))
-
-                case("region")
-                    codes = resolve_values(reg%tab_region, values, .true., "region", expr)
-                    mask = .false.
-                    do k = 1, size(codes)
-                        mask = mask .or. in_region(reg%region_3, codes(k))
-                    end do
-
-                case("zone")
-                    codes = resolve_values(reg%tab_zone, values, .false., "zone", expr)
-                    mask = .false.
-                    do k = 1, size(codes)
-                        mask = mask .or. (reg%zone .eq. codes(k))
-                    end do
-
-                case default
-                    ! <set>, <set>.group or <set>.mask
-                    q  = index(field, ".")
-                    ks = find_set(reg, field(1:merge(len_trim(field), q-1, q .eq. 0)))
-                    if (ks .eq. 0) then
-                        call regions_error("regions_select", &
-                            "unknown field (region, zone or a loaded basin set).", &
-                            "field      = "//trim(field)//new_line("a")//"expression = "//trim(expr))
-                    end if
-
-                    associate(bs => reg%basins(ks))
-                    mask = .false.
-                    if (q .eq. 0) then
-                        codes = resolve_values(bs%tab_basin, values, .false., field, expr)
-                        do k = 1, size(codes)
-                            mask = mask .or. (bs%basin .eq. codes(k))
-                        end do
-                    else if (trim(field(q+1:)) .eq. "group") then
-                        if (.not. bs%with_group) then
-                            call regions_error("regions_select", "the basin set has no basin_group.", &
-                                "set        = "//trim(bs%name)//new_line("a")//"expression = "//trim(expr))
-                        end if
-                        codes = resolve_values(bs%tab_group, values, .false., field, expr)
-                        do k = 1, size(codes)
-                            mask = mask .or. (bs%basin_group .eq. codes(k))
-                        end do
-                    else if (trim(field(q+1:)) .eq. "mask") then
-                        if (.not. bs%with_mask) then
-                            call regions_error("regions_select", "the basin set has no basin_mask.", &
-                                "set        = "//trim(bs%name)//new_line("a")//"expression = "//trim(expr))
-                        end if
-                        tab_mask%codes = [0, 1]
-                        tab_mask%names = [character(len=len_name) :: "0", "1"]
-                        codes = resolve_values(tab_mask, values, .false., field, expr)
-                        do k = 1, size(codes)
-                            mask = mask .or. (bs%basin_mask .eq. codes(k))
-                        end do
+            associate(l => reg%layers(kl))
+                codes = resolve_values(l%tab, t(q+1:), l%hier, l%name, expr)
+                mask = .false.
+                do k = 1, size(codes)
+                    if (l%hier) then
+                        mask = mask .or. in_region(l%values, codes(k))
                     else
-                        call regions_error("regions_select", &
-                            "a basin set field is <set>, <set>.group or <set>.mask.", &
-                            "field      = "//trim(field)//new_line("a")//"expression = "//trim(expr))
+                        mask = mask .or. (l%values .eq. codes(k))
                     end if
-                    end associate
-
-            end select
+                end do
+            end associate
         end if
 
         if (negate) mask = .not. mask
@@ -720,16 +776,16 @@ contains
 
     end function select_term
 
-    function resolve_values(tab, values, is_region, field, expr) result(codes)
-        ! Codes of a comma-separated list of names, codes and (for regions)
-        ! paths such as 1.3.1.
+    function resolve_values(tab, values, hier, layer, expr) result(codes)
+        ! Codes of a comma-separated list of names, codes and (for
+        ! hierarchical layers) paths such as 1.3.1.
 
         implicit none
 
         type(flag_table_class), intent(IN) :: tab
         character(len=*),       intent(IN) :: values
-        logical,                intent(IN) :: is_region
-        character(len=*),       intent(IN) :: field, expr
+        logical,                intent(IN) :: hier
+        character(len=*),       intent(IN) :: layer, expr
         integer, allocatable :: codes(:)
 
         character(len=len_name) :: v
@@ -748,13 +804,13 @@ contains
 
             if (len_trim(v) .eq. 0) then
                 call regions_error("regions_select", "empty value.", &
-                    "field      = "//trim(field)//new_line("a")//"expression = "//trim(expr))
+                    "layer      = "//trim(layer)//new_line("a")//"expression = "//trim(expr))
             end if
 
             if (verify(trim(v), "0123456789") .eq. 0) then
                 read(v, *, iostat=ios) code
                 codes = [codes, code]
-            else if (is_region .and. verify(trim(v), "0123456789.") .eq. 0) then
+            else if (hier .and. verify(trim(v), "0123456789.") .eq. 0) then
                 code = region_code(v)
                 if (code .le. 0) then
                     call regions_error("regions_select", "invalid region path.", &
@@ -765,7 +821,7 @@ contains
                 c = flag_codes(tab, v)
                 if (size(c) .eq. 0) then
                     call regions_error("regions_select", "unknown name (not on this grid).", &
-                        "field      = "//trim(field)//new_line("a")// &
+                        "layer      = "//trim(layer)//new_line("a")// &
                         "name       = "//trim(v)//new_line("a")// &
                         "expression = "//trim(expr)//new_line("a")// &
                         "names      = "//flag_names_joined(tab))
@@ -778,24 +834,23 @@ contains
 
     end function resolve_values
 
-    integer function find_set(reg, name)
+    function layer_names(reg) result(str)
+        ! All names of layers, space-separated (for messages).
 
         implicit none
 
         type(regions_class), intent(IN) :: reg
-        character(len=*),    intent(IN) :: name
+        character(len=:), allocatable :: str
 
         integer :: k
 
-        find_set = 0
-        do k = 1, size(reg%basins)
-            if (lower(reg%basins(k)%name) .eq. lower(name)) then
-                find_set = k
-                exit
-            end if
+        str = ""
+        if (.not. allocated(reg%layers)) return
+        do k = 1, size(reg%layers)
+            str = str//trim(reg%layers(k)%name)//" "
         end do
 
-    end function find_set
+    end function layer_names
 
     ! ===== Region codes (as FesmUtils.jl region_codes.jl) =====================
 

@@ -9,7 +9,7 @@ program test_htopo
     use ncio
     use coordinates,    only : grid_class
     use phys_constants, only : phys_const_class, phys_const_load
-    use regions,        only : regions_mask
+    use regions,        only : regions_class, regions_mask, regions_find
     use htopo
 
     implicit none
@@ -37,20 +37,19 @@ program test_htopo
     call htopo_init(ht, nml_file, "domain", "topo", "regions", "NorthTest", "NHT-16KM", cnst)
 
     call check("size",          ht%nx .eq. 551 .and. ht%ny .eq. 551, nfail)
-    call check("topo remapped", ht%ref%remap .and. .not. ht%reg%remap, nfail)
+    call check("topo remapped", ht%ref%remap, nfail)
 
     allocate(z_bed(551,551))
     call nc_read("../ice_data/v2/NorthTest/NHT-16KM/NHT-16KM_TOPO-GEBCO2025.nc", "z_bed", z_bed, missing_value=mv)
     call check("z_bed (identity remap)", maxval(abs(ht%ref%z_bed - z_bed)) .lt. 1e-2_wp, nfail)
     call check("z_bed_sd",      maxval(ht%ref%z_bed_sd) .gt. 0.0_wp, nfail)
 
-    call check("basins",           all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin) &
+    call check("basins",           all(htopo_basins(ht) .eq. layer(ht%reg, "Zwally2012")) &
                                    .and. maxval(htopo_basins(ht)) .gt. 0, nfail)
     ht%par%basins = "Zwally2012.group"
-    call check("basins group",     all(htopo_basins(ht) .eq. ht%reg%basins(1)%basin_group), nfail)
+    call check("basins group",     all(htopo_basins(ht) .eq. layer(ht%reg, "Zwally2012.group")), nfail)
     ht%par%basins = "Zwally2012"
-    call check("custom basins",    all(ht%reg%basins(2)%basin .eq. 3) .and. &
-                                   trim(ht%reg%basins(2)%varname) .eq. "my_basins", nfail)
+    call check("custom layer",     all(layer(ht%reg, "custom") .eq. 3), nfail)
     call check("named mask",       count(regions_mask(ht%reg, "grl")) .gt. 0, nfail)
 
     ! Current geometry: starts from the reference; no anomaly keeps it
@@ -106,6 +105,13 @@ program test_htopo
     write(*,"(a)") "test_htopo: all checks passed"
 
 contains
+
+    function layer(reg, name) result(values)
+        type(regions_class), intent(in) :: reg
+        character(len=*),    intent(in) :: name
+        integer, allocatable :: values(:,:)
+        values = reg%layers(regions_find(reg, name))%values
+    end function layer
 
     subroutine check(label, ok, nfail)
         character(len=*), intent(in)    :: label
