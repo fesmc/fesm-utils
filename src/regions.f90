@@ -478,6 +478,9 @@ contains
         type(regions_class),      intent(INOUT) :: reg
         type(region_layer_class), intent(IN)    :: layer
 
+        type(region_layer_class), allocatable :: layers(:)
+        integer :: n
+
         if (.not. allocated(reg%layers)) call regions_init(reg)
 
         if (regions_find(reg, layer%name) .gt. 0) then
@@ -491,7 +494,13 @@ contains
             call regions_error("regions", "the layer differs in size from the set.", "layer = "//trim(layer%name))
         end if
 
-        reg%layers = [reg%layers, layer]
+        ! (grown by hand: an array constructor of a type with allocatable
+        ! components is not copied reliably by all compilers)
+        n = size(reg%layers)
+        allocate(layers(n+1))
+        layers(1:n) = reg%layers
+        layers(n+1) = layer
+        call move_alloc(layers, reg%layers)
 
         return
 
@@ -591,14 +600,18 @@ contains
         type(regions_class), intent(INOUT) :: reg
         character(len=*),    intent(IN)    :: name, expr
 
-        type(region_mask_class) :: m
+        type(region_mask_class), allocatable :: masks(:)
+        integer :: n
 
         if (.not. allocated(reg%masks)) allocate(reg%masks(0))
 
-        m%name = name
-        m%expr = expr
-        m%mask = regions_select(reg, expr)
-        reg%masks = [reg%masks, m]
+        n = size(reg%masks)
+        allocate(masks(n+1))
+        masks(1:n) = reg%masks
+        masks(n+1)%name = name
+        masks(n+1)%expr = expr
+        masks(n+1)%mask = regions_select(reg, expr)
+        call move_alloc(masks, reg%masks)
 
         return
 
