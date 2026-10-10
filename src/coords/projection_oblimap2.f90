@@ -250,20 +250,30 @@ contains
       proj%chi_M = -pi/2.0_dp  ! South Pole
     end if
 
-    ! See equation (3-12) on page 187 in Snyder (1987):
-    proj%q_M   = (1._dp - proj%e**2) * ((SIN(proj%phi_M) / &
-                   (1._dp - (proj%e * SIN(proj%phi_M))**2)) - (1._dp / (2._dp * proj%e)) * &
-                   LOG((1._dp - proj%e * SIN(proj%phi_M)) / (1._dp + proj%e * SIN(proj%phi_M)))) 
-    ! See equation (3-12) on page 187 in Snyder (1987):
-    proj%q_polar   = (1._dp - proj%e**2) * ((1._dp / (1._dp - proj%e**2)) - (1._dp / (2._dp * proj%e)) * &
-                      LOG((1._dp - proj%e) / (1._dp + proj%e)))
-    
-    ! See equation (3-11) on page 187 in Snyder (1987):
-    proj%beta_M    = ASIN(proj%q_M / proj%q_polar)
-    ! See equation (3-13) on page 187 in Snyder (1987):
-    proj%R_q_polar = proj%a * DSQRT(0.5_dp * proj%q_polar)
-    ! See equation (24-20) on page 187 in Snyder (1987):
-    proj%D         = proj%am / (proj%R_q_polar * COS(proj%phi_M))
+    if (proj%is_sphere) then
+      ! e = 0: the e->0 limits of (3-12), (3-11), (3-13) and (24-20) below
+      ! (the general forms divide by 2e); the authalic sphere is the sphere.
+      proj%q_M       = 2._dp * SIN(proj%phi_M)
+      proj%q_polar   = 2._dp
+      proj%beta_M    = proj%phi_M
+      proj%R_q_polar = proj%a
+      proj%D         = 1._dp
+    else
+      ! See equation (3-12) on page 187 in Snyder (1987):
+      proj%q_M   = (1._dp - proj%e**2) * ((SIN(proj%phi_M) / &
+                     (1._dp - (proj%e * SIN(proj%phi_M))**2)) - (1._dp / (2._dp * proj%e)) * &
+                     LOG((1._dp - proj%e * SIN(proj%phi_M)) / (1._dp + proj%e * SIN(proj%phi_M))))
+      ! See equation (3-12) on page 187 in Snyder (1987):
+      proj%q_polar   = (1._dp - proj%e**2) * ((1._dp / (1._dp - proj%e**2)) - (1._dp / (2._dp * proj%e)) * &
+                        LOG((1._dp - proj%e) / (1._dp + proj%e)))
+
+      ! See equation (3-11) on page 187 in Snyder (1987):
+      proj%beta_M    = ASIN(proj%q_M / proj%q_polar)
+      ! See equation (3-13) on page 187 in Snyder (1987):
+      proj%R_q_polar = proj%a * DSQRT(0.5_dp * proj%q_polar)
+      ! See equation (24-20) on page 187 in Snyder (1987):
+      proj%D         = proj%am / (proj%R_q_polar * COS(proj%phi_M))
+    end if
 
     ! if (trim(proj%method) .ne. "Undefined") call projection_print(proj)
     
