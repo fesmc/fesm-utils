@@ -1144,7 +1144,11 @@ contains
         nx = size(var2,1); ny = size(var2,2)
         allocate(v1(size(var1,1),size(var1,2)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
         if (present(filt_par)) then
@@ -1189,7 +1193,11 @@ contains
         nx = size(var2,1); ny = size(var2,2)
         allocate(v1(size(var1,1),size(var1,2)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
@@ -1346,7 +1354,11 @@ contains
         nx = size(var2,1); ny = size(var2,2)
         allocate(v1(size(var1)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
         if (present(filt_par)) then
@@ -1391,7 +1403,11 @@ contains
         nx = size(var2,1); ny = size(var2,2)
         allocate(v1(size(var1)), v2(nx,ny), m2(nx,ny))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
@@ -1425,7 +1441,11 @@ contains
 
         allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
         v1 = reshape(real(var1, dp), [size(var1)])
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
@@ -1458,7 +1478,11 @@ contains
 
         allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
         v1 = reshape(real(var1, dp), [size(var1)])
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
@@ -1491,7 +1515,11 @@ contains
 
         allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
@@ -1524,7 +1552,11 @@ contains
 
         allocate(v1(size(var1)), v2(size(var2)), m2(size(var2)))
         v1 = real(var1, dp)
-        v2 = real(var2, dp)
+        ! var2 is read only when not resetting (it may be undefined otherwise)
+        v2 = 0.0_dp
+        if (present(reset)) then
+            if (.not. reset) v2 = real(var2, dp)
+        end if
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
