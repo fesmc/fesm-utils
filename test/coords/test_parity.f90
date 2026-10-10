@@ -130,7 +130,9 @@ program test_parity
     ! ===== fill / smoothing forwarding: points->grid == grid->grid ============
     ! Build an 8x8 latlon source (and its point-set twin, same order) with a
     ! varying field, and a 12x12 target inside coverage (large enough for the
-    ! nr=4 fill stencil and the gaussian kernel).
+    ! nr=4 fill stencil and the gaussian kernel). Both maps are built with
+    ! method="shepard" so grid->grid takes the same k-d tree neighbour search
+    ! as points->grid (the default "nn" would take the structured 4-corner path).
     c0 = 0
     do iy = 1, nysb
         do ix = 1, nxsb
@@ -146,8 +148,8 @@ program test_parity
     call points_init(psB, name="psrcB", mtype="latlon", units="degrees", x=slonB, y=slatB)
     call grid_init(gtB, name="tgtB", mtype="latlon", units="degrees", &
                    x0=-12.0_dp, dx=2.0_dp, nx=nxtb, y0=40.0_dp, dy=2.0_dp, ny=nytb)
-    call map_init(mGB, gsB, gtB, max_neighbors=8, load=.false.)
-    call map_init(mPB, psB, gtB, max_neighbors=8)
+    call map_init(mGB, gsB, gtB, max_neighbors=8, method="shepard", load=.false.)
+    call map_init(mPB, psB, gtB, max_neighbors=8, method="shepard")
 
     ! Smoothing: gaussian-smoothed grid->grid vs points->grid must be identical.
     call map_field(mGB, "f", fB2d, vA, method="shepard", missing_value=miss, &
