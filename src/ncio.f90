@@ -510,6 +510,7 @@ contains
         character (len=NC_STRLEN) :: tmpstr
         integer, optional :: iostat
         integer :: i, status
+        integer :: dimids(NF90_MAX_VAR_DIMS), dim_len
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -570,6 +571,20 @@ contains
             v%count = 1
             do i = 1, min(ndims, size(size_in))
               v%count(i) = size_in(i)
+            end do
+
+            ! Without an explicit count the whole variable is read: each file
+            ! dimension covered by the array must have the array's length, else
+            ! only a block of the field (e.g. a corner of a larger grid) would be
+            ! read silently. Further file dimensions (e.g. time) are read at index 1.
+            call nc_check( nf90_inquire_variable(nc_id, v_id, dimids=dimids), ec, "nf90_inquire_variable" )
+            do i = 1, min(ndims, size(size_in))
+                call nc_check( nf90_inquire_dimension(nc_id, dimids(i), len=dim_len), ec, "nf90_inquire_dimension" )
+                if (dim_len /= size_in(i)) then
+                    write(errmsg,"(a,i0,a,i0,a,i0,a)") "dimension ", i, " of the variable has length ", dim_len, &
+                        " in the file, but ", size_in(i), " in the array being read (give start/count to read a part)."
+                    call nc_abort(op="nc_read", ec=ec, msg=trim(errmsg))
+                end if
             end do
         end if
         
