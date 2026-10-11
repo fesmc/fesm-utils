@@ -5,6 +5,10 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
+- **timer**: `timer_init(tmr, labels)` registers the components up front;
+  `timer_print_totals` and `timer_write_totals` report the time accumulated by
+  each component since the reset (with its share of the total), the latter as a
+  table file (header from the labels with `init=.TRUE.`, one line per call).
 - **regions**: named categorical layers (regions, zones, basins, ...) in a
   `regions_class`, from any file (`regions_load_layer`; namelist `layers`,
   `path_<layer>`, ...), from the program (`regions_add_layer`), or from FesmData

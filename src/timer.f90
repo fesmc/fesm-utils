@@ -43,12 +43,41 @@ module timer
 
     private
     public :: timer_class 
+    public :: timer_init
     public :: timer_step 
     public :: timer_print_summary
     public :: timer_write_table_init
     public :: timer_write_table
+    public :: timer_print_totals
+    public :: timer_write_totals
 
 contains
+
+    subroutine timer_init(tmr,labels)
+        ! Reset the timer and register its components: component q is
+        ! labels(q) (so the totals table header can be written before the
+        ! first step). Starts the clock, like timer_step(tmr,comp=0).
+
+        implicit none
+
+        type(timer_class), intent(INOUT) :: tmr
+        character(len=*),  intent(IN)    :: labels(:)
+
+        if (size(labels) .gt. ncomp_max) then
+            write(*,*) "timer_init:: Error: too many components."
+            write(*,*) "size(labels) = ", size(labels), ", ncomp_max = ", ncomp_max
+            stop
+        end if
+
+        call timer_step(tmr,comp=-1)
+
+        tmr%ncomp = size(labels)
+        tmr%label = ""
+        tmr%label(1:tmr%ncomp) = labels
+
+        return
+
+    end subroutine timer_init
 
     subroutine timer_step_none(timer,comp,label)
 
@@ -325,6 +354,95 @@ contains
         return
 
     end subroutine timer_write_table_init
+
+    subroutine timer_print_totals(tmr,units)
+        ! Print the time accumulated by each component since the timer was
+        ! reset (timer_init or timer_step(comp=-1)), and its share of the total.
+
+        implicit none
+
+        type(timer_class), intent(IN) :: tmr
+        character(len=1),  intent(IN) :: units
+
+        ! Local variables
+        integer :: q
+        real(8) :: dtime(ncomp_max)
+        real(8) :: dtime_tot, frac
+
+        dtime = 0.0
+        dtime(1:tmr%ncomp) = convert_dtime(tmr%dtime_cpu_tot(1:tmr%ncomp),units)
+        dtime_tot = sum(dtime(1:tmr%ncomp))
+
+        write(*,"(a2,5x,a16,1x,a12,1x,a8)") timer_prefix, "component", trim(units), "%"
+        do q = 1, tmr%ncomp
+            frac = 0.0
+            if (dtime_tot .gt. 0.0) frac = 100.d0*dtime(q)/dtime_tot
+            write(*,"(a2,5x,a16,1x,f12.3,1x,f8.1)") timer_prefix, trim(tmr%label(q)), dtime(q), frac
+        end do
+        write(*,"(a2,5x,a16,1x,f12.3,1x,f8.1)") timer_prefix, "total", dtime_tot, 100.0
+
+        return
+
+    end subroutine timer_print_totals
+
+    subroutine timer_write_totals(tmr,time,units,filename,init)
+        ! Append one line to the table filename: the time and the time
+        ! accumulated by each component since the timer was reset, and their
+        ! sum. init=.TRUE. (re)creates the file with a header of the labels.
+
+        implicit none
+
+        type(timer_class), intent(IN) :: tmr
+        real(8),           intent(IN) :: time
+        character(len=*),  intent(IN) :: units
+        character(len=*),  intent(IN) :: filename
+        logical, intent(IN), optional :: init
+
+        ! Local variables
+        integer :: io, q
+        logical :: init_now, exist
+        real(8) :: dtime(ncomp_max)
+        character(len=2048) :: str
+
+        init_now = .FALSE.
+        if (present(init)) init_now = init
+
+        if (init_now) then
+            write(str,"(a14)") "time"
+            do q = 1, tmr%ncomp
+                write(str,"(a,1x,a14)") trim(str), trim(tmr%label(q))
+            end do
+            write(str,"(a,1x,a14)") trim(str), "total"
+
+            open(newunit=io, file=filename, status="replace", action="write")
+            write(io,"(a)") trim(str)
+            close(io)
+        end if
+
+        inquire(file=filename, exist=exist)
+        if (.not. exist) then
+            write(*,*) "timer_write_totals:: Error: the table must be initialized &
+            &(init=.TRUE.) before writing a line. File does not exist."
+            write(*,*) "filename = ", trim(filename)
+            stop
+        end if
+
+        dtime = 0.0
+        dtime(1:tmr%ncomp) = convert_dtime(tmr%dtime_cpu_tot(1:tmr%ncomp),units)
+
+        write(str,"(f14.3)") time
+        do q = 1, tmr%ncomp
+            write(str,"(a,1x,f14.3)") trim(str), dtime(q)
+        end do
+        write(str,"(a,1x,f14.3)") trim(str), sum(dtime(1:tmr%ncomp))
+
+        open(newunit=io, file=filename, status="old", position="append", action="write")
+        write(io,"(a)") trim(str)
+        close(io)
+
+        return
+
+    end subroutine timer_write_totals
 
     ! === INTERNAL FUNCTIONS ===
 
