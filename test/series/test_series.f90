@@ -5,7 +5,7 @@ program test_series
     !   * clamped-linear interpolation at, between, and outside the nodes.
     ! All input files are written by the test itself, then removed.
 
-    use precision, only: wp
+    use precision, only: dp, wp
     use ncio
     use series
 
@@ -63,10 +63,10 @@ contains
 
         call check_int("ascii-1d  nc == 1", s%nc, 1)
         call check_int("ascii-1d  nt == 3", s%nt, 3)
-        call check("ascii-1d  interp(500)  == 5 ", series_interp1(s, 500.0_wp),   5.0_wp)
-        call check("ascii-1d  interp(1500) == 15", series_interp1(s,1500.0_wp),  15.0_wp)
-        call check("ascii-1d  clamp(-100)  == 0 ", series_interp1(s,-100.0_wp),   0.0_wp)
-        call check("ascii-1d  clamp(3000)  == 20", series_interp1(s,3000.0_wp),  20.0_wp)
+        call check("ascii-1d  interp(500)  == 5 ", series_interp1(s, 500.0_dp),   5.0_wp)
+        call check("ascii-1d  interp(1500) == 15", series_interp1(s,1500.0_dp),  15.0_wp)
+        call check("ascii-1d  clamp(-100)  == 0 ", series_interp1(s,-100.0_dp),   0.0_wp)
+        call check("ascii-1d  clamp(3000)  == 20", series_interp1(s,3000.0_dp),  20.0_wp)
     end subroutine test_ascii_1d
 
     subroutine test_ascii_2d()
@@ -83,7 +83,7 @@ contains
         call series_load(s,f_asc2)
 
         call check_int("ascii-2d  nc == 2", s%nc, 2)
-        v = series_interp(s, 500.0_wp)
+        v = series_interp(s, 500.0_dp)
         call check("ascii-2d  interp(500) ch1 == 5  ", v(1),   5.0_wp)
         call check("ascii-2d  interp(500) ch2 == 150", v(2), 150.0_wp)
     end subroutine test_ascii_2d
@@ -102,8 +102,8 @@ contains
         call series_load(s,f_nc,varname="co2",time_name="time")
 
         call check_int("netcdf-1d nc == 1", s%nc, 1)
-        call check("netcdf-1d interp(500)  == 330", series_interp1(s, 500.0_wp), 330.0_wp)
-        call check("netcdf-1d interp(1500) == 430", series_interp1(s,1500.0_wp), 430.0_wp)
+        call check("netcdf-1d interp(500)  == 330", series_interp1(s, 500.0_dp), 330.0_wp)
+        call check("netcdf-1d interp(1500) == 430", series_interp1(s,1500.0_dp), 430.0_wp)
     end subroutine test_netcdf_1d
 
     subroutine test_netcdf_2d()
@@ -128,7 +128,7 @@ contains
         call series_load(s,f_nc,varname="dTmon",time_name="time")
 
         call check_int("netcdf-2d nc == 3", s%nc, 3)
-        v = series_interp(s, 500.0_wp)   ! halfway: m + 5
+        v = series_interp(s, 500.0_dp)   ! halfway: m + 5
         call check("netcdf-2d interp(500) m1 == 6", v(1), 6.0_wp)
         call check("netcdf-2d interp(500) m3 == 8", v(3), 8.0_wp)
     end subroutine test_netcdf_2d
@@ -151,13 +151,13 @@ contains
         ! With sigma companion present
         call series_load(s,f_nc,varname="co2",time_name="time",sigma_name="co2_sd")
         call check_logical("sigma     allocated when _sd present", allocated(s%sigma))
-        sg = series_interp_sig(s, 500.0_wp)
+        sg = series_interp_sig(s, 500.0_dp)
         call check("sigma     interp(500) == 4", sg(1), 4.0_wp)
 
         ! Without requesting sigma -> zeros
         call series_load(s,f_nc,varname="co2",time_name="time")
         call check_logical("sigma     absent when not requested ", .not. allocated(s%sigma))
-        sg = series_interp_sig(s, 500.0_wp)
+        sg = series_interp_sig(s, 500.0_dp)
         call check("sigma     zero when absent    ", sg(1), 0.0_wp)
     end subroutine test_sigma
 

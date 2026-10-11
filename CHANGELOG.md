@@ -44,6 +44,13 @@ All notable changes to fesm-utils are documented here.
   `tm%times`) and the step (`tstep_update` `dt`, `tstep_init` namelist `dtt`)
   are `real(dp)`. In single precision the spacing of the time is 0.016 yr at
   1e5 yr. Callers pass `real(dp)` times and steps.
+- **tsgen**, **series**: times and time intervals in double precision. The `time`
+  arguments of `tsgen_init`, `tsgen_update`, `tsgen_tabulate`, `tsgen_write`,
+  `tsgen_write_step` and `tsgen_restart_write`, the state (`time_init`,
+  `time_prev`, `dt`, history `time(:)`), the `dt_init`/`dt_ramp`/`dt_conv`/`dt_ave`
+  parameters, the series time axis (`ser%time`) and the `time` argument of
+  `series_interp`, `series_interp1`, `series_interp_sig` are `real(dp)`. Forcing
+  values and rates stay `wp`.
 - **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)
   promote only the 3x3 neighbourhood of the cell, not the whole field (O(nx*ny) per
   call). Results unchanged; Yelmo ANT-8KM with `bmb_gl_method = "pmpt"`: 10-yr loop
