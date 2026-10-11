@@ -193,8 +193,8 @@ advances the clock by `dt` each iteration, and tracks several parallel "time
 keepers" — an elapsed counter and calendar/relative times — using Kahan
 summation to avoid drift over many small steps. It also flags when the run is
 finished. It does not decide *when* to do anything (that is `timeout`); it only
-holds and advances the current time. All times are double precision (in single
-precision, the spacing is 0.016 yr at 1e5 yr); the step `dt` is `wp`.
+holds and advances the current time. All times and the step `dt` are double
+precision (in single precision, the spacing is 0.016 yr at 1e5 yr).
 
 ### Public API
 
@@ -238,7 +238,7 @@ The `method` selects which time keeper drives `ts%time`:
 call tstep_update(ts, dt [, verbose])
 
   type(tstep_class), intent(INOUT) :: ts
-  real(wp),          intent(IN)    :: dt
+  real(dp),          intent(IN)    :: dt
   logical,           intent(IN)    :: verbose  ! optional; print a row each step
 
 ! Print a status row / header (iter, time, time_cal, time_rel, time_elapsed):

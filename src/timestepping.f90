@@ -64,7 +64,7 @@ contains
         type(tstep_class), intent(INOUT) :: ts
         character(len=*),  intent(IN)    :: filename
         character(len=*),  intent(IN)    :: group
-        real(wp),          intent(OUT)   :: dtt
+        real(dp),          intent(OUT)   :: dtt
         real(dp),          intent(IN), optional :: time_ref
         logical,           intent(IN), optional :: cal
 
@@ -231,7 +231,7 @@ contains
         implicit none
 
         type(tstep_class), intent(INOUT) :: ts
-        real(wp),          intent(IN)    :: dt 
+        real(dp),          intent(IN)    :: dt 
         logical,           intent(IN), optional :: verbose
 
         ! Local variables
@@ -334,12 +334,12 @@ contains
 
         real(dp), intent(inout) :: time  ! Accumulated total
         real(dp), intent(inout) :: comp  ! Compensation for rounding errors
-        real(wp), intent(in)    :: dt    ! Current increment
+        real(dp), intent(in)    :: dt    ! Current increment
         
         ! Local variables
         real(8) :: y, t
 
-        y = dble(dt) - comp    ! Compensate for lost low-order bits
+        y = dt - comp          ! Compensate for lost low-order bits
         t = time + y           ! Temporarily add the compensated value
         comp = (t - time) - y  ! Compute new compensation
         time = t               ! Update the accumulated total
