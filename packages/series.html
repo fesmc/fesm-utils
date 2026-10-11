@@ -480,7 +480,7 @@ Figure&nbsp;1: Clamped-linear interpolation of a tabulated curve: linear between
 </tr>
 </tbody>
 </table>
-<p>The <code>series_class</code> exposes <code>filename</code>, <code>nt</code> (time points), <code>nc</code> (channels), <code>time(nt)</code>, <code>var(nt,nc)</code>, and <code>sigma(nt,nc)</code> (unallocated when absent).</p>
+<p>The <code>series_class</code> exposes <code>filename</code>, <code>nt</code> (time points), <code>nc</code> (channels), <code>time(nt)</code>, <code>var(nt,nc)</code>, and <code>sigma(nt,nc)</code> (unallocated when absent). The time axis <code>time</code> and the <code>time</code> argument of the interpolators are <code>real(dp)</code>; values are <code>wp</code>.</p>
 </section>
 <section id="usage" class="level2">
 <h2 class="anchored" data-anchor-id="usage">Usage</h2>
@@ -491,7 +491,7 @@ Figure&nbsp;1: Clamped-linear interpolation of a tabulated curve: linear between
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co">! ASCII: format detected from the extension; no variable names needed</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co">call series_load(ser, "input/co2.dat")</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">co2 = series_interp1(ser, time=1500.0_wp)     ! clamped-linear at t = 1500</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co">co2 = series_interp1(ser, time=1500.0_dp)     ! clamped-linear at t = 1500</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For a netCDF file, name the value variable (and optionally the time coordinate and a standard-deviation companion):</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="dt">type(series_class)</span> <span class="dt">::</span> ser</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> v(<span class="dv">12</span>), s(<span class="dv">12</span>)      <span class="co">! e.g. 12 monthly channels</span></span>
@@ -499,8 +499,8 @@ Figure&nbsp;1: Clamped-linear interpolation of a tabulated curve: linear between
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co">call series_load(ser, "input/monthly.nc", varname="pr", &amp;</span></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>                 time_name<span class="kw">=</span><span class="st">"time"</span>, sigma_name<span class="kw">=</span><span class="st">"pr_sd"</span>)</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>v <span class="kw">=</span> series_interp(ser, time<span class="kw">=</span><span class="fl">1850.0_wp</span>)        <span class="co">! all channels</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>s <span class="kw">=</span> series_interp_sig(ser, time<span class="kw">=</span><span class="fl">1850.0_wp</span>)    <span class="co">! per-channel stddev (0 if absent)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>v <span class="kw">=</span> series_interp(ser, time<span class="kw">=</span><span class="fl">1850.0_dp</span>)        <span class="co">! all channels</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>s <span class="kw">=</span> series_interp_sig(ser, time<span class="kw">=</span><span class="fl">1850.0_dp</span>)    <span class="co">! per-channel stddev (0 if absent)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Or load from a namelist group:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">call series_init_nml(ser, "params.nml", group="co2")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>co2</span>

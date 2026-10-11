@@ -508,7 +508,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="dt">type</span> timeout_class</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=56)</span>     <span class="dt">::</span> method     <span class="co">! "none", "const", "file", or "times"</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=56)</span>     <span class="dt">::</span> label</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">allocatable</span> <span class="dt">::</span> times(:)   <span class="co">! resolved list of output times</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>, <span class="dt">allocatable</span> <span class="dt">::</span> times(:)   <span class="co">! resolved list of output times</span></span>
 <span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>               <span class="dt">::</span> active     <span class="co">! .FALSE. when method="none"</span></span>
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">! plus optional helper fields (filename, filenames, vnms) for caller use</span></span>
 <span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="dt">end type</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -519,13 +519,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">character(len=*)</span>,    <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename   <span class="co">! namelist file</span></span>
 <span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">character(len=*)</span>,    <span class="dt">intent(IN)</span>    <span class="dt">::</span> group      <span class="co">! namelist group name</span></span>
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">character(len=*)</span>,    <span class="dt">intent(IN)</span>    <span class="dt">::</span> label      <span class="co">! label for log messages</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,            <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_init  <span class="co">! start of run</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,            <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_<span class="kw">end</span>   <span class="co">! end of run</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,            <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_init  <span class="co">! start of run</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,            <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_<span class="kw">end</span>   <span class="co">! end of run</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">! Test whether the current time is an output time:</span></span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>out_now <span class="kw">=</span> timeout_check(tm, time)</span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">type(timeout_class)</span>, <span class="dt">intent(IN)</span> <span class="dt">::</span> tm</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,            <span class="dt">intent(IN)</span> <span class="dt">::</span> time</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,            <span class="dt">intent(IN)</span> <span class="dt">::</span> time</span>
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">logical</span>                         <span class="dt">::</span> out_now</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The namelist group is read for a <code>method</code> and its parameters:</p>
 <ul>
@@ -566,17 +566,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="timestepping" class="level2">
 <h2 class="anchored" data-anchor-id="timestepping">timestepping</h2>
-<p><code>timestepping</code> owns the model’s time axis: it initializes the start/end times, advances the clock by <code>dt</code> each iteration, and tracks several parallel “time keepers” — an elapsed counter and calendar/relative times — using Kahan summation to avoid drift over many small steps. It also flags when the run is finished. It does not decide <em>when</em> to do anything (that is <code>timeout</code>); it only holds and advances the current time.</p>
+<p><code>timestepping</code> owns the model’s time axis: it initializes the start/end times, advances the clock by <code>dt</code> each iteration, and tracks several parallel “time keepers” — an elapsed counter and calendar/relative times — using Kahan summation to avoid drift over many small steps. It also flags when the run is finished. It does not decide <em>when</em> to do anything (that is <code>timeout</code>); it only holds and advances the current time. All times and the step <code>dt</code> are double precision (in single precision, the spacing is 0.016 yr at 1e5 yr).</p>
 <section id="public-api-2" class="level3">
 <h3 class="anchored" data-anchor-id="public-api-2">Public API</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">type</span> tstep_class</span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=56)</span> <span class="dt">::</span> units         <span class="co">! time units label</span></span>
 <span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=56)</span> <span class="dt">::</span> method        <span class="co">! "const"/"cal"/"rel" (see below)</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span> <span class="dt">::</span> time_init, time_<span class="kw">end</span></span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span> <span class="dt">::</span> time                   <span class="co">! current output time (method-dependent)</span></span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span> <span class="dt">::</span> time_elapsed           <span class="co">! time since time_init</span></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span> <span class="dt">::</span> time_cal               <span class="co">! calendar time</span></span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span> <span class="dt">::</span> time_rel               <span class="co">! relative time</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span> <span class="dt">::</span> time_init, time_<span class="kw">end</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span> <span class="dt">::</span> time                   <span class="co">! current output time (method-dependent)</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span> <span class="dt">::</span> time_elapsed           <span class="co">! time since time_init</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span> <span class="dt">::</span> time_cal               <span class="co">! calendar time</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span> <span class="dt">::</span> time_rel               <span class="co">! relative time</span></span>
 <span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>  <span class="dt">::</span> n                      <span class="co">! iteration counter</span></span>
 <span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>  <span class="dt">::</span> is_finished            <span class="co">! .TRUE. once time &gt;= time_end</span></span>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    <span class="co">! ... plus internal compensation/reference fields ...</span></span>
@@ -585,12 +585,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="co">call tstep_init(ts, time_init, time_end, method, units [, time_ref] [, const_cal] [, const_rel])</span></span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">type(tstep_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> ts</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_init, time_<span class="kw">end</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_init, time_<span class="kw">end</span></span>
 <span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">character(len=*)</span>,  <span class="dt">intent(IN)</span>    <span class="dt">::</span> method   <span class="co">! see the three methods below</span></span>
 <span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">character(len=*)</span>,  <span class="dt">intent(IN)</span>    <span class="dt">::</span> units</span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_ref    <span class="co">! optional; reference for cal&lt;-&gt;rel conversion</span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> const_cal   <span class="co">! optional; fixed calendar time</span></span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> const_rel   <span class="co">! optional; fixed relative time</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_ref    <span class="co">! optional; reference for cal&lt;-&gt;rel conversion</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> const_cal   <span class="co">! optional; fixed calendar time</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> const_rel   <span class="co">! optional; fixed relative time</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The <code>method</code> selects which time keeper drives <code>ts%time</code>:</p>
 <ul>
 <li><code>"const"</code> / <code>"constant"</code> — <code>time = time_init + time_elapsed</code>; <code>time_cal</code> and <code>time_rel</code> are held fixed (a pure spin-up clock).</li>
@@ -601,7 +601,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="co">call tstep_update(ts, dt [, verbose])</span></span>
 <span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">type(tstep_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> ts</span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(wp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> dt</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">real(dp)</span>,          <span class="dt">intent(IN)</span>    <span class="dt">::</span> dt</span>
 <span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">logical</span>,           <span class="dt">intent(IN)</span>    <span class="dt">::</span> verbose  <span class="co">! optional; print a row each step</span></span>
 <span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="co">! Print a status row / header (iter, time, time_cal, time_rel, time_elapsed):</span></span>
@@ -614,7 +614,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>Drive the main loop off <code>ts%is_finished</code>, advancing at the top of each iteration:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="dt">type(tstep_class)</span> <span class="dt">::</span> ts</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co">call tstep_init(ts, time_init, time_end, method="cal", time_ref=1950.0_wp, units="yr")</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co">call tstep_init(ts, time_init, time_end, method="cal", time_ref=1950.0_dp, units="yr")</span></span>
 <span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co">call tstep_print_header(ts)</span></span>
 <span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span> <span class="kw">while</span> (<span class="op">.not.</span> ts<span class="op">%</span>is_finished)</span>
