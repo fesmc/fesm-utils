@@ -11,6 +11,7 @@ program test_varslice
     ! so every slice/aggregate has a hand-checkable expected value.
 
     use precision
+    use constants, only : mv
     use ncio,     only : nc_create, nc_write_dim, nc_write
     use varslice, only : varslice_class, varslice_init_arg, varslice_init_nml, &
                          varslice_update, varslice_end
@@ -144,10 +145,32 @@ program test_varslice
                       real(vs%par%time_par(2),wp), 2022.0_wp, nfail)
     call varslice_end(vs)
 
+    ! ========================================================================
+    ! Missing values: fill = "const" / "nearest"; static data is read once
+    ! ========================================================================
+    call make_file_holes("test_vs_holes.nc", 3.0_wp)       ! 3 outside a hole of missing values
+
+    call varslice_init_nml(vs, "test_vs.nml", "vtest_fill_const", verbose=.FALSE.)
+    call varslice_update(vs)
+    call check_scalar("fill const: hole", vs%var(10,10,1,1), 0.0_wp, nfail)
+    call check_scalar("fill const: valid", vs%var(1,1,1,1), 3.0_wp, nfail)
+    call varslice_end(vs)
+
+    call varslice_init_nml(vs, "test_vs.nml", "vtest_fill_nearest", verbose=.FALSE.)
+    call varslice_update(vs)
+    call check_true("fill nearest: no missing", all(vs%var .ne. mv), nfail)
+    call check_scalar("fill nearest: hole", vs%var(10,10,1,1), 3.0_wp, nfail)
+
+    ! static data is read once: a changed file does not change the slice
+    call make_file_holes("test_vs_holes.nc", 7.0_wp)
+    call varslice_update(vs)
+    call check_scalar("static read once", vs%var(1,1,1,1), 3.0_wp, nfail)
+    call varslice_end(vs)
+
     ! --- cleanup synthetic files --------------------------------------------
     call execute_command_line("rm -f test_vs_single.nc test_vs_multi_01.nc "// &
                               "test_vs_multi_02.nc test_vs_big.nc test_vs_nml.nc "// &
-                              "test_vs_static.nc test_vs.nml")
+                              "test_vs_static.nc test_vs_holes.nc test_vs.nml")
 
     ! --- report -------------------------------------------------------------
     write(*,*)
@@ -223,6 +246,26 @@ contains
         deallocate(x, y, var)
     end subroutine make_file2d
 
+    subroutine make_file_holes(filename, val)
+        ! Write a static 20x20 field temp(x,y) = val, missing (mv) in the
+        ! block 8:14 x 8:14
+        character(len=*), intent(in) :: filename
+        real(wp),         intent(in) :: val
+        integer, parameter :: n = 20
+        integer  :: i
+        real(dp) :: x(n)
+        real(wp) :: var(n,n)
+        do i = 1, n
+            x(i) = real(i-1,dp)
+        end do
+        var = val
+        var(8:14,8:14) = mv
+        call nc_create(filename)
+        call nc_write_dim(filename, "x", x=x)
+        call nc_write_dim(filename, "y", x=x)
+        call nc_write(filename, "temp", var, dim1="x", dim2="y")
+    end subroutine make_file_holes
+
     subroutine write_nml(fname)
         ! Emit a namelist in the condensed format for two groups:
         ! a time-active variable and a static (period-documenting) field.
@@ -243,6 +286,25 @@ contains
         write(u,'(a)') '    units    = "m" "m"'
         write(u,'(a)') '    scaling  = 1.0 0.0'
         write(u,'(a)') '    time     = 0.0, 1979.0, 2022.0'
+        write(u,'(a)') "/"
+        write(u,'(a)') ""
+        write(u,'(a)') "&vtest_fill_const"
+        write(u,'(a)') '    filename   = "test_vs_holes.nc"'
+        write(u,'(a)') '    name       = "temp"'
+        write(u,'(a)') '    units      = "m" "m"'
+        write(u,'(a)') '    scaling    = 1.0 0.0'
+        write(u,'(a)') '    time       = 0.0, 0.0, 0.0'
+        write(u,'(a)') '    fill       = "const"'
+        write(u,'(a)') '    fill_value = 0.0'
+        write(u,'(a)') "/"
+        write(u,'(a)') ""
+        write(u,'(a)') "&vtest_fill_nearest"
+        write(u,'(a)') '    filename   = "test_vs_holes.nc"'
+        write(u,'(a)') '    name       = "temp"'
+        write(u,'(a)') '    units      = "m" "m"'
+        write(u,'(a)') '    scaling    = 1.0 0.0'
+        write(u,'(a)') '    time       = 0.0, 0.0, 0.0'
+        write(u,'(a)') '    fill       = "nearest"'
         write(u,'(a)') "/"
         close(u)
     end subroutine write_nml

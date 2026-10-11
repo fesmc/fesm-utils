@@ -10,8 +10,13 @@ All notable changes to fesm-utils are documented here.
   of a finer grid); further file dimensions (e.g. time) are still read at index 1.
 - **varslice**: `varslice_init_nml` with a target `grid` and no remapping stops when the
   variable's horizontal dimensions are not the grid's.
+- **varslice**: data without a time dimension is read once (`varslice_update` re-read it
+  on every call); callers must not modify `vs%var`.
 
 ### Added
+- **varslice**: filling of missing values, optional group keys `fill = "nearest"`
+  (nearest valid cell, per horizontal slice) or `fill = "const"` with `fill_value`;
+  the `fill` argument of `varslice_update` overrides it.
 - **timer**: `timer_init(tmr, labels)` registers the components up front;
   `timer_print_totals` and `timer_write_totals` report the time accumulated by
   each component since the reset (with its share of the total), the latter as a

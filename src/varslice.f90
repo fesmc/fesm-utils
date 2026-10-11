@@ -8,8 +8,9 @@ module varslice
     use nml
     use mapping, only : map_class, map_field, map_init
     use coordinates, only : grid_class, points_class, grid_init, points_init
+    use interp2D,    only : fill_nearest
 
-    implicit none 
+    implicit none
 
     logical, parameter :: verbose = .FALSE.
 
@@ -39,6 +40,12 @@ module varslice
         character(len=32)   :: remap
         character(len=256)  :: grid_src
 
+        ! Filling of missing values (optional group keys; fill = "none" leaves
+        ! them): fill = "nearest" (value of the nearest valid cell, per
+        ! horizontal slice) or "const" (fill_value).
+        character(len=32)   :: fill = "none"
+        real(wp)            :: fill_value = mv
+
         ! Internal parameters
         integer  :: ndim 
         real(dp) :: time_par(4) 
@@ -51,8 +58,9 @@ module varslice
 
         ! Parameters defined during update call
         real(dp)          :: time_range(2)
-        character(len=56) :: slice_method 
-        integer           :: range_rep 
+        character(len=56) :: slice_method
+        integer           :: range_rep
+        character(len=32) :: fill_method = ""
         
         ! Variable information
         integer,  allocatable :: dim(:)  
@@ -339,6 +347,67 @@ contains
 
     end subroutine varslice_remap
 
+    subroutine varslice_fill(vs,method)
+        ! Fill the missing values of the slice: "nearest" gives each missing cell
+        ! the value of the nearest valid cell, per horizontal (x,y) slice
+        ! (fill_nearest of interp2D); "const" sets them to par%fill_value.
+
+        implicit none
+
+        type(varslice_class), intent(INOUT) :: vs
+        character(len=*),     intent(IN)    :: method
+
+        ! Local variables
+        integer :: k, t, ndim_sp
+
+        select case(trim(method))
+
+            case("none")
+                ! Leave the missing values
+
+            case("const")
+                where (vs%var .eq. mv) vs%var = vs%par%fill_value
+
+            case("nearest")
+                ndim_sp = vs%par%ndim
+                if (vs%par%with_time) ndim_sp = ndim_sp - 1
+                if (ndim_sp .lt. 2 .and. trim(vs%par%remap) .eq. "none") then
+                    call varslice_error("varslice_fill", &
+                        "fill = ""nearest"" needs a variable with two horizontal dimensions.", &
+                        "variable = "//trim(vs%par%name))
+                end if
+
+                do t = 1, size(vs%var,4)
+                do k = 1, size(vs%var,3)
+                    if (any(vs%var(:,:,k,t) .eq. mv) .and. any(vs%var(:,:,k,t) .ne. mv)) then
+                        call fill_nearest(vs%var(:,:,k,t), mv)
+                    end if
+                end do
+                end do
+
+        end select
+
+        return
+
+    end subroutine varslice_fill
+
+    subroutine check_fill_method(method,proc)
+
+        implicit none
+
+        character(len=*), intent(IN) :: method
+        character(len=*), intent(IN) :: proc
+
+        select case(trim(method))
+            case("none","nearest","const")
+                ! ok
+            case DEFAULT
+                call varslice_error(proc, "fill must be ""none"", ""nearest"" or ""const"".", &
+                    "fill = "//trim(method))
+        end select
+
+    end subroutine check_fill_method
+
     subroutine varslice_update(vs,time,method,fill,rep,print_summary)
         ! Routine to update transient climate forcing to match 
         ! current `time`. 
@@ -365,15 +434,19 @@ contains
         ! If rep=12, then calculation will be applied to every 12th index, resulting in 
         ! 12 values along dimension.
 
-        ! fill: method to handle missing values. By default, no treatment and missing values
-        ! are included in returned fields. TODO
+        ! fill: method to fill the missing values of the slice ("none", "nearest", "const";
+        ! see varslice_fill). Overrides the group's fill (par%fill).
 
-        implicit none 
+        ! The slice is read once: a later call for the same time (range), method, rep
+        ! and fill returns it as it is, and data without a time dimension is read only
+        ! the first time. Callers must not modify vs%var.
+
+        implicit none
 
         type(varslice_class), target, intent(INOUT) :: vs
         real(wp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
         character(len=*), optional, intent(IN)    :: method         ! slice_method (only if with_time==True)
-        character(len=*), optional, intent(IN)    :: fill           ! none, min, max, mean (how to fill in missing values)
+        character(len=*), optional, intent(IN)    :: fill           ! none, nearest, const (how to fill in missing values)
         integer,          optional, intent(IN)    :: rep            ! Only if with_time==True
         logical,          optional, intent(IN)    :: print_summary  ! Print summary of updated variable
 
@@ -438,14 +511,9 @@ contains
         ! (rep=1), e.g. the annual mean of a monthly series over [y0,y1].
         if (par%with_time_sub .and. index(slice_method,"range") .eq. 1) with_time_sub = .TRUE.
 
-        fill_method = "none"
-        if (present(fill)) fill_method = trim(fill) 
-
-        if (trim(fill_method) .ne. "none") then
-            call varslice_error("varslice_update", &
-                "fill methods have not yet been implemented. Set fill_method='none' for now.", &
-                "fill_method = "//trim(fill_method))
-        end if
+        fill_method = par%fill
+        if (present(fill)) fill_method = trim(fill)
+        call check_fill_method(fill_method, "varslice_update")
 
         ! Validate that the requested repetition count is consistent with the
         ! variable's declared sub-annual period (time_par(4), i.e. varslice_nsub).
@@ -485,21 +553,23 @@ contains
 
         end if 
 
-        
-        if ( with_time .and. trim(slice_method) .eq. trim(vs%slice_method) &
+        if ( allocated(vs%var) .and. trim(fill_method) .eq. trim(vs%fill_method) .and. &
+             ( .not. with_time .or. &
+               ( trim(slice_method) .eq. trim(vs%slice_method) &
                 .and. range_rep .eq. vs%range_rep &
                 .and. vs%time_range(1) .eq. time_range(1) &
-                .and. vs%time_range(2) .eq. time_range(2) ) then 
+                .and. vs%time_range(2) .eq. time_range(2) ) ) ) then
 
-            ! Do nothing, the varslice object is already up to date 
-            ! fo the current time and method. 
+            ! Do nothing, the varslice object is already up to date
+            ! for the current time, method and fill (data without time: always).
 
-        else 
+        else
 
-            ! Set parameters in varslice object 
+            ! Set parameters in varslice object
             vs%slice_method = trim(slice_method)
-            vs%range_rep    = range_rep 
-            vs%time_range   = time_range 
+            vs%range_rep    = range_rep
+            vs%time_range   = time_range
+            vs%fill_method  = trim(fill_method)
 
             ! 2. Read variable and convert units as needed
 
@@ -839,7 +909,10 @@ contains
 
             ! Remap the slice onto the target grid
             if (trim(par%remap) .ne. "none") call varslice_remap(vs)
-            
+
+            ! Fill the missing values
+            call varslice_fill(vs, fill_method)
+
         end if 
 
         if (present(print_summary)) then
@@ -1240,6 +1313,9 @@ contains
 
         vs%par%remap    = "none"
         vs%par%grid_src = ""
+
+        vs%par%fill       = "none"
+        vs%par%fill_value = mv
 
         ! Resolve file list and derive internal time parameters
         ! (mirrors the nml path; without this par%filenames and
@@ -1672,6 +1748,21 @@ contains
             call nml_read(filename,group,"grid_src", par%grid_src)
         end if
 
+        ! Optional: filling of missing values (fill_value with fill = "const")
+        par%fill       = "none"
+        par%fill_value = mv
+        if (nml_has_param(filename,group,"fill")) then
+            call nml_read(filename,group,"fill", par%fill)
+            call check_fill_method(par%fill, "varslice_par_load")
+            if (trim(par%fill) .eq. "const") then
+                if (.not. nml_has_param(filename,group,"fill_value")) then
+                    call varslice_error("varslice_par_load", &
+                        "fill = ""const"" needs fill_value.", "group = "//trim(group))
+                end if
+                call nml_read(filename,group,"fill_value", par%fill_value)
+            end if
+        end if
+
         ! Unpack into the internal parameter fields
         par%units_in    = units(1)
         par%units_out   = units(2)
@@ -1707,6 +1798,10 @@ contains
             if (trim(par%remap) .ne. "none") then
                 write(*,*) "remap         = ", trim(par%remap)
                 write(*,*) "grid_src      = ", trim(par%grid_src)
+            end if
+            if (trim(par%fill) .ne. "none") then
+                write(*,*) "fill          = ", trim(par%fill)
+                if (trim(par%fill) .eq. "const") write(*,*) "fill_value    = ", par%fill_value
             end if
             write(*,*) "with_time_sub = ", par%with_time_sub
             if (par%with_time) then
