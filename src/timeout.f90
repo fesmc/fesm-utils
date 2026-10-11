@@ -9,13 +9,13 @@ module timeout
 
 
 
-    real(wp), parameter :: time_tol = 1e-6 
+    real(dp), parameter :: time_tol = 1e-6_dp
     logical,  parameter :: verbose  = .TRUE. 
 
     type timeout_class
         character(len=56)     :: method
         character(len=56)     :: label 
-        real(wp), allocatable :: times(:)
+        real(dp), allocatable :: times(:)
         logical :: active
         ! Helper variables (optional use)
         character(len=1024)   :: filename
@@ -36,7 +36,7 @@ contains
         implicit none
 
         type(timeout_class), intent(IN) :: tm
-        real(wp), intent(IN) :: time 
+        real(dp), intent(IN) :: time 
         logical :: out_now 
 
         ! Local variables 
@@ -74,17 +74,17 @@ contains
         character(len=*),    intent(IN)    :: filename 
         character(len=*),    intent(IN)    :: group 
         character(len=*),    intent(IN)    :: label 
-        real(wp),            intent(IN)    :: time_init 
-        real(wp),            intent(IN)    :: time_end
+        real(dp),            intent(IN)    :: time_init 
+        real(dp),            intent(IN)    :: time_end
         
         ! Local variables
         integer  :: k, n, k0, k1 
-        real(wp) :: dt_const
+        real(dp) :: dt_const
         character(len=512) :: timeout_file 
 
         integer, parameter :: nmax = 100000
-        real(wp) :: times(nmax)
-        real(wp), allocatable :: tmp(:) 
+        real(dp) :: times(nmax)
+        real(dp), allocatable :: tmp(:) 
 
         ! Store label for logging 
         tm%label = trim(label) 
@@ -240,12 +240,12 @@ contains
 
         implicit none 
 
-        real(wp), intent(INOUT), allocatable :: times(:) 
+        real(dp), intent(INOUT), allocatable :: times(:) 
 
         ! Local variables 
         integer :: k, n, n1 
-        real(wp) :: time
-        real(wp), allocatable :: times_new(:) 
+        real(dp) :: time
+        real(dp), allocatable :: times_new(:) 
 
         
         n = size(times)
@@ -277,13 +277,13 @@ contains
 
         implicit none 
 
-        real(wp),         intent(INOUT) :: times(:) 
+        real(dp),         intent(INOUT) :: times(:) 
         character(len=*), intent(IN)    :: filename 
 
         ! Local variables 
         integer :: q, k, ntmp, nmax, io, stat  
         character(len=256) :: line_str 
-        real(wp), allocatable :: tmp(:) 
+        real(dp), allocatable :: tmp(:) 
 
         integer, parameter :: nmax_file = 10000
 
@@ -317,7 +317,7 @@ contains
                     ! Assume only one value is available
 
                     k = k+1
-                    times(k) = string_to_wp(line_str)
+                    times(k) = string_to_dp(line_str)
                     !write(*,*) k, " ", times(k)
 
                 end if
@@ -337,12 +337,12 @@ contains
         ! generate a vector of times: [time0,time0+dt,...,time1]
         implicit none
 
-        real(wp),         intent(INOUT), allocatable :: times(:)
+        real(dp),         intent(INOUT), allocatable :: times(:)
         character(len=*), intent(IN)    :: timestr 
 
         ! Local variables 
         integer  :: k, k0, k1, n 
-        real(wp) :: t0, t1, dt 
+        real(dp) :: t0, t1, dt 
 
         ! Step 1: parse the string into values of t0, dt, and t1
 
@@ -375,16 +375,16 @@ contains
 
     ! === Helper functions (borrowed from nml.f90) ===
     
-    function string_to_wp(string) result(value)
+    function string_to_dp(string) result(value)
 
         implicit none 
 
         character(len=*), intent(IN) :: string 
-        real(wp) :: value 
+        real(dp) :: value 
 
         character(len=256) :: tmpstr 
         integer  :: stat, n
-        real(wp) :: x 
+        real(dp) :: x 
 
         tmpstr = trim(adjustl(string))
         n      = len_trim(tmpstr)
@@ -407,7 +407,7 @@ contains
 
         return 
 
-    end function string_to_wp
+    end function string_to_dp
 
     subroutine string_to_vector(string,value)
 

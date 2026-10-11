@@ -115,7 +115,7 @@ but write 2D fields only at coarse, configurable intervals.
 type timeout_class
     character(len=56)     :: method     ! "none", "const", "file", or "times"
     character(len=56)     :: label
-    real(wp), allocatable :: times(:)   ! resolved list of output times
+    real(dp), allocatable :: times(:)   ! resolved list of output times
     logical               :: active     ! .FALSE. when method="none"
     ! plus optional helper fields (filename, filenames, vnms) for caller use
 end type
@@ -129,8 +129,8 @@ call timeout_init(tm, filename, group, label, time_init, time_end)
   character(len=*),    intent(IN)    :: filename   ! namelist file
   character(len=*),    intent(IN)    :: group      ! namelist group name
   character(len=*),    intent(IN)    :: label      ! label for log messages
-  real(wp),            intent(IN)    :: time_init  ! start of run
-  real(wp),            intent(IN)    :: time_end   ! end of run
+  real(dp),            intent(IN)    :: time_init  ! start of run
+  real(dp),            intent(IN)    :: time_end   ! end of run
 ```
 
 ```fortran
@@ -138,7 +138,7 @@ call timeout_init(tm, filename, group, label, time_init, time_end)
 out_now = timeout_check(tm, time)
 
   type(timeout_class), intent(IN) :: tm
-  real(wp),            intent(IN) :: time
+  real(dp),            intent(IN) :: time
   logical                         :: out_now
 ```
 
@@ -193,7 +193,8 @@ advances the clock by `dt` each iteration, and tracks several parallel "time
 keepers" — an elapsed counter and calendar/relative times — using Kahan
 summation to avoid drift over many small steps. It also flags when the run is
 finished. It does not decide *when* to do anything (that is `timeout`); it only
-holds and advances the current time.
+holds and advances the current time. All times are double precision (in single
+precision, the spacing is 0.016 yr at 1e5 yr); the step `dt` is `wp`.
 
 ### Public API
 
@@ -201,11 +202,11 @@ holds and advances the current time.
 type tstep_class
     character(len=56) :: units         ! time units label
     character(len=56) :: method        ! "const"/"cal"/"rel" (see below)
-    real(wp) :: time_init, time_end
-    real(wp) :: time                   ! current output time (method-dependent)
-    real(wp) :: time_elapsed           ! time since time_init
-    real(wp) :: time_cal               ! calendar time
-    real(wp) :: time_rel               ! relative time
+    real(dp) :: time_init, time_end
+    real(dp) :: time                   ! current output time (method-dependent)
+    real(dp) :: time_elapsed           ! time since time_init
+    real(dp) :: time_cal               ! calendar time
+    real(dp) :: time_rel               ! relative time
     integer  :: n                      ! iteration counter
     logical  :: is_finished            ! .TRUE. once time >= time_end
     ! ... plus internal compensation/reference fields ...
@@ -217,12 +218,12 @@ end type
 call tstep_init(ts, time_init, time_end, method, units [, time_ref] [, const_cal] [, const_rel])
 
   type(tstep_class), intent(INOUT) :: ts
-  real(wp),          intent(IN)    :: time_init, time_end
+  real(dp),          intent(IN)    :: time_init, time_end
   character(len=*),  intent(IN)    :: method   ! see the three methods below
   character(len=*),  intent(IN)    :: units
-  real(wp),          intent(IN)    :: time_ref    ! optional; reference for cal<->rel conversion
-  real(wp),          intent(IN)    :: const_cal   ! optional; fixed calendar time
-  real(wp),          intent(IN)    :: const_rel   ! optional; fixed relative time
+  real(dp),          intent(IN)    :: time_ref    ! optional; reference for cal<->rel conversion
+  real(dp),          intent(IN)    :: const_cal   ! optional; fixed calendar time
+  real(dp),          intent(IN)    :: const_rel   ! optional; fixed relative time
 ```
 
 The `method` selects which time keeper drives `ts%time`:
@@ -256,7 +257,7 @@ Drive the main loop off `ts%is_finished`, advancing at the top of each iteration
 ```fortran
 type(tstep_class) :: ts
 
-call tstep_init(ts, time_init, time_end, method="cal", time_ref=1950.0_wp, units="yr")
+call tstep_init(ts, time_init, time_end, method="cal", time_ref=1950.0_dp, units="yr")
 
 call tstep_print_header(ts)
 do while (.not. ts%is_finished)
