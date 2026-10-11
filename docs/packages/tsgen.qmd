@@ -23,11 +23,12 @@ families of forcing under one namelist-configured interface:
 use tsgen
 
 type(tsgen_class) :: ts
-real(wp) :: time, var, dvdt
+real(dp) :: time, dt
+real(wp) :: var, dvdt
 
 ! Read a namelist group and set the initial value. The group name is used
 ! verbatim (default "tsgen"); here we read &tsgen_climate.
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
+call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")
 
 do            ! model time loop
     ! var is the model response tsgen may react to (ignored by time-driven
@@ -59,6 +60,8 @@ ts%f_mean_now + ts%eps`.
 
 `tsgen_class` holds the configuration (`ts%par`), the loaded `series` (if any),
 history buffers for feedback/kill, and the runtime outputs listed above.
+Times and time intervals (the `time` arguments, `ts%time_init`, `ts%dt`, the
+`dt_*` parameters) are `real(dp)`; forcing values and rates are `wp`.
 
 ## Time-driven methods
 
@@ -188,14 +191,15 @@ For validation or offline output, sample an analytic/`series` forcing over a
 time axis and write it to netCDF:
 
 ```fortran
-real(wp) :: time(2001), f(2001), dfdt(2001)
+real(dp) :: time(2001)
+real(wp) :: f(2001), dfdt(2001)
 integer  :: i
 
 do i = 1, size(time)
-    time(i) = real(i-1, wp)      ! 0 .. 2000 yr
+    time(i) = real(i-1, dp)      ! 0 .. 2000 yr
 end do
 
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
+call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")
 call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)
 call tsgen_write("forcing_out.nc", ts, time, f, dfdt)
 ```

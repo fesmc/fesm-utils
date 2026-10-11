@@ -6,7 +6,7 @@ program test_tsgen
     !   * the kill switch (const forcing that saturates at f_max).
     ! The namelist is written by the test itself, so no external files are needed.
 
-    use precision, only: wp
+    use precision, only: dp, wp
     use tsgen
 
     implicit none
@@ -59,26 +59,27 @@ contains
         write(u,"(a)") "2000.0   30.0"
         close(u)
 
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_ser")
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_ser")
 
-        call tsgen_update(ts, 500.0_wp, 0.0_wp)
+        call tsgen_update(ts, 500.0_dp, 0.0_wp)
         call check("series     f(500)  == 5 ", ts%f_now,  5.0_wp)
-        call tsgen_update(ts, 1500.0_wp, 0.0_wp)
+        call tsgen_update(ts, 1500.0_dp, 0.0_wp)
         call check("series     f(1500) == 20", ts%f_now, 20.0_wp)
-        call tsgen_update(ts, 3000.0_wp, 0.0_wp)
+        call tsgen_update(ts, 3000.0_dp, 0.0_wp)
         call check("series     clamp(3000) == 30", ts%f_now, 30.0_wp)
     end subroutine test_series_method
 
     subroutine test_ramp_time()
         ! Linear ramp 0 -> 10 over dt_ramp=1000, then held at 10.
         type(tsgen_class) :: ts
-        real(wp) :: time(31), f(31)
+        real(dp) :: time(31)
+        real(wp) :: f(31)
         integer  :: i
 
         do i = 1, 31
-            time(i) = real(i-1,wp)*100.0_wp
+            time(i) = real(i-1,dp)*100.0_dp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_ramp")
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_ramp")
         call tsgen_tabulate(ts, time, f)
 
         call check("ramp-time  f(0)   == 0 ", f(1),   0.0_wp)
@@ -90,13 +91,14 @@ contains
     subroutine test_ramp_time_step()
         ! Triangle: 0 -> 10 (over dt_ramp) -> f_conv=5 (over dt_conv) -> held.
         type(tsgen_class) :: ts
-        real(wp) :: time(31), f(31)
+        real(dp) :: time(31)
+        real(wp) :: f(31)
         integer  :: i
 
         do i = 1, 31
-            time(i) = real(i-1,wp)*100.0_wp
+            time(i) = real(i-1,dp)*100.0_dp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_step")
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_step")
         call tsgen_tabulate(ts, time, f)
 
         call check("ramp-step  f(1000)== 10 ", f(11), 10.0_wp)
@@ -108,13 +110,14 @@ contains
     subroutine test_sin()
         ! Sinusoid within [0,10], period 2000: mid at t=0, peak at 500, mid at 1000.
         type(tsgen_class) :: ts
-        real(wp) :: time(21), f(21)
+        real(dp) :: time(21)
+        real(wp) :: f(21)
         integer  :: i
 
         do i = 1, 21
-            time(i) = real(i-1,wp)*100.0_wp
+            time(i) = real(i-1,dp)*100.0_dp
         end do
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_sin")
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_sin")
         call tsgen_tabulate(ts, time, f)
 
         call check("sin        f(0)   == 5 ", f(1),   5.0_wp)
@@ -127,17 +130,18 @@ contains
         ! PI42 controller stepped online with a decaying response derivative.
         ! Forcing must stay within [f_min,f_max] and remain finite throughout.
         type(tsgen_class) :: ts
-        real(wp) :: tt, dt, v, dvdt
+        real(dp) :: tt, dt
+        real(wp) :: v, dvdt
         integer  :: i
         logical  :: ok
 
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_pi")
-        tt = 0.0_wp
-        dt = 50.0_wp
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_pi")
+        tt = 0.0_dp
+        dt = 50.0_dp
         v  = 100.0_wp
         ok = .TRUE.
         do i = 1, 300
-            dvdt = -0.5_wp*exp(-tt/1000.0_wp)
+            dvdt = -0.5_wp*exp(-tt/1000.0_dp)
             v = v + dvdt*dt
             call tsgen_update(ts, tt, v, dv_dt=dvdt)
             if (ts%f_now .lt. ts%par%f_min - tol) ok = .FALSE.
@@ -152,12 +156,12 @@ contains
         ! Constant forcing that saturates at f_max with an equilibrated response
         ! (dv_dt=0 < eps): the kill switch must activate once f reaches f_max.
         type(tsgen_class) :: ts
-        real(wp) :: tt, dt
+        real(dp) :: tt, dt
         integer  :: i
 
-        call tsgen_init(ts, nml_file, 0.0_wp, group="tsgen_kill")
-        tt = 0.0_wp
-        dt = 50.0_wp
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_kill")
+        tt = 0.0_dp
+        dt = 50.0_dp
         do i = 1, 40
             call tsgen_update(ts, tt, 0.0_wp, dv_dt=0.0_wp)
             tt = tt + dt

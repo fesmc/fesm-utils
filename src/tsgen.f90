@@ -5,7 +5,7 @@ module tsgen
     use ncio
     use series
 
-    use precision, only: wp
+    use precision, only: dp, wp
     use constants, only: mv, pi, TOL
     implicit none
 
@@ -18,10 +18,10 @@ module tsgen
         character(len=56) :: label
         character(len=56) :: method
         logical  :: with_kill
-        real(wp) :: dt_init
-        real(wp) :: dt_ramp
-        real(wp) :: dt_conv
-        real(wp) :: dt_ave
+        real(dp) :: dt_init
+        real(dp) :: dt_ramp
+        real(dp) :: dt_conv
+        real(dp) :: dt_ave
         real(wp) :: df_sign
         real(wp) :: tol
         real(wp) :: df_dt_max
@@ -56,7 +56,7 @@ module tsgen
         type(series_class) :: ser
 
         ! History buffers over the time-averaging window
-        real(wp), allocatable :: time(:)
+        real(dp), allocatable :: time(:)
         real(wp), allocatable :: var(:)
         real(wp), allocatable :: dv_dt(:)
 
@@ -66,15 +66,15 @@ module tsgen
 
         ! Runtime state
         integer  :: nc              ! number of output channels (1 except a 2-D series)
-        real(wp) :: dt
-        real(wp) :: time_prev       ! time seen at the previous update (MV if none)
+        real(dp) :: dt
+        real(dp) :: time_prev       ! time seen at the previous update (MV if none)
         real(wp) :: dv_dt_ave
         real(wp) :: df_dt
         real(wp) :: f_now           ! scalar forcing (channel mean when nc>1)
         real(wp) :: f_mean_now
         real(wp) :: eps             ! realized noise (channel mean when nc>1)
         logical  :: kill
-        real(wp) :: time_init
+        real(dp) :: time_init
 
         ! Per-channel outputs (allocated only when nc>1)
         type(tsgen_vec_class) :: vec
@@ -98,7 +98,7 @@ contains
 
         type(tsgen_class), intent(INOUT) :: ts
         character(len=*),   intent(IN)    :: filename
-        real(wp),           intent(IN)    :: time
+        real(dp),           intent(IN)    :: time
         character(len=*),   intent(IN), optional :: group
 
         integer :: ntot
@@ -217,7 +217,7 @@ contains
             call eval_series(ts,time,noise=.FALSE.)
         else
             ! Analytic series at elapsed time zero
-            ts%f_mean_now = eval_open(ts%par,0.0_wp)
+            ts%f_mean_now = eval_open(ts%par,0.0_dp)
             ts%eps        = 0.0_wp
             ts%f_now      = ts%f_mean_now
         end if
@@ -239,19 +239,19 @@ contains
         ! given the model response variable var (and optionally its rate dv_dt).
 
         type(tsgen_class), intent(INOUT) :: ts
-        real(wp),           intent(IN)    :: time
+        real(dp),           intent(IN)    :: time
         real(wp),           intent(IN)    :: var
         real(wp), optional, intent(IN)    :: dv_dt
 
         ! Local variables
-        real(wp) :: time_elapsed
+        real(dp) :: time_elapsed
         real(wp) :: f_mean_prev
 
         ! Current timestep, from the time seen at the previous update
         if (ts%time_prev .ne. MV) then
             ts%dt = time - ts%time_prev
         else
-            ts%dt = 0.0_wp
+            ts%dt = 0.0_dp
         end if
 
         ! Remember previous mean forcing (for the diagnostic rate df_dt)
@@ -261,7 +261,7 @@ contains
             ! Tabulated series: interpolate on the file's own (absolute) axis.
             call eval_series(ts,time,noise=.TRUE.)
 
-            if (ts%dt .gt. 0.0_wp) then
+            if (ts%dt .gt. 0.0_dp) then
                 ts%df_dt = (ts%f_mean_now - f_mean_prev)/ts%dt
             else
                 ts%df_dt = 0.0_wp
@@ -293,7 +293,7 @@ contains
                 if (abs(ts%df_dt) .lt. TOL) ts%df_dt = 0.0_wp
             end if
 
-            if (ts%dt .gt. 0.0_wp) then
+            if (ts%dt .gt. 0.0_dp) then
                 ! Integrate and keep within [f_min,f_max]
                 ts%f_mean_now = ts%f_mean_now + ts%df_dt*ts%dt
                 ts%f_mean_now = min(max(ts%f_mean_now,ts%par%f_min),ts%par%f_max)
@@ -305,7 +305,7 @@ contains
 
             ts%f_mean_now = eval_open(ts%par,time_elapsed)
 
-            if (ts%dt .gt. 0.0_wp) then
+            if (ts%dt .gt. 0.0_dp) then
                 ts%df_dt = (ts%f_mean_now - f_mean_prev)/ts%dt
             else
                 ts%df_dt = 0.0_wp
@@ -313,7 +313,7 @@ contains
         end if
 
         ! Optional noise on top of the mean forcing (only on a non-zero step)
-        if (ts%dt .gt. 0.0_wp) then
+        if (ts%dt .gt. 0.0_dp) then
             if (ts%par%sigma .gt. 0.0_wp) then
                 call gen_random_normal(ts%eps,mu=0.0_wp,sigma=ts%par%sigma)
             else
@@ -343,7 +343,7 @@ contains
         ! multi-channel series, the per-channel `vec` buffers.
 
         type(tsgen_class), intent(INOUT) :: ts
-        real(wp),           intent(IN)    :: time
+        real(dp),           intent(IN)    :: time
         logical,            intent(IN)    :: noise
 
         ! Local automatic arrays sized by the channel count
@@ -357,7 +357,7 @@ contains
         ! Per-channel noise (only on a non-zero step): use the series' own
         ! standard deviation if present, otherwise fall back to par%sigma.
         vnoise = 0.0_wp
-        if (noise .and. ts%dt .gt. 0.0_wp) then
+        if (noise .and. ts%dt .gt. 0.0_dp) then
             vsig = series_interp_sig(ts%ser,time)
             do c = 1, ts%nc
                 if (vsig(c) .le. 0.0_wp) vsig(c) = ts%par%sigma
@@ -386,7 +386,7 @@ contains
         ! the windowed average response derivative dv_dt_ave.
 
         type(tsgen_class), intent(INOUT) :: ts
-        real(wp),           intent(IN)    :: time
+        real(dp),           intent(IN)    :: time
         real(wp),           intent(IN)    :: var
         real(wp), optional, intent(IN)    :: dv_dt
 
@@ -399,7 +399,7 @@ contains
         ! Current response derivative
         if (present(dv_dt)) then
             dv_dt_now = dv_dt
-        else if (ts%dt .gt. 0.0_wp) then
+        else if (ts%dt .gt. 0.0_dp) then
             dv_dt_now = (var-ts%var(ntot))/ts%dt
         else
             dv_dt_now = 0.0_wp
@@ -429,14 +429,15 @@ contains
         ! Shared by tsgen_update (time-driven methods) and tsgen_tabulate.
 
         type(tsgen_par_class), intent(IN) :: par
-        real(wp),              intent(IN) :: time_elapsed
+        real(dp),              intent(IN) :: time_elapsed
         real(wp) :: f_mean
 
         ! Local variables
-        real(wp) :: tau, rate, f_start, f_ext
+        real(dp) :: tau
+        real(wp) :: rate, f_start, f_ext
 
         ! Time since the end of the initialization period
-        tau = max(0.0_wp, time_elapsed - par%dt_init)
+        tau = max(0.0_dp, time_elapsed - par%dt_init)
 
         ! Forcing value at the start of the ramp (depends on ramp direction)
         f_start = merge(par%f_min, par%f_max, par%df_sign .gt. 0.0_wp)
@@ -469,11 +470,11 @@ contains
             case("sin")
                 ! Periodic forcing; held flat during the initialization period
                 if (time_elapsed .le. par%dt_init) then
-                    call calc_sin_now(f_mean,0.0_wp,par%dt_ramp, &
-                                        par%f_min,par%f_max,x_offset=0.0_wp)
+                    call calc_sin_now(f_mean,0.0_dp,par%dt_ramp, &
+                                        par%f_min,par%f_max,x_offset=0.0_dp)
                 else
                     call calc_sin_now(f_mean,time_elapsed,par%dt_ramp, &
-                                        par%f_min,par%f_max,x_offset=0.0_wp)
+                                        par%f_min,par%f_max,x_offset=0.0_dp)
                 end if
 
             case default
@@ -494,7 +495,8 @@ contains
         type(tsgen_class), intent(INOUT) :: ts
 
         ! Local variables
-        real(wp) :: dt_tot, dvdt_fac, f_scale, pi_df_now
+        real(dp) :: dt_tot
+        real(wp) :: dvdt_fac, f_scale, pi_df_now
 
         ! dv_dt is a windowed average, so use 2nd-order PI controller parameters
         integer, parameter :: pi_order = 2
@@ -546,7 +548,7 @@ contains
         ! tsgen_update.
 
         type(tsgen_class),  intent(IN)  :: ts
-        real(wp),           intent(IN)  :: time(:)      ! [yr] simulation-time axis
+        real(dp),           intent(IN)  :: time(:)      ! [yr] simulation-time axis
         real(wp),           intent(OUT) :: f(:)         ! [f]  mean forcing at each time
         real(wp), optional, intent(OUT) :: df_dt(:)     ! [f/yr] finite-difference rate
         logical,  optional, intent(IN)  :: verbose      ! print a short summary
@@ -609,7 +611,7 @@ contains
 
         character(len=*),   intent(IN) :: filename
         type(tsgen_class),  intent(IN) :: ts
-        real(wp),           intent(IN) :: time(:)
+        real(dp),           intent(IN) :: time(:)
         real(wp),           intent(IN) :: f(:)
         real(wp), optional, intent(IN) :: df_dt(:)
 
@@ -638,7 +640,7 @@ contains
 
         character(len=*),  intent(IN) :: filename
         type(tsgen_class), intent(IN) :: ts
-        real(wp),          intent(IN) :: time
+        real(dp),          intent(IN) :: time
         character(len=*),  intent(IN), optional :: label
 
         integer            :: ncid, n
@@ -677,7 +679,7 @@ contains
 
         character(len=*),  intent(IN) :: filename
         type(tsgen_class), intent(IN) :: ts
-        real(wp),          intent(IN) :: time
+        real(dp),          intent(IN) :: time
 
         integer  :: ncid
         real(wp) :: kill_r
@@ -689,7 +691,7 @@ contains
         call nc_write_attr(filename,"tsgen_label", trim(ts%par%label))
         call nc_write_attr(filename,"tsgen_method",trim(ts%par%method))
 
-        call nc_write_dim(filename,"time",x=time,dx=1.0_wp,nx=1,units="year",unlimited=.TRUE.)
+        call nc_write_dim(filename,"time",x=time,dx=1.0_dp,nx=1,units="year",unlimited=.TRUE.)
         call nc_write_dim(filename,"pt3", x=1,dx=1,nx=3)
 
         call nc_open(filename, ncid, writable=.TRUE.)
@@ -775,10 +777,10 @@ contains
         type(tsgen_par_class), intent(INOUT) :: par
 
         par%with_kill = .FALSE.
-        par%dt_init   = 0.0_wp
-        par%dt_ramp   = 1.0_wp
-        par%dt_conv   = 1.0_wp
-        par%dt_ave    = 1.0_wp
+        par%dt_init   = 0.0_dp
+        par%dt_ramp   = 1.0_dp
+        par%dt_conv   = 1.0_dp
+        par%dt_ave    = 1.0_dp
         par%df_sign   = 1.0_wp
         par%tol       = 1.0_wp
         par%df_dt_max = 0.0_wp
@@ -1067,11 +1069,11 @@ contains
         implicit none
 
         real(wp), intent(OUT) :: f_now
-        real(wp), intent(IN)  :: time_now
-        real(wp), intent(IN)  :: p
+        real(dp), intent(IN)  :: time_now
+        real(dp), intent(IN)  :: p
         real(wp), intent(IN)  :: f_min
         real(wp), intent(IN)  :: f_max
-        real(wp), intent(IN)  :: x_offset
+        real(dp), intent(IN)  :: x_offset
 
         ! Local variables
         real(wp) :: amp
@@ -1082,7 +1084,7 @@ contains
         y_offset = 0.5_wp * (f_max + f_min)
 
         ! Calculate expected current forcing value based on time elapsed
-        f_now = amp*sin(2.0_wp*pi*(time_now+x_offset)/p) + y_offset
+        f_now = amp*sin(2.0_dp*pi*(time_now+x_offset)/p) + y_offset
 
         return
 
