@@ -1130,7 +1130,9 @@ contains
     subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs,grid)
         ! Routine to load information related to a given 
         ! transient variable, so that it can be processed properly.
-        ! grid: the target grid of a group with remap /= "none".
+        ! grid: the target grid. Required with remap /= "none"; without
+        ! remapping the file must be on it (its two horizontal dimensions
+        ! are checked against the grid's).
 
         implicit none 
 
@@ -1158,11 +1160,46 @@ contains
                     "remap = "//trim(vs%par%remap))
             end if
             call varslice_remap_init(vs,grid)
+        else if (present(grid)) then
+            call varslice_check_grid(vs,grid,group)
         end if
 
         return 
 
     end subroutine varslice_init_nml
+
+    subroutine varslice_check_grid(vs,grid,group)
+        ! A variable read without remapping must be on the target grid: its
+        ! first two dimensions (when it has two besides time) must have the
+        ! grid's size, else the caller would get a block of a larger field
+        ! (e.g. a corner of a finer grid) or an incomplete one.
+
+        implicit none
+
+        type(varslice_class), intent(IN) :: vs
+        type(grid_class),     intent(IN) :: grid
+        character(len=*),     intent(IN) :: group
+
+        ! Local variables
+        integer :: ndim_sp
+        character(len=256) :: msg
+
+        ndim_sp = vs%par%ndim
+        if (vs%par%with_time) ndim_sp = ndim_sp - 1
+        if (ndim_sp < 2) return
+
+        if (vs%dim(1) /= grid%G%nx .or. vs%dim(2) /= grid%G%ny) then
+            write(msg,"(a,i0,a,i0,a,i0,a,i0,a)") "file: ", vs%dim(1), " x ", vs%dim(2), &
+                                               ", grid "//trim(grid%name)//": ", grid%G%nx, " x ", grid%G%ny, "."
+            call varslice_error("varslice_init_nml", &
+                "the variable is not on the target grid (set remap and grid_src to remap it).", &
+                "group = "//trim(group)//new_line("a")// &
+                "file  = "//trim(vs%par%filenames(1))//new_line("a")//trim(msg))
+        end if
+
+        return
+
+    end subroutine varslice_check_grid
 
     subroutine varslice_init_arg(vs,filename,name,units_in,units_out,scale,offset, &
                                                             with_time,time_par)

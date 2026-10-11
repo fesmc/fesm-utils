@@ -4,6 +4,13 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **ncio**: `nc_read` without `count` stops when a file dimension covered by the array
+  has another length than the array (it read the leading block silently, e.g. the corner
+  of a finer grid); further file dimensions (e.g. time) are still read at index 1.
+- **varslice**: `varslice_init_nml` with a target `grid` and no remapping stops when the
+  variable's horizontal dimensions are not the grid's.
+
 ### Added
 - **timer**: `timer_init(tmr, labels)` registers the components up front;
   `timer_print_totals` and `timer_write_totals` report the time accumulated by
