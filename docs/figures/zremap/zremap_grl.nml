@@ -16,6 +16,7 @@
     z_min   = 0.0                       ! [m]
     z_max   = 4000.0                    ! [m]
     dz      = 100.0                     ! [m]
+    sigma_z = 200.0                     ! [m]   smoothing along z
     w_full  = 0.25                      ! [1]
     stride  = 1
     dfdz_lo = 2.0                       ! [mm w.e. a-1 m-1] ablation-zone gradient

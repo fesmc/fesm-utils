@@ -39,12 +39,18 @@ grid points):
    (hat) weights. Its horizontal weight is the Gaussian kernel at its distance
    from the table point, cut at 3 `sigma` and normalised to 1 over the full
    kernel.
-2. **Nodes.** Each bin with data gives a node `(z̄, f̄)`: the mean elevation
-   and mean value of its points, weighted by the kernel. Using the mean
-   elevation rather than the bin centre makes the profile exact for a field
-   that is linear in z. Without it, the error near the ends of the data range
-   is up to `dz/2` times the gradient.
-3. **Profile.** The profile interpolates linearly between the nodes. Beyond
+2. **Smoothing in z.** The bin sums (of the weights, weight·f and weight·z)
+   are smoothed along z with a Gaussian of width `sigma_z`. The sums are
+   smoothed, not the bin means, so a sparse bin of a few outlying points
+   borrows from its well-populated neighbours instead of putting a kink in
+   the profile. `sigma_z` sets the smoothness of the profiles independently
+   of the table resolution `dz`; `sigma_z = 0` turns it off.
+3. **Nodes.** Each bin with data gives a node `(z̄, f̄)`: the mean elevation
+   and mean value of the smoothed sums. Using the mean elevation rather than
+   the bin centre makes the profile exact for a field that is linear in z,
+   with or without smoothing. Without it, the error near the ends of the data
+   range is up to `dz/2` times the gradient.
+4. **Profile.** The profile interpolates linearly between the nodes. Beyond
    them it continues with the gradient `dfdz_lo` below the lowest node and
    `dfdz_hi` above the highest one. It is stored on the bins `zb`.
 
@@ -111,6 +117,7 @@ reference geometry, as the ice sheet evolves (cf. Helsen et al., 2012).
 |---|---|---|
 | `sigma` | `real(wp)` | [m] width of the Gaussian kernel |
 | `z_min`, `z_max`, `dz` | `real(wp)` | [m] elevation bins |
+| `sigma_z` | `real(wp)` | [m] width of the smoothing along z |
 | `w_full` | `real(wp)` | [1] support from which the profiles are fully used |
 | `stride` | `integer` | Table spacing in grid points |
 | `dfdz_lo`, `dfdz_hi` | `real(wp)` | [f m⁻¹] gradients below and above the data |
@@ -126,7 +133,7 @@ reference geometry, as the ice sheet evolves (cf. Helsen et al., 2012).
 | `tab(nb,nxo,nyo)` | `real(wp)` | Profiles `f(zb)` at the table points |
 | `wt(nb,nxo,nyo)` | `real(wp)` | Kernel weight of the data in each bin |
 | `wsup(nxo,nyo)` | `real(wp)` | Support `W` at the table points |
-| `z_lo`, `z_hi` `(nxo,nyo)` | `real(wp)` | [m] elevation range of the data (lowest/highest node) |
+| `z_lo`, `z_hi` `(nxo,nyo)` | `real(wp)` | [m] elevation range of the data (mean elevation of the lowest/highest bin, before smoothing) |
 | `f_ref`, `z_ref` `(nx,ny)` | `real(wp)` | Reference field and elevation |
 | `w(nx,ny)` | `real(wp)` | Support `W` at the grid points |
 | `dfdz(nx,ny)` | `real(wp)` | Gradient of the remapped field at `z_ref` |
@@ -181,6 +188,7 @@ All parameters are required.
     z_min   = 0.0       ! [m]   lowest elevation bin
     z_max   = 4000.0    ! [m]   highest elevation bin
     dz      = 100.0     ! [m]   bin spacing
+    sigma_z = 200.0     ! [m]   width of the Gaussian smoothing along z (0 = none)
     w_full  = 0.25      ! [1]   support from which the profiles are fully used
     stride  = 1         ! [-]   table spacing in grid points
     dfdz_lo = 2.0       ! [f m-1] gradient below the data (and where there are no data)
@@ -196,6 +204,9 @@ Choosing the parameters:
 - **`w_full`**: at a straight data edge `W ≈ 0.5`. With `w_full = 0.25`, the
   profiles are used fully up to about 0.7 `sigma` beyond the edge. The weight
   is α ≈ 0.6 at 1 `sigma` and α ≈ 0.1 at 2 `sigma`.
+- **`sigma_z`** sets how smooth the profiles are. Around 150–250 m removes the
+  noise of sparse bins while keeping the curvature around the equilibrium
+  line. `dz` is then only the table resolution and can stay at 50–100 m.
 - **`z_min`, `z_max`** should cover the data. Data outside the range fall into
   the end bins. Elevations outside the range are extrapolated with the end
   gradients.
@@ -270,12 +281,14 @@ the following:
 - **No value.** 28 LGM ice points on today's ocean, far from any data, have
   neither support nor a reference value, and stay missing.
 
-![Profiles at the points of @fig-zremap-maps a. Grey: data within 3 `sigma`, shaded by kernel weight; blue: profile (dashed where extrapolated); dotted: reference elevation; orange: LGM elevation and remapped SMB; red cross: constant gradient (off scale at C).](../figures/zremap_profiles.png){#fig-zremap-profiles width=100%}
+![Profiles (SMB against elevation) at the points of @fig-zremap-maps a, with `sigma_z = 200 m`. Grey: data within 3 `sigma`, shaded by kernel weight; blue: profile (dashed where extrapolated); dotted: reference elevation; orange: LGM elevation and remapped SMB; red cross: constant gradient (off scale at C).](../figures/zremap_profiles.png){#fig-zremap-profiles width=100%}
 
 @fig-zremap-profiles shows profiles at three points:
 
-- **A**, in the south-west ablation zone: a profile curved and noisy in the
-  ablation zone, and flat above the equilibrium line.
+- **A**, in the south-west ablation zone: a profile that steepens towards the
+  low-lying margin and is flat above the equilibrium line. The data are
+  scattered there, and the smoothing along z keeps the profile from following
+  the few points of each low bin.
 - **B**, at the north-west margin: a smooth profile.
 - **C**, on the ice-free land beyond the present margin: its surface rises
   by 1.5 km at the LGM. It is still supported (`W = 0.44`), but the LGM
@@ -287,7 +300,7 @@ the following:
 @fig-zremap-progression follows the remapped SMB through the deglaciation:
 
 - **Glacial slices.** The integrated SMB from `zremap` stays close to the
-  present-day value (about 400 Gt a⁻¹ against 350 Gt a⁻¹). The constant
+  present-day value (about 380 Gt a⁻¹ against 350 Gt a⁻¹). The constant
   gradient gives about 1400 Gt a⁻¹, mostly from the thickened ice.
 - **Around 9 ka.** The ICE-6G_C ice still extends at low elevation beyond the
   present south-west margin. The profiles give strong ablation there, and the
