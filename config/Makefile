@@ -223,6 +223,9 @@ $(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants
 					$(objdir)/series.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
@@ -266,7 +269,8 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/topodata.o \
 					$(objdir)/htopo.o \
 					$(objdir)/series.o \
-					$(objdir)/tsgen.o
+					$(objdir)/tsgen.o \
+					$(objdir)/zremap.o
 
 ###############################################
 ##
