@@ -48,10 +48,6 @@ contains
         real(kind=8), intent(in)    :: dx 
         logical,      intent(in), optional :: mask(:,:) 
 
-        real(kind=4), allocatable :: kernel(:,:)
-        real(kind=4) :: sigmap 
-        integer :: nx, ny 
-
         real(kind=4), allocatable :: output4(:,:)
 
         ! Allocate local output array 
@@ -76,14 +72,13 @@ contains
         logical,      intent(in), optional :: mask(:,:)
 
         ! Local variables
-        integer :: nx, ny, i, j, iref, jref 
+        integer :: nx, ny, i, j
         integer :: nk, nk2
         real(kind=4), allocatable :: kernel_ref(:,:) 
         real(kind=4), allocatable :: kernel(:,:) 
         real(kind=4), allocatable :: varext(:,:) 
         logical,      allocatable :: maskext(:,:) 
         integer,      allocatable :: ii(:), jj(:)
-        real(4) :: kern_tot 
 
         real(4), parameter :: n_sigma_truncate = 1.5
         
@@ -128,20 +123,16 @@ contains
         end if
 
         ! Loop over points corresponding to actual var array 
-        ! (ie, over internal points of varext)
+        ! (ie, over internal points of varext). Points outside the mask
+        ! remain unchanged and do not contribute to their neighbours.
         do j = nk2+1,nk2+ny 
         do i = nk2+1,nk2+nx
 
-            ! Get current kernel 
-            kernel = kernel_ref 
-            where(.not. maskext(i-nk2:i+nk2,j-nk2:j+nk2)) kernel = 0.0 
-            kern_tot = sum(kernel)
-
-            ! If weights exist, convolve filter to get new value of var
-            if (kern_tot .gt. 0.0) then 
-                iref = i-nk2 
-                jref = j-nk2
-                var(iref,jref) = sum(kernel*varext(i-nk2:i+nk2,j-nk2:j+nk2)) / kern_tot
+            if (maskext(i,j)) then
+                ! Kernel restricted to valid points (sum > 0: centre is valid)
+                kernel = kernel_ref 
+                where(.not. maskext(i-nk2:i+nk2,j-nk2:j+nk2)) kernel = 0.0 
+                var(i-nk2,j-nk2) = sum(kernel*varext(i-nk2:i+nk2,j-nk2:j+nk2)) / sum(kernel)
             end if 
 
         end do 
@@ -296,18 +287,19 @@ contains
         logical,      intent(in), optional :: mask(:,:) 
         real(kind=4), intent(in), optional :: truncate
 
-        real(kind=4), allocatable :: kernel(:,:)
         real(kind=4) :: sigmap 
-        integer :: nx, ny 
-
         real(kind=4), allocatable :: output4(:,:)
+
+        ! Get sigma in terms of points
+        sigmap = real(sigma)
+        if (present(dx)) sigmap = real(sigma/dx)
 
         ! Allocate local output array 
         allocate(output4(size(var,1),size(var,2)))
 
         output4 = real(var) 
 
-        call filter_gaussian_float(output4,real(sigma),real(dx),mask,truncate)
+        call filter_gaussian_float(output4,sigmap,mask=mask,truncate=truncate)
         
         ! Return a double array
         var = dble(output4)
@@ -326,10 +318,10 @@ contains
 
         real(kind=4), allocatable :: intmp(:,:), kernel(:,:), output(:,:) 
         real(kind=4) :: sigmap 
-        integer :: nx, ny, nloop, i 
+        integer :: nloop, i 
 
         ! Get sigma in terms of points
-        sigmap = sigmap 
+        sigmap = sigma 
         if (present(dx)) then 
             sigmap = sigma / dx 
         end if 
@@ -579,7 +571,7 @@ contains
 
         ! Assign boundary values
         du(1,:)  = du(2,:)
-        du(ny,:) = du(ny-1,:)
+        du(nx,:) = du(nx-1,:)
 
         return
 
