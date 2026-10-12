@@ -140,13 +140,13 @@ function fig_profiles(d, pts; sigma = 100.0)
     fig = Figure(size = (1000, 380))
     for (k, (i, j)) in enumerate(pts)
         ax = Axis(fig[1, k]; title = "$(('A' + k - 1))   W = $(round(d.w[i, j], digits = 2))",
-                  xlabel = "SMB  [mm w.e. a⁻¹]", ylabel = k == 1 ? "elevation  [m]" : "")
+                  xlabel = "elevation  [m]", ylabel = k == 1 ? "SMB  [mm w.e. a⁻¹]" : "")
 
         # data around the point, shaded by kernel weight
         r2 = ((d.xc .- d.xc[i]) .^ 2 .+ (d.yc' .- d.yc[j]) .^ 2) ./ sigma^2
         wk = exp.(-0.5 .* r2)
         sel = d.mask_ref .& (r2 .<= 9)
-        scatter!(ax, d.f_ref[sel], d.z_ref[sel]; color = wk[sel], colormap = [:white, GREY],
+        scatter!(ax, d.z_ref[sel], d.f_ref[sel]; color = wk[sel], colormap = [:white, GREY],
                  colorrange = (0, 1), markersize = 5)
 
         # profile: within the data range solid, extrapolated dashed
@@ -154,20 +154,20 @@ function fig_profiles(d, pts; sigma = 100.0)
         lo, hi = d.z_lo[i, j], d.z_hi[i, j]
         if !isnan(lo)
             inr = (d.zb .>= lo) .& (d.zb .<= hi)
-            lines!(ax, p, d.zb; color = BLUE, linewidth = 1.5, linestyle = :dash)
-            lines!(ax, p[inr], d.zb[inr]; color = BLUE, linewidth = 2.5)
+            lines!(ax, d.zb, p; color = BLUE, linewidth = 1.5, linestyle = :dash)
+            lines!(ax, d.zb[inr], p[inr]; color = BLUE, linewidth = 2.5)
         end
 
         # reference and LGM elevation at the point
-        hlines!(ax, d.z_ref[i, j]; color = GREY, linestyle = :dot)
-        hlines!(ax, d.z_now[i, j]; color = ORANGE, linewidth = 1.5)
-        scatter!(ax, [d.f_now[i, j]], [d.z_now[i, j]]; color = ORANGE, markersize = 11)
-        scatter!(ax, [d.f_grad[i, j]], [d.z_now[i, j]]; color = RED, marker = :xcross,
+        vlines!(ax, d.z_ref[i, j]; color = GREY, linestyle = :dot)
+        vlines!(ax, d.z_now[i, j]; color = ORANGE, linewidth = 1.5)
+        scatter!(ax, [d.z_now[i, j]], [d.f_now[i, j]]; color = ORANGE, markersize = 11)
+        scatter!(ax, [d.z_now[i, j]], [d.f_grad[i, j]]; color = RED, marker = :xcross,
                  markersize = 11)
 
-        ax.xticks = -4000:2000:2000
-        xlims!(ax, -4000, 2000)
-        ylims!(ax, 0, 4000)
+        ax.yticks = -4000:2000:2000
+        xlims!(ax, 0, 4000)
+        ylims!(ax, -4000, 2000)
     end
     Legend(fig[1, length(pts) + 1],
            [MarkerElement(color = GREY, marker = :circle),
