@@ -294,7 +294,7 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gauss.x $(testdir)/coords/test_gauss.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
-		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gaussian_fast.x $(testdir)/coords/test_gaussian_fast.f90 \
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gaussian_filter.x $(testdir)/coords/test_gaussian_filter.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_rotated.x $(testdir)/coords/test_rotated.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
