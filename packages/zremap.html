@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.19">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>zremap – fesm-utils</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../packages/ncio.html" rel="next">
+<link href="../packages/htopo.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-d37df8fd7b43e116a420b34c208e916c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-ad05a1de936d1208ecda519363d22f23.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<style>html{ scroll-behavior: smooth; }</style>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">fesm-utils</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../index.html" aria-current="page"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-packages" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Packages</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-packages">    
+        <li>
+    <a class="dropdown-item" href="../packages/coords.html">
+ <span class="dropdown-text">coords — grids &amp; remapping</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/tsgen.html">
+ <span class="dropdown-text">tsgen — time-series generator</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/series.html">
+ <span class="dropdown-text">series — tabulated series</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/varslice.html">
+ <span class="dropdown-text">varslice — gridded slices</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/regions.html">
+ <span class="dropdown-text">regions — regions, zones &amp; basins</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/topodata.html">
+ <span class="dropdown-text">topodata — topography products</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/htopo.html">
+ <span class="dropdown-text">htopo — hi-res geometry hub</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/zremap.html">
+ <span class="dropdown-text">zremap — elevation remapping</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/ncio.html">
+ <span class="dropdown-text">ncio — netCDF I/O</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/nml.html">
+ <span class="dropdown-text">nml — namelists</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/root_finder.html">
+ <span class="dropdown-text">root_finder</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/timing.html">
+ <span class="dropdown-text">timing</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/gridops.html">
+ <span class="dropdown-text">grid operations</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/gaussian_quadrature.html">
+ <span class="dropdown-text">gaussian_quadrature</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/foundations.html">
+ <span class="dropdown-text">foundations</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-external-libraries" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">External libraries</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-external-libraries">    
+        <li>
+    <a class="dropdown-item" href="../external/fftw.html">
+ <span class="dropdown-text">FFTW</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../external/lis.html">
+ <span class="dropdown-text">LIS</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../external/shtns.html">
+ <span class="dropdown-text">SHTns</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/fesmc/fesm-utils"> <i class="bi bi-github" role="img" aria-label="GitHub">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/zremap.html">zremap</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overview</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Local packages</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/coords.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">coords</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/tsgen.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">tsgen</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/series.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">series</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/varslice.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">varslice</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/regions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">regions</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/topodata.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">topodata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/htopo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">htopo</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/zremap.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">zremap</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/ncio.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">ncio</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/nml.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">nml</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/root_finder.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">root_finder</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/timing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">timing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/gridops.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">grid operations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/gaussian_quadrature.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">gaussian_quadrature</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/foundations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">foundations</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">External libraries</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../external/fftw.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FFTW</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../external/lis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LIS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../external/shtns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">SHTns</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
+  <li><a href="#method" id="toc-method" class="nav-link" data-scroll-target="#method">Method</a>
+  <ul class="collapse">
+  <li><a href="#local-profiles" id="toc-local-profiles" class="nav-link" data-scroll-target="#local-profiles">Local profiles</a></li>
+  <li><a href="#support-and-blending-to-the-fallback" id="toc-support-and-blending-to-the-fallback" class="nav-link" data-scroll-target="#support-and-blending-to-the-fallback">Support and blending to the fallback</a></li>
+  <li><a href="#extrapolation-in-elevation" id="toc-extrapolation-in-elevation" class="nav-link" data-scroll-target="#extrapolation-in-elevation">Extrapolation in elevation</a></li>
+  <li><a href="#updating-the-reference" id="toc-updating-the-reference" class="nav-link" data-scroll-target="#updating-the-reference">Updating the reference</a></li>
+  </ul></li>
+  <li><a href="#derived-types" id="toc-derived-types" class="nav-link" data-scroll-target="#derived-types">Derived types</a>
+  <ul class="collapse">
+  <li><a href="#zremap_par_class" id="toc-zremap_par_class" class="nav-link" data-scroll-target="#zremap_par_class"><code>zremap_par_class</code></a></li>
+  <li><a href="#zremap_class" id="toc-zremap_class" class="nav-link" data-scroll-target="#zremap_class"><code>zremap_class</code></a></li>
+  </ul></li>
+  <li><a href="#public-api" id="toc-public-api" class="nav-link" data-scroll-target="#public-api">Public API</a>
+  <ul class="collapse">
+  <li><a href="#signatures" id="toc-signatures" class="nav-link" data-scroll-target="#signatures">Signatures</a></li>
+  </ul></li>
+  <li><a href="#namelist-configuration" id="toc-namelist-configuration" class="nav-link" data-scroll-target="#namelist-configuration">Namelist configuration</a></li>
+  <li><a href="#usage-example" id="toc-usage-example" class="nav-link" data-scroll-target="#usage-example">Usage example</a></li>
+  <li><a href="#example-greenland-smb-over-the-deglaciation" id="toc-example-greenland-smb-over-the-deglaciation" class="nav-link" data-scroll-target="#example-greenland-smb-over-the-deglaciation">Example: Greenland SMB over the deglaciation</a></li>
+  <li><a href="#tests" id="toc-tests" class="nav-link" data-scroll-target="#tests">Tests</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/fesmc/fesm-utils/blob/main/packages/zremap.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/fesmc/fesm-utils/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/zremap.html">zremap</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">zremap</h1>
+<p class="subtitle lead">Remapping a surface field to a changing elevation</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="overview" class="level2">
+<h2 class="anchored" data-anchor-id="overview">Overview</h2>
+<p><code>zremap</code> adjusts a 2D surface field <code>f</code> (surface mass balance, surface temperature, …) to a changing ice-sheet surface. From one reference state, it builds local relationships <code>f(z)</code> between the field and elevation. Each time step then evaluates them at the current elevation:</p>
+<p><span class="math display">\[
+f_\mathrm{now}(x,y) = f\big(x, y, z_\mathrm{now}(x,y)\big).
+\]</span></p>
+<p>This is the lookup-table approach of Goelzer et al.&nbsp;(2020), but each point gets its own neighbourhood instead of a drainage basin. The neighbourhood is a Gaussian kernel of width <code>sigma</code>, in the spirit of the search radius of Helsen et al.&nbsp;(2012). No basins are needed, so the method works for any domain and for geometries very different from the reference, where basins are hard to define.</p>
+<p>The module works on the input grid itself: a regular grid with spacing <code>dx</code>, with no grid object or remapping. One <code>zremap_class</code> object handles one field. Remapping SMB and surface temperature therefore takes two objects.</p>
+</section>
+<section id="method" class="level2">
+<h2 class="anchored" data-anchor-id="method">Method</h2>
+<section id="local-profiles" class="level3">
+<h3 class="anchored" data-anchor-id="local-profiles">Local profiles</h3>
+<p><code>zremap_update</code> takes the reference field <code>f_ref</code>, the reference elevation <code>z_ref</code> and a mask of the points to use as data (<code>mask_ref</code>, e.g.&nbsp;the present-day ice). It builds a profile at every table point (every <code>stride</code> grid points):</p>
+<ol type="1">
+<li><strong>Binning.</strong> Each data point contributes to the two elevation bins around its <code>z_ref</code> (bins <code>zb</code> from <code>z_min</code> to <code>z_max</code>, spacing <code>dz</code>), with linear (hat) weights. Its horizontal weight is the Gaussian kernel at its distance from the table point, cut at 3 <code>sigma</code> and normalised to 1 over the full kernel.</li>
+<li><strong>Smoothing in z.</strong> The bin sums (of the weights, weight·f and weight·z) are smoothed along z with a Gaussian of width <code>sigma_z</code>. The sums are smoothed, not the bin means, so a sparse bin of a few outlying points borrows from its well-populated neighbours instead of putting a kink in the profile. <code>sigma_z</code> sets the smoothness of the profiles independently of the table resolution <code>dz</code>; <code>sigma_z = 0</code> turns it off.</li>
+<li><strong>Nodes.</strong> Each bin with data gives a node <code>(z̄, f̄)</code>: the mean elevation and mean value of the smoothed sums. Using the mean elevation rather than the bin centre makes the profile exact for a field that is linear in z, with or without smoothing. Without it, the error near the ends of the data range is up to <code>dz/2</code> times the gradient.</li>
+<li><strong>Profile.</strong> The profile interpolates linearly between the nodes. Beyond them it continues with the gradient <code>dfdz_lo</code> below the lowest node and <code>dfdz_hi</code> above the highest one. It is stored on the bins <code>zb</code>.</li>
+</ol>
+<p>The kernel is separable, so the sums take one pass along x and one along y. Each data point touches only two bins. Building the tables for a 16 km Greenland grid takes a fraction of a second.</p>
+</section>
+<section id="support-and-blending-to-the-fallback" class="level3">
+<h3 class="anchored" data-anchor-id="support-and-blending-to-the-fallback">Support and blending to the fallback</h3>
+<p>The <strong>support</strong> <code>W</code> of a table point is the kernel weight of all its data, between 0 and 1. It is about 1 inside the data region and about 0.5 at its edge, and it decays over about <code>sigma</code> beyond the edge. <code>W</code> measures how much data the profile at a point rests on, so it is the confidence in the profile.</p>
+<p>A grid point interpolates bilinearly between the profiles of the four table points around it, each weighted with its <code>W</code>. It blends the result with a <strong>fallback</strong> built from its own reference value and the gradient <code>dfdz_lo</code>:</p>
+<p><span class="math display">\[
+f = \alpha\, f_\mathrm{profile}(z_\mathrm{now}) + (1-\alpha)\,\big[f_\mathrm{ref} + \texttt{dfdz\_lo}\,(z_\mathrm{now}-z_\mathrm{ref})\big],
+\qquad \alpha = \min(1, W/\texttt{w\_full}),
+\]</span></p>
+<p>where <code>W</code> here is the bilinear support at the grid point. The field is therefore continuous everywhere: it uses the profiles fully down to <code>W = w_full</code>, then fades to the fallback away from the data.</p>
+<ul>
+<li>Where there is no data at all (<code>W = 0</code>), the fallback alone is used.</li>
+<li>Where <code>f_ref</code> is missing (e.g.&nbsp;ocean), the profiles alone are used, without blending.</li>
+<li>Where both are unavailable, the result is the missing value <code>mv</code>.</li>
+</ul>
+<p>The fallback uses <code>f_ref</code> outside <code>mask_ref</code> too. On ice-free land it should therefore hold a meaningful value, or <code>mask_ref</code> should include that land.</p>
+</section>
+<section id="extrapolation-in-elevation" class="level3">
+<h3 class="anchored" data-anchor-id="extrapolation-in-elevation">Extrapolation in elevation</h3>
+<p>Horizontal support is not the only source of uncertainty. A point can be well supported and still lie above or below the elevation range of its data, e.g. when the ice thickens beyond anything in the reference. <code>zremap_map</code> can optionally return <code>dz_ext</code>, the elevation distance beyond the data range:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th><code>dz_ext</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>&gt; 0</code></td>
+<td><code>z_now</code> above the highest node (extrapolated with <code>dfdz_hi</code>)</td>
+</tr>
+<tr class="even">
+<td><code>&lt; 0</code></td>
+<td><code>z_now</code> below the lowest node (extrapolated with <code>dfdz_lo</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>0</code></td>
+<td>Within the data range</td>
+</tr>
+<tr class="even">
+<td><code>mv</code></td>
+<td>No data</td>
+</tr>
+</tbody>
+</table>
+<p>Together, <code>W</code> and <code>dz_ext</code> describe how far a remapped value relies on extrapolation: horizontally and vertically.</p>
+</section>
+<section id="updating-the-reference" class="level3">
+<h3 class="anchored" data-anchor-id="updating-the-reference">Updating the reference</h3>
+<p><code>zremap_update</code> can be called again at any time, e.g.&nbsp;when a new reference climate arrives in a transient forcing. It can also take an updated reference geometry, as the ice sheet evolves (cf.&nbsp;Helsen et al., 2012).</p>
+</section>
+</section>
+<section id="derived-types" class="level2">
+<h2 class="anchored" data-anchor-id="derived-types">Derived types</h2>
+<section id="zremap_par_class" class="level3">
+<h3 class="anchored" data-anchor-id="zremap_par_class"><code>zremap_par_class</code></h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Component</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>sigma</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] width of the Gaussian kernel</td>
+</tr>
+<tr class="even">
+<td><code>z_min</code>, <code>z_max</code>, <code>dz</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] elevation bins</td>
+</tr>
+<tr class="odd">
+<td><code>sigma_z</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] width of the smoothing along z</td>
+</tr>
+<tr class="even">
+<td><code>w_full</code></td>
+<td><code>real(wp)</code></td>
+<td>[1] support from which the profiles are fully used</td>
+</tr>
+<tr class="odd">
+<td><code>stride</code></td>
+<td><code>integer</code></td>
+<td>Table spacing in grid points</td>
+</tr>
+<tr class="even">
+<td><code>dfdz_lo</code>, <code>dfdz_hi</code></td>
+<td><code>real(wp)</code></td>
+<td>[f m⁻¹] gradients below and above the data</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="zremap_class" class="level3">
+<h3 class="anchored" data-anchor-id="zremap_class"><code>zremap_class</code></h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Component</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>par</code></td>
+<td><code>zremap_par_class</code></td>
+<td>Parameters (above)</td>
+</tr>
+<tr class="even">
+<td><code>nx</code>, <code>ny</code>, <code>dx</code></td>
+<td></td>
+<td>Grid size and spacing [m]</td>
+</tr>
+<tr class="odd">
+<td><code>nxo</code>, <code>nyo</code>, <code>nb</code></td>
+<td><code>integer</code></td>
+<td>Number of table points and bins</td>
+</tr>
+<tr class="even">
+<td><code>zb(nb)</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] bin elevations</td>
+</tr>
+<tr class="odd">
+<td><code>tab(nb,nxo,nyo)</code></td>
+<td><code>real(wp)</code></td>
+<td>Profiles <code>f(zb)</code> at the table points</td>
+</tr>
+<tr class="even">
+<td><code>wt(nb,nxo,nyo)</code></td>
+<td><code>real(wp)</code></td>
+<td>Kernel weight of the data in each bin</td>
+</tr>
+<tr class="odd">
+<td><code>wsup(nxo,nyo)</code></td>
+<td><code>real(wp)</code></td>
+<td>Support <code>W</code> at the table points</td>
+</tr>
+<tr class="even">
+<td><code>z_lo</code>, <code>z_hi</code> <code>(nxo,nyo)</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] elevation range of the data (mean elevation of the lowest/highest bin, before smoothing)</td>
+</tr>
+<tr class="odd">
+<td><code>f_ref</code>, <code>z_ref</code> <code>(nx,ny)</code></td>
+<td><code>real(wp)</code></td>
+<td>Reference field and elevation</td>
+</tr>
+<tr class="even">
+<td><code>w(nx,ny)</code></td>
+<td><code>real(wp)</code></td>
+<td>Support <code>W</code> at the grid points</td>
+</tr>
+<tr class="odd">
+<td><code>dfdz(nx,ny)</code></td>
+<td><code>real(wp)</code></td>
+<td>Gradient of the remapped field at <code>z_ref</code></td>
+</tr>
+</tbody>
+</table>
+<p>Table points are placed every <code>stride</code> grid points, plus the last row and column, so the whole grid is covered.</p>
+</section>
+</section>
+<section id="public-api" class="level2">
+<h2 class="anchored" data-anchor-id="public-api">Public API</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Procedure</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zremap_init</code></td>
+<td>Load the parameters, set up the kernel, table points and bins</td>
+</tr>
+<tr class="even">
+<td><code>zremap_update</code></td>
+<td>Build the profiles from a reference state</td>
+</tr>
+<tr class="odd">
+<td><code>zremap_map</code></td>
+<td>Remap the field to the current elevation (optionally <code>dz_ext</code>)</td>
+</tr>
+<tr class="even">
+<td><code>zremap_write</code></td>
+<td>Write the tables, the support and <code>dfdz</code> to a netCDF file</td>
+</tr>
+<tr class="odd">
+<td><code>zremap_end</code></td>
+<td>Deallocate</td>
+</tr>
+</tbody>
+</table>
+<section id="signatures" class="level3">
+<h3 class="anchored" data-anchor-id="signatures">Signatures</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_init(zr, filename, group, nx, ny, dx)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_update(zr, f_ref, z_ref, mask_ref)</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_map(zr, f_now, z_now [, dz_ext])</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_write(zr, filename)</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_end(zr)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Argument</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>zr</code></td>
+<td><code>type(zremap_class)</code></td>
+<td>The remapping object</td>
+</tr>
+<tr class="even">
+<td><code>filename</code>, <code>group</code></td>
+<td><code>character(len=*)</code></td>
+<td>Parameter file and namelist group</td>
+</tr>
+<tr class="odd">
+<td><code>nx</code>, <code>ny</code></td>
+<td><code>integer</code></td>
+<td>Grid size</td>
+</tr>
+<tr class="even">
+<td><code>dx</code></td>
+<td><code>real(wp)</code></td>
+<td>[m] grid spacing</td>
+</tr>
+<tr class="odd">
+<td><code>f_ref</code>, <code>z_ref</code></td>
+<td><code>real(wp)(nx,ny)</code></td>
+<td>Reference field and elevation [m]; <code>mv</code> = missing</td>
+</tr>
+<tr class="even">
+<td><code>mask_ref</code></td>
+<td><code>logical(nx,ny)</code></td>
+<td>Points used as data</td>
+</tr>
+<tr class="odd">
+<td><code>f_now</code></td>
+<td><code>real(wp)(nx,ny)</code>, out</td>
+<td>Remapped field</td>
+</tr>
+<tr class="even">
+<td><code>z_now</code></td>
+<td><code>real(wp)(nx,ny)</code></td>
+<td>[m] current elevation</td>
+</tr>
+<tr class="odd">
+<td><code>dz_ext</code></td>
+<td><code>real(wp)(nx,ny)</code>, out, optional</td>
+<td>[m] elevation distance beyond the data range</td>
+</tr>
+</tbody>
+</table>
+<p><code>zremap_write</code> writes the 2D fields <code>f_ref</code>, <code>z_ref</code>, <code>w</code> and <code>dfdz</code> on the grid (<code>xc</code>, <code>yc</code>). On the table points (<code>xo</code>, <code>yo</code>) it writes <code>w_sup</code>, <code>z_lo</code> and <code>z_hi</code>, plus the tables <code>f_tab</code> and <code>w_tab</code> (<code>xo</code>, <code>yo</code>, <code>zb</code>). Without a grid object, <code>x</code> and <code>y</code> are given in km from the first grid point.</p>
+</section>
+</section>
+<section id="namelist-configuration" class="level2">
+<h2 class="anchored" data-anchor-id="namelist-configuration">Namelist configuration</h2>
+<p>All parameters are required.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>zremap</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    sigma   <span class="kw">=</span> <span class="fl">100e3</span>     <span class="co">! [m]   width of the horizontal Gaussian kernel (cut at 3 sigma)</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    z_min   <span class="kw">=</span> <span class="fl">0.0</span>       <span class="co">! [m]   lowest elevation bin</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    z_max   <span class="kw">=</span> <span class="fl">4000.0</span>    <span class="co">! [m]   highest elevation bin</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    dz      <span class="kw">=</span> <span class="fl">100.0</span>     <span class="co">! [m]   bin spacing</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    sigma_z <span class="kw">=</span> <span class="fl">200.0</span>     <span class="co">! [m]   width of the Gaussian smoothing along z (0 = none)</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    w_full  <span class="kw">=</span> <span class="fl">0.25</span>      <span class="co">! [1]   support from which the profiles are fully used</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    stride  <span class="kw">=</span> <span class="dv">1</span>         <span class="co">! [-]   table spacing in grid points</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    dfdz_lo <span class="kw">=</span> <span class="fl">2.0</span>       <span class="co">! [f m-1] gradient below the data (and where there are no data)</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    dfdz_hi <span class="kw">=</span> <span class="fl">0.0</span>       <span class="co">! [f m-1] gradient above the data</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Choosing the parameters:</p>
+<ul>
+<li><strong><code>sigma</code></strong> sets how regional the profiles are. It should hold enough of an elevation range in the kernel to define a profile: around 50–150 km for Greenland.</li>
+<li><strong><code>w_full</code></strong>: at a straight data edge <code>W ≈ 0.5</code>. With <code>w_full = 0.25</code>, the profiles are used fully up to about 0.7 <code>sigma</code> beyond the edge. The weight is α ≈ 0.6 at 1 <code>sigma</code> and α ≈ 0.1 at 2 <code>sigma</code>.</li>
+<li><strong><code>sigma_z</code></strong> sets how smooth the profiles are. Around 150–250 m removes the noise of sparse bins while keeping the curvature around the equilibrium line. <code>dz</code> is then only the table resolution and can stay at 50–100 m.</li>
+<li><strong><code>z_min</code>, <code>z_max</code></strong> should cover the data. Data outside the range fall into the end bins. Elevations outside the range are extrapolated with the end gradients.</li>
+<li><strong><code>stride</code></strong>: the tables take <code>nb·nxo·nyo</code> values (×2 with <code>wt</code>). <code>stride = 1</code> is fine at 16 km. At 2 km a stride of a few points keeps the tables small, and the profiles hardly change over that distance.</li>
+<li><strong><code>dfdz_lo</code>, <code>dfdz_hi</code></strong> have the units of <code>f</code> per metre. For SMB, a typical choice is an ablation-zone gradient below the data and 0 above it. For temperature, both are a lapse rate.</li>
+</ul>
+</section>
+<section id="usage-example" class="level2">
+<h2 class="anchored" data-anchor-id="usage-example">Usage example</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">use</span> zremap</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="dt">type(zremap_class)</span> <span class="dt">::</span> zr_smb, zr_tsrf</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> smb_ref(nx,ny), tsrf_ref(nx,ny), z_ref(nx,ny), z_srf(nx,ny)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> smb(nx,ny), tsrf(nx,ny), dz_ext(nx,ny)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">logical</span>  <span class="dt">::</span> mask_ice(nx,ny)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">! One object per field, each with its own parameters</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_init(zr_smb,  "par.nml", "zremap_smb",  nx, ny, dx)</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_init(zr_tsrf, "par.nml", "zremap_tsrf", nx, ny, dx)</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">! Profiles from the reference state (again whenever the reference changes)</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_update(zr_smb,  smb_ref,  z_ref, mask_ice)</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_update(zr_tsrf, tsrf_ref, z_ref, mask_ice)</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="co">! Every coupling step: remap to the current surface</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_map(zr_smb,  smb,  z_srf, dz_ext)</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_map(zr_tsrf, tsrf, z_srf)</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="co">call zremap_write(zr_smb, "zremap_smb.nc")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="example-greenland-smb-over-the-deglaciation" class="level2">
+<h2 class="anchored" data-anchor-id="example-greenland-smb-over-the-deglaciation">Example: Greenland SMB over the deglaciation</h2>
+<p>The demo program <code>test/zremap/demo_zremap_grl.f90</code> (<code>make demo-zremap</code>) does the following:</p>
+<ul>
+<li>It takes the present-day Greenland SMB of MAR v3.11 (ERA-forced, 1961–1990 mean) on a 16 km grid.</li>
+<li>It remaps that SMB to the surfaces of the ICE-6G_C deglaciation (Peltier et al., 2015), from 26 ka to the present. Each surface is the MAR reference surface plus the ICE-6G_C surface anomaly of the time slice.</li>
+<li>The profiles come from the present-day ice points only. <code>f_ref</code> is the MAR SMB on all land, so the fallback is defined on ice-free land.</li>
+<li>Parameters are those of the namelist above, with SMB in mm w.e. a⁻¹. The climate is held at the present day, so the example shows the effect of geometry alone.</li>
+</ul>
+<div id="fig-zremap-maps" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-zremap-maps-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="../figures/zremap_maps.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-zremap-maps-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;1: Present-day SMB remapped to the LGM (21 ka) surface of ICE-6G_C. (a) Reference SMB (MAR, present-day ice). (b) SMB from <code>zremap</code> on the LGM ice. (c) SMB from a constant gradient <code>dfdz_lo</code> applied to the reference. (d) LGM minus present-day surface elevation. (e) Support <code>W</code>, with the LGM ice margin (blue) and <code>W = w_full</code> (dashed). (f) Elevation beyond the data range, <code>dz_ext</code>. Solid black: ice margin (present day in a, LGM in b, c, f); dashed: present-day margin; thin contours: surface elevation every 500 m; grey: coastline.
+</figcaption>
+</figure>
+</div>
+<p><a href="#fig-zremap-maps" class="quarto-xref">Figure&nbsp;1</a> shows the remapping to the LGM surface:</p>
+<ul>
+<li><strong>Thickening interior.</strong> Where the interior thickens by a few hundred metres, the profiles of the interior are nearly flat, so the SMB hardly changes.</li>
+<li><strong>Low-lying margins.</strong> Where the LGM ice extends over today’s tundra and shelf at low elevation, the profiles give strong ablation, as at the present-day margin.</li>
+<li><strong>Constant gradient (c).</strong> It applies the ablation-zone gradient everywhere. It raises the SMB by over 3 m w.e. a⁻¹ where the ice thickens, and it starts from the near-zero SMB of the tundra rather than from that of the ice.</li>
+<li><strong>Support (e).</strong> The support marks where the result is backed by data. It is above <code>w_full</code> over almost all of the LGM ice and falls off only on the outer shelf and in the far north-west. The median over the LGM ice is 0.75.</li>
+<li><strong>Extrapolation (f).</strong> <code>dz_ext</code> shows where the LGM surface lies above all data of its neighbourhood: up to 1.3 km in the north-west, where the profile continues with <code>dfdz_hi</code>.</li>
+<li><strong>No value.</strong> 28 LGM ice points on today’s ocean, far from any data, have neither support nor a reference value, and stay missing.</li>
+</ul>
+<div id="fig-zremap-profiles" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-zremap-profiles-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="../figures/zremap_profiles.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-zremap-profiles-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;2: Profiles (SMB against elevation) at the points of <a href="#fig-zremap-maps" class="quarto-xref">Figure&nbsp;1</a> a, with <code>sigma_z = 200 m</code>. Grey: data within 3 <code>sigma</code>, shaded by kernel weight; blue: profile (dashed where extrapolated); dotted: reference elevation; orange: LGM elevation and remapped SMB; red cross: constant gradient (off scale at C).
+</figcaption>
+</figure>
+</div>
+<p><a href="#fig-zremap-profiles" class="quarto-xref">Figure&nbsp;2</a> shows profiles at three points:</p>
+<ul>
+<li><strong>A</strong>, in the south-west ablation zone: a profile that steepens towards the low-lying margin and is flat above the equilibrium line. The data are scattered there, and the smoothing along z keeps the profile from following the few points of each low bin.</li>
+<li><strong>B</strong>, at the north-west margin: a smooth profile.</li>
+<li><strong>C</strong>, on the ice-free land beyond the present margin: its surface rises by 1.5 km at the LGM. It is still supported (<code>W = 0.44</code>), but the LGM surface lies above all its data, so the value comes from the flat extrapolation.</li>
+</ul>
+<div id="fig-zremap-progression" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-zremap-progression-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="../figures/zremap_progression.png" class="img-fluid figure-img" style="width:100.0%">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-zremap-progression-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;3: SMB on the ice of six ICE-6G_C time slices (top), and SMB integrated over the ice of each slice (bottom left, cells of (16 km)²) from <code>zremap</code> and from a constant gradient, with the ice area (bottom right). Solid black: ice margin of the slice; dashed: present-day margin; thin contours: surface elevation every 1000 m.
+</figcaption>
+</figure>
+</div>
+<p><a href="#fig-zremap-progression" class="quarto-xref">Figure&nbsp;3</a> follows the remapped SMB through the deglaciation. On this grid the ICE-6G_C ice extent hardly changes until about 10 ka (bottom right); the thinning shows in the elevation contours, and the retreat after 10 ka in the margins:</p>
+<ul>
+<li><strong>Glacial slices.</strong> The integrated SMB from <code>zremap</code> stays close to the present-day value (about 380 Gt a⁻¹ against 350 Gt a⁻¹). The constant gradient gives about 1400 Gt a⁻¹, mostly from the thickened ice.</li>
+<li><strong>Around 9 ka.</strong> The ICE-6G_C ice still extends at low elevation beyond the present south-west margin. The profiles give strong ablation there, and the integrated SMB turns negative.</li>
+<li><strong>Present day.</strong> At 0 ka, <code>zremap</code> reproduces the present-day field, up to the smoothing of the kernel and the difference between the ICE-6G_C and MAR ice masks.</li>
+</ul>
+<p>To regenerate the figures (ice_data next to fesm-utils):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> demo-zremap</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">./bin/demo_zremap_grl.x</span> docs/figures/zremap/zremap_grl.nml</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> docs/figures <span class="kw">&amp;&amp;</span> <span class="ex">julia</span> <span class="at">--project</span><span class="op">=</span>. zremap_figures.jl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="tests" class="level2">
+<h2 class="anchored" data-anchor-id="tests">Tests</h2>
+<p><code>make test-zremap</code> builds <code>bin/test_zremap.x</code>. It uses a synthetic ice dome with a field linear in elevation and checks the following, with stride 1 and stride 3:</p>
+<ul>
+<li>reconstruction at <code>z_ref</code>, and remapping after the surface is lowered;</li>
+<li>extrapolation above the summit and below the margin;</li>
+<li>the fallback, the support <code>W</code> and <code>dz_ext</code>;</li>
+<li>continuity from the dome to the fallback.</li>
+</ul>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<ul>
+<li>Goelzer, H., et al.&nbsp;(2020). The future sea-level contribution of the Greenland ice sheet: a multi-model ensemble study of ISMIP6. <em>The Cryosphere</em>, 14, 3071–3096.</li>
+<li>Helsen, M. M., et al.&nbsp;(2012). Coupling of climate models and ice sheet models by surface mass balance gradients: application to the Greenland Ice Sheet. <em>The Cryosphere</em>, 6, 255–272.</li>
+<li>Peltier, W. R., Argus, D. F., &amp; Drummond, R. (2015). Space geodesy constrains ice age terminal deglaciation: The global ICE-6G_C (VM5a) model. <em>Journal of Geophysical Research: Solid Earth</em>, 120, 450–487.</li>
+</ul>
+</section>
+<section id="see-also" class="level2">
+<h2 class="anchored" data-anchor-id="see-also">See also</h2>
+<ul>
+<li><a href="../packages/varslice.html">varslice</a> — reading reference fields from netCDF.</li>
+<li><a href="../packages/htopo.html">htopo</a> — the hi-res geometry hub that provides <code>z_srf</code>.</li>
+</ul>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/fesmc\.github\.io\/fesm-utils\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../packages/htopo.html" class="pagination-link" aria-label="htopo">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">htopo</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../packages/ncio.html" class="pagination-link" aria-label="ncio">
+        <span class="nav-page-text">ncio</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>fesm-utils · MIT License</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/fesmc/fesm-utils/blob/main/packages/zremap.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/fesmc/fesm-utils/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+<p>Built with <a href="https://quarto.org">Quarto</a></p>
+</div>
+  </div>
+</footer>
+
+
+
+
+<script src="../site_libs/quarto-html/zenscroll-min.js"></script>
+</body></html>
