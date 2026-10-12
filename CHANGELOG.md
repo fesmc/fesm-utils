@@ -12,6 +12,12 @@ All notable changes to fesm-utils are documented here.
   variable's horizontal dimensions are not the grid's.
 - **varslice**: data without a time dimension is read once (`varslice_update` re-read it
   on every call); callers must not modify `vs%var`.
+- **gaussian_filter**: `filter_gaussian_fast` without `mask` smooths using all points
+  (it returned the field unchanged); the reflected border now also fills the corners;
+  points outside `mask` stay unchanged (they were filled from valid neighbours), as in
+  `filter_gaussian`.
+- **gaussian_filter**: `filter_gaussian` without `dx` uses `sigma` in grid points (it used
+  an undefined value); `hgrad` sets the last x boundary (`du(nx,:)`, was `du(ny,:)`).
 
 ### Added
 - **varslice**: filling of missing values, optional group keys `fill = "nearest"`
