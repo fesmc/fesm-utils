@@ -35,6 +35,8 @@ website:
             href: packages/topodata.qmd
           - text: "htopo — hi-res geometry hub"
             href: packages/htopo.qmd
+          - text: "zremap — elevation remapping"
+            href: packages/zremap.qmd
           - text: "ncio — netCDF I/O"
             href: packages/ncio.qmd
           - text: "nml — namelists"
@@ -76,6 +78,7 @@ website:
           - packages/regions.qmd
           - packages/topodata.qmd
           - packages/htopo.qmd
+          - packages/zremap.qmd
           - packages/ncio.qmd
           - packages/nml.qmd
           - packages/root_finder.qmd
