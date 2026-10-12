@@ -664,14 +664,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename, name, units_in, units_out</span>
 <span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> <span class="bu">scale</span>, offset</span>
 <span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,  <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> with_time</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
 <span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="co">! Update the field to a given time or time range</span></span>
 <span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_update(vs, time, method, fill, rep, print_summary)</span>
 <span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>,       <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> method        <span class="co">! slice_method</span></span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! only "none" supported</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! none, nearest, const (overrides par%fill)</span></span>
 <span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> rep           <span class="co">! repetition frequency</span></span>
 <span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> print_summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong><code>method</code> (slice_method)</strong> selects how the read timesteps are reduced:</p>
@@ -683,7 +683,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>"range_mean"</code>, <code>"range_min"</code>, <code>"range_max"</code>, <code>"range_sd"</code>, <code>"range_sum"</code> — a single slice computed as the mean / min / max / standard deviation / sum over <code>[t0,t1]</code>.</li>
 </ul>
 <p><strong><code>rep</code></strong> (stored as <code>range_rep</code>) is the frequency at which a range method is applied. <code>rep=1</code> reduces the whole range to one value; <code>rep=12</code> applies the statistic to every 12th index, yielding 12 values along the time dimension (e.g.&nbsp;a monthly climatology).</p>
-<p><strong><code>fill</code></strong> currently only accepts <code>"none"</code>; other values abort (not yet implemented).</p>
+<p><strong><code>fill</code></strong> fills the missing values of the slice: <code>"nearest"</code> (value of the nearest valid cell, per horizontal slice) or <code>"const"</code> (<code>fill_value</code>). By default the group’s <code>fill</code> key (<code>"none"</code> if absent; <code>fill = "const"</code> needs <code>fill_value</code>).</p>
+<p>The slice is read once: a later call for the same time (range), method, rep and fill returns it as it is, and data without a time dimension is read only the first time. Callers must not modify <code>vs%var</code>.</p>
 </section>
 </section>
 <section id="namelist-configuration" class="level2">
