@@ -446,6 +446,14 @@ test-zremap : fesmutils-static
 		@echo "    zremap test program ready: $(bindir)/test_zremap.x"
 		@echo " "
 
+# zremap documentation demo (Greenland SMB remapped to the LGM; needs ../ice_data)
+demo-zremap : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/demo_zremap_grl.x $(testdir)/zremap/demo_zremap_grl.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    zremap demo program ready: $(bindir)/demo_zremap_grl.x"
+		@echo " "
+
 # map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
 bench-apply : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/bench_apply.x $(testdir)/coords/bench_apply.f90 \
