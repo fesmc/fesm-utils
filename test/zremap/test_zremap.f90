@@ -6,6 +6,11 @@ program test_zremap
     !   * extrapolation above the summit and below the dome margin;
     !   * the fallback f_ref + dfdz_lo*(z_now-z_ref) far from the dome;
     !   * the gradient diagnostic dfdz = g on the dome;
+    !   * the support w (~1 in the dome, 0 far away) and dz_ext (0 inside the
+    !     data range, > 0 above the summit);
+    !   * continuity from the dome to the fallback (off the dome f_ref rises
+    !     with distance, off the linear relation): no jumps along a row at
+    !     fixed z_now beyond the slope of the fallback itself;
     !   * the same with stride 1 and stride 3 (irregular last table point).
     ! The namelist is written by the test itself, so no external files are needed.
 
@@ -20,7 +25,7 @@ program test_zremap
     integer,  parameter :: nx = 101, ny = 81
     real(wp), parameter :: dx = 10e3_wp             ! [m]
     real(wp), parameter :: f0 = 1.0_wp, g = 2e-3_wp ! f = f0 + g*z
-    real(wp), parameter :: f_out = 5.0_wp           ! f_ref outside the dome
+    real(wp), parameter :: df_out = 0.1_wp          ! d(f_ref)/d(points) outside the dome
     real(wp), parameter :: R = 35.0_wp              ! [points] dome radius
     real(wp), parameter :: H = 3000.0_wp            ! [m] dome height
     real(wp), parameter :: tol = 1e-3_wp
@@ -44,7 +49,7 @@ program test_zremap
     mask  = rr < 1.0_wp
     z_ref = 0.0_wp
     where (mask) z_ref = H*sqrt(1.0_wp - rr**2)
-    f_ref = f_out
+    f_ref = f0 + df_out*(rr - 1.0_wp)*R
     where (mask) f_ref = f0 + g*z_ref
 
     call run_case(1)
@@ -67,7 +72,7 @@ contains
         integer, intent(in) :: stride
 
         type(zremap_class) :: zr
-        real(wp) :: z_now(nx,ny), f_now(nx,ny), err
+        real(wp) :: z_now(nx,ny), f_now(nx,ny), dz_ext(nx,ny), err
         logical  :: inner(nx,ny)
         character(len=16) :: lbl
 
@@ -95,14 +100,37 @@ contains
         z_now = z_ref
         z_now(51,41) = H + 500.0_wp
         z_now(51,41-30) = -300.0_wp     ! r = 30/35 of the radius
-        call zremap_map(zr, f_now, z_now)
+        call zremap_map(zr, f_now, z_now, dz_ext)
         call check(trim(lbl)//" above summit", abs(f_now(51,41) - (f0 + g*z_now(51,41))))
         call check(trim(lbl)//" below margin", abs(f_now(51,11) - (f0 + g*z_now(51,11))))
+
+        ! Extrapolation distance: within the data range on the dome (away from
+        ! the summit), beyond it above the summit and below the margin
+        call check(trim(lbl)//" dz_ext inside", maxval(abs(dz_ext), mask=inner .and. rr > 0.2_wp))
+        call check(trim(lbl)//" dz_ext summit >= 500 m", max(0.0_wp, 500.0_wp - dz_ext(51,41)))
+        call check(trim(lbl)//" dz_ext margin < 0", max(0.0_wp, dz_ext(51,11)))
+        call check(trim(lbl)//" dz_ext no data = mv", abs(dz_ext(1,1) - mv))
+
+        ! Support: ~1 at the centre, 0 far away
+        call check(trim(lbl)//" w centre", abs(zr%w(51,41) - 1.0_wp)*1e-1_wp)
+        call check(trim(lbl)//" w corner", zr%w(1,1))
 
         ! Fallback far from the dome: f_ref + dfdz_lo*(z_now-z_ref)
         z_now(1,1) = 1000.0_wp
         call zremap_map(zr, f_now, z_now)
-        call check(trim(lbl)//" fallback", abs(f_now(1,1) - (f_out + g*1000.0_wp)))
+        call check(trim(lbl)//" fallback", abs(f_now(1,1) - (f_ref(1,1) + g*1000.0_wp)))
+
+        ! Continuity from the dome to the fallback along the centre row at
+        ! z_now = 1000 m: profile f0+g*1000 inside, fallback f_ref+g*1000 far
+        ! away; the largest step between neighbours stays within twice the
+        ! fallback slope df_out (a hard switch would jump by ~1.5)
+        z_now = 1000.0_wp
+        call zremap_map(zr, f_now, z_now)
+        err = maxval(abs(f_now(2:nx,41) - f_now(1:nx-1,41)))
+        write(*,"(a,es10.2)") "        max step along the row: ", err
+        call check(trim(lbl)//" continuity", max(0.0_wp, err - 2.0_wp*df_out))
+        call check(trim(lbl)//" continuity centre", abs(f_now(51,41) - (f0 + g*1000.0_wp)))
+        call check(trim(lbl)//" continuity edge", abs(f_now(1,41) - (f_ref(1,41) + g*1000.0_wp)))
 
         ! Gradient diagnostic
         err = maxval(abs(zr%dfdz - g), mask=inner)
@@ -140,7 +168,7 @@ contains
         write(u,"(a)")        "    z_min   = 0.0"
         write(u,"(a)")        "    z_max   = 3200.0"
         write(u,"(a)")        "    dz      = 100.0"
-        write(u,"(a)")        "    w_min   = 1e-3"
+        write(u,"(a)")        "    w_full  = 0.25"
         write(u,"(a,i0)")     "    stride  = ", stride
         write(u,"(a)")        "    dfdz_lo = 2e-3"
         write(u,"(a)")        "    dfdz_hi = 2e-3"
