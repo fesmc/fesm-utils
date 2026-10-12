@@ -74,6 +74,17 @@ outline!(ax, d, m; color = :black, linewidth = 0.8, linestyle = :solid) =
     contour!(ax, d.xc, d.yc, Float64.(m); levels = [0.5], color = color,
              linewidth = linewidth, linestyle = linestyle)
 
+"Surface elevation contours on the ice."
+surface!(ax, d, z, m; levels = 500:500:3500, linewidth = 0.5) =
+    contour!(ax, d.xc, d.yc, masked(z, m); levels = levels, color = (:black, 0.45),
+             linewidth = linewidth)
+
+"Ice margin of the slice (solid) and of the present day (dashed)."
+function margins!(ax, d, m; linewidth = 0.8)
+    outline!(ax, d, d.mask_ref; color = (:black, 0.6), linewidth = 0.6, linestyle = :dash)
+    outline!(ax, d, m; linewidth = linewidth)
+end
+
 # ---------------------------------------------------------------------------
 # 1. Maps: reference, LGM remap, constant-gradient remap; support and dz_ext
 # ---------------------------------------------------------------------------
@@ -85,6 +96,8 @@ function fig_maps(d; pts = [])
 
     ax = map_axis(fig[1, 1], "(a) Present-day SMB (MAR)")
     heatmap!(ax, d.xc, d.yc, masked(d.f_ref, d.mask_ref); smbcol...)
+    surface!(ax, d, d.z_ref, d.mask_ref)
+    outline!(ax, d, d.mask_ref)
     outline!(ax, d, land; color = GREY, linewidth = 0.5)
     for (k, (i, j)) in enumerate(pts)
         scatter!(ax, [d.xc[i]], [d.yc[j]]; color = :black, markersize = 7)
@@ -94,12 +107,14 @@ function fig_maps(d; pts = [])
 
     ax = map_axis(fig[1, 2], "(b) zremap SMB on the LGM surface")
     hm = heatmap!(ax, d.xc, d.yc, masked(d.f_now, d.mask_now); smbcol...)
-    outline!(ax, d, d.mask_ref)
+    surface!(ax, d, d.z_now, d.mask_now)
+    margins!(ax, d, d.mask_now)
     outline!(ax, d, land; color = GREY, linewidth = 0.5)
 
     ax = map_axis(fig[1, 3], "(c) Constant gradient dfdz_lo")
     heatmap!(ax, d.xc, d.yc, masked(d.f_grad, d.mask_now); smbcol...)
-    outline!(ax, d, d.mask_ref)
+    surface!(ax, d, d.z_now, d.mask_now)
+    margins!(ax, d, d.mask_now)
     outline!(ax, d, land; color = GREY, linewidth = 0.5)
     Colorbar(fig[1, 4], hm; label = "SMB  [mm w.e. a⁻¹]")
 
@@ -123,7 +138,8 @@ function fig_maps(d; pts = [])
     ax = map_axis(fig[2, 3], "(f) Elevation beyond the data, dz_ext")
     hm = heatmap!(ax, d.xc, d.yc, masked(d.dz_ext, d.mask_now);
                   colormap = Reverse(:PuOr), colorrange = (-1000, 1000))
-    outline!(ax, d, d.mask_ref)
+    surface!(ax, d, d.z_now, d.mask_now)
+    margins!(ax, d, d.mask_now)
     outline!(ax, d, land; color = GREY, linewidth = 0.5)
     Colorbar(fig[3, 3], hm; vertical = false, flipaxis = false, label = "dz_ext  [m]",
              ticks = -500:500:500)
@@ -194,7 +210,8 @@ function fig_progression(d; times = [-21, -16, -13, -11, -9, 0], dx = 16e3)
         s = slice(d, t)
         ax = map_axis(fig[1, n], "$(Int(-t)) ka")
         hm = heatmap!(ax, d.xc, d.yc, masked(s.f_now, s.mask_now); SMBCOL...)
-        outline!(ax, d, d.mask_ref; linewidth = 0.6)
+        surface!(ax, d, s.z_now, s.mask_now; levels = 1000:1000:3000, linewidth = 0.4)
+        margins!(ax, d, s.mask_now; linewidth = 0.6)
         outline!(ax, d, land; color = GREY, linewidth = 0.5)
     end
     Colorbar(fig[1, length(times) + 1], hm; label = "SMB  [mm w.e. a⁻¹]", height = Relative(0.85))

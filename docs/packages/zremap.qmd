@@ -258,7 +258,7 @@ the following:
   climate is held at the present day, so the example shows the effect of
   geometry alone.
 
-![Present-day SMB remapped to the LGM (21 ka) surface of ICE-6G_C. (a) Reference SMB (MAR, present-day ice). (b) SMB from `zremap` on the LGM ice. (c) SMB from a constant gradient `dfdz_lo` applied to the reference. (d) LGM minus present-day surface elevation. (e) Support `W`, with the LGM ice margin (blue) and `W = w_full` (dashed). (f) Elevation beyond the data range, `dz_ext`. Black contours: present-day ice; grey: coastline.](../figures/zremap_maps.png){#fig-zremap-maps width=100%}
+![Present-day SMB remapped to the LGM (21 ka) surface of ICE-6G_C. (a) Reference SMB (MAR, present-day ice). (b) SMB from `zremap` on the LGM ice. (c) SMB from a constant gradient `dfdz_lo` applied to the reference. (d) LGM minus present-day surface elevation. (e) Support `W`, with the LGM ice margin (blue) and `W = w_full` (dashed). (f) Elevation beyond the data range, `dz_ext`. Solid black: ice margin (present day in a, LGM in b, c, f); dashed: present-day margin; thin contours: surface elevation every 500 m; grey: coastline.](../figures/zremap_maps.png){#fig-zremap-maps width=100%}
 
 @fig-zremap-maps shows the remapping to the LGM surface:
 
@@ -295,9 +295,12 @@ the following:
   surface lies above all its data, so the value comes from the flat
   extrapolation.
 
-![SMB on the ice of six ICE-6G_C time slices (top), and SMB integrated over the ice of each slice (bottom left, cells of (16 km)²) from `zremap` and from a constant gradient, with the ice area (bottom right). Black contours: present-day ice.](../figures/zremap_progression.png){#fig-zremap-progression width=100%}
+![SMB on the ice of six ICE-6G_C time slices (top), and SMB integrated over the ice of each slice (bottom left, cells of (16 km)²) from `zremap` and from a constant gradient, with the ice area (bottom right). Solid black: ice margin of the slice; dashed: present-day margin; thin contours: surface elevation every 1000 m.](../figures/zremap_progression.png){#fig-zremap-progression width=100%}
 
-@fig-zremap-progression follows the remapped SMB through the deglaciation:
+@fig-zremap-progression follows the remapped SMB through the deglaciation. On
+this grid the ICE-6G_C ice extent hardly changes until about 10 ka (bottom
+right); the thinning shows in the elevation contours, and the retreat after
+10 ka in the margins:
 
 - **Glacial slices.** The integrated SMB from `zremap` stays close to the
   present-day value (about 380 Gt a⁻¹ against 350 Gt a⁻¹). The constant
