@@ -11,7 +11,8 @@ program test_zremap
     !   * continuity from the dome to the fallback (off the dome f_ref rises
     !     with distance, off the linear relation): no jumps along a row at
     !     fixed z_now beyond the slope of the fallback itself;
-    !   * the same with stride 1 and stride 3 (irregular last table point).
+    !   * the same with stride 1 and no smoothing along z, and with stride 3
+    !     (irregular last table point) and sigma_z = 200 m.
     ! The namelist is written by the test itself, so no external files are needed.
 
     use precision, only: wp
@@ -52,8 +53,8 @@ program test_zremap
     f_ref = f0 + df_out*(rr - 1.0_wp)*R
     where (mask) f_ref = f0 + g*z_ref
 
-    call run_case(1)
-    call run_case(3)
+    call run_case(1, 0.0_wp)
+    call run_case(3, 200.0_wp)
 
     write(*,"(a)") ""
     if (nfail == 0) then
@@ -68,8 +69,9 @@ program test_zremap
 
 contains
 
-    subroutine run_case(stride)
-        integer, intent(in) :: stride
+    subroutine run_case(stride, sigma_z)
+        integer,  intent(in) :: stride
+        real(wp), intent(in) :: sigma_z
 
         type(zremap_class) :: zr
         real(wp) :: z_now(nx,ny), f_now(nx,ny), dz_ext(nx,ny), err
@@ -77,7 +79,7 @@ contains
         character(len=16) :: lbl
 
         write(lbl,"(a,i0)") "stride=", stride
-        call write_namelist(stride)
+        call write_namelist(stride, sigma_z)
 
         call zremap_init(zr, nml_file, "zremap", nx, ny, dx)
         call zremap_update(zr, f_ref, z_ref, mask)
@@ -158,8 +160,9 @@ contains
 
     end subroutine check
 
-    subroutine write_namelist(stride)
-        integer, intent(in) :: stride
+    subroutine write_namelist(stride, sigma_z)
+        integer,  intent(in) :: stride
+        real(wp), intent(in) :: sigma_z
         integer :: u
 
         open(newunit=u, file=nml_file, status="replace", action="write")
@@ -168,6 +171,7 @@ contains
         write(u,"(a)")        "    z_min   = 0.0"
         write(u,"(a)")        "    z_max   = 3200.0"
         write(u,"(a)")        "    dz      = 100.0"
+        write(u,"(a,f0.1)")   "    sigma_z = ", sigma_z
         write(u,"(a)")        "    w_full  = 0.25"
         write(u,"(a,i0)")     "    stride  = ", stride
         write(u,"(a)")        "    dfdz_lo = 2e-3"

@@ -11,8 +11,10 @@ module zremap
     ! Profile at a table point (kernel regression in x,y and z):
     !   * each valid reference point contributes, with the horizontal kernel
     !     weight, to the two elevation bins around z_ref (hat weights);
+    !   * the bin sums are smoothed along z with a Gaussian of width sigma_z, so
+    !     that sparse bins borrow from their neighbours;
     !   * a bin with data gives a node (z_bar, f_bar): the weighted mean
-    !     elevation and value of its points (exact for f linear in z);
+    !     elevation and value of the (smoothed) sums (exact for f linear in z);
     !   * the profile is the piecewise-linear interpolation of the nodes on the
     !     bins zb, extrapolated with gradient dfdz_lo below the lowest node and
     !     dfdz_hi above the highest one.
@@ -32,6 +34,7 @@ module zremap
     !   z_min    [m]      lowest elevation bin
     !   z_max    [m]      highest elevation bin
     !   dz       [m]      bin spacing
+    !   sigma_z  [m]      width of the Gaussian smoothing along z (0 = none)
     !   w_full   [1]      support from which the profiles are fully used (e.g. 0.25)
     !   stride   [-]      table spacing in grid points
     !   dfdz_lo  [f m-1]  gradient below the data (and where there are no data)
@@ -48,6 +51,7 @@ module zremap
     type zremap_par_class
         real(wp) :: sigma
         real(wp) :: z_min, z_max, dz
+        real(wp) :: sigma_z
         real(wp) :: w_full
         integer  :: stride
         real(wp) :: dfdz_lo, dfdz_hi
@@ -60,6 +64,8 @@ module zremap
         integer  :: nxo, nyo, nb        ! table points and bins
         integer  :: nk                  ! kernel half-width [points]
         real(wp), allocatable :: kern(:)        ! (-nk:nk) 1D kernel, sums to 1
+        integer  :: nkz                 ! smoothing half-width along z [bins]
+        real(wp), allocatable :: kernz(:)       ! (-nkz:nkz) smoothing kernel along z
         integer,  allocatable :: io(:), jo(:)   ! grid indices of the table points
         integer,  allocatable :: ki(:), kj(:)   ! table point at or left/below of each grid point
         real(wp), allocatable :: wi(:), wj(:)   ! bilinear weight of the next table point
@@ -67,8 +73,8 @@ module zremap
         real(wp), allocatable :: tab(:,:,:)     ! (nb,nxo,nyo) profile f(zb)
         real(wp), allocatable :: wt(:,:,:)      ! (nb,nxo,nyo) kernel weight of the data in each bin
         real(wp), allocatable :: wsup(:,:)      ! (nxo,nyo) support W (kernel weight of all data)
-        real(wp), allocatable :: z_lo(:,:)      ! (nxo,nyo) [m] elevation range of the data (lowest
-        real(wp), allocatable :: z_hi(:,:)      ! (nxo,nyo) [m] and highest node)
+        real(wp), allocatable :: z_lo(:,:)      ! (nxo,nyo) [m] elevation range of the data (mean
+        real(wp), allocatable :: z_hi(:,:)      ! (nxo,nyo) [m] elevation of the lowest/highest bin)
         real(wp), allocatable :: f_ref(:,:)     ! reference field
         real(wp), allocatable :: z_ref(:,:)     ! [m] reference elevation
         real(wp), allocatable :: w(:,:)         ! [1] support W at the grid points
@@ -118,6 +124,16 @@ contains
         do k = 1, zr%nb
             zr%zb(k) = zr%par%z_min + real(k-1,wp)*zr%par%dz
         end do
+
+        ! Smoothing kernel along z (cut at 3 sigma_z; a single 1 without smoothing)
+        zr%nkz = ceiling(3.0_wp*zr%par%sigma_z/zr%par%dz)
+        allocate(zr%kernz(-zr%nkz:zr%nkz))
+        zr%kernz = 1.0_wp
+        if (zr%par%sigma_z > 0.0_wp) then
+            do k = -zr%nkz, zr%nkz
+                zr%kernz(k) = exp(-0.5_wp*(real(k,wp)*zr%par%dz/zr%par%sigma_z)**2)
+            end do
+        end if
 
         allocate(zr%tab(zr%nb,zr%nxo,zr%nyo))
         allocate(zr%wt(zr%nb,zr%nxo,zr%nyo))
@@ -209,8 +225,20 @@ contains
 
             zr%wt(:,i,j) = sw
             zr%wsup(i,j) = sum(sw)
-            call calc_profile(zr%tab(:,i,j), zr%z_lo(i,j), zr%z_hi(i,j), sw, sf, sz, zr%zb, &
-                              zr%par%dfdz_lo, zr%par%dfdz_hi)
+            call calc_profile(zr%tab(:,i,j), sw > 0.0_wp, &
+                              smooth_z(sw, zr%kernz), smooth_z(sf, zr%kernz), smooth_z(sz, zr%kernz), &
+                              zr%zb, zr%par%dfdz_lo, zr%par%dfdz_hi)
+
+            ! Elevation range of the data: mean elevation of the lowest and
+            ! highest bin with data (before smoothing)
+            zr%z_lo(i,j) = mv
+            zr%z_hi(i,j) = mv
+            if (zr%wsup(i,j) > 0.0_wp) then
+                b0 = findloc(sw > 0.0_wp, .true., 1)
+                b1 = findloc(sw > 0.0_wp, .true., 1, back=.true.)
+                zr%z_lo(i,j) = sz(b0)/sw(b0)
+                zr%z_hi(i,j) = sz(b1)/sw(b1)
+            end if
         end do
         end do
 
@@ -434,13 +462,33 @@ contains
 
     end function eval_profile
 
-    subroutine calc_profile(tab, z_lo, z_hi, sw, sf, sz, zb, dfdz_lo, dfdz_hi)
-        ! Profile on the bins zb from the bin sums: nodes (z_bar,f_bar) of the
-        ! bins with data (kept only where z_bar increases), linear between nodes
-        ! and extrapolated with dfdz_lo/hi beyond them. z_lo, z_hi are the
-        ! lowest and highest node (mv without data).
+    function smooth_z(s, kernz) result(ss)
+        ! Bin sums smoothed along z (truncated at the ends: the sums of all bins
+        ! within the kernel).
+        real(wp), intent(in) :: s(:)
+        real(wp), intent(in) :: kernz(:)        ! offsets -nkz..nkz
+        real(wp) :: ss(size(s))
+
+        integer :: nb, nkz, b, k
+
+        nb  = size(s)
+        nkz = (size(kernz)-1)/2
+        do b = 1, nb
+            ss(b) = 0.0_wp
+            do k = max(-nkz, 1-b), min(nkz, nb-b)
+                ss(b) = ss(b) + kernz(k+nkz+1)*s(b+k)
+            end do
+        end do
+
+    end function smooth_z
+
+    subroutine calc_profile(tab, has, sw, sf, sz, zb, dfdz_lo, dfdz_hi)
+        ! Profile on the bins zb from the (smoothed) bin sums: nodes
+        ! (z_bar,f_bar) of the bins with data `has` (kept only where z_bar
+        ! increases), linear between nodes and extrapolated with dfdz_lo/hi
+        ! beyond them (mv without data).
         real(wp), intent(out) :: tab(:)
-        real(wp), intent(out) :: z_lo, z_hi
+        logical,  intent(in)  :: has(:)                 ! bin has data (before smoothing)
         real(wp), intent(in)  :: sw(:), sf(:), sz(:)    ! sums of w, w*f, w*z per bin
         real(wp), intent(in)  :: zb(:)
         real(wp), intent(in)  :: dfdz_lo, dfdz_hi
@@ -452,7 +500,7 @@ contains
 
         nn = 0
         do b = 1, nb
-            if (sw(b) <= 0.0_wp) cycle
+            if (.not. has(b) .or. sw(b) <= 0.0_wp) cycle
             if (nn > 0) then
                 if (sz(b)/sw(b) <= zn(nn)) cycle
             end if
@@ -462,13 +510,9 @@ contains
         end do
 
         if (nn == 0) then
-            tab  = mv
-            z_lo = mv
-            z_hi = mv
+            tab = mv
             return
         end if
-        z_lo = zn(1)
-        z_hi = zn(nn)
 
         n = 1
         do b = 1, nb
@@ -573,6 +617,7 @@ contains
         call nml_read(filename, group, "z_min",   par%z_min)
         call nml_read(filename, group, "z_max",   par%z_max)
         call nml_read(filename, group, "dz",      par%dz)
+        call nml_read(filename, group, "sigma_z", par%sigma_z)
         call nml_read(filename, group, "w_full",  par%w_full)
         call nml_read(filename, group, "stride",  par%stride)
         call nml_read(filename, group, "dfdz_lo", par%dfdz_lo)
@@ -580,6 +625,7 @@ contains
 
         if (par%sigma <= 0.0_wp)      call zremap_error("zremap_par_load", "sigma must be > 0.")
         if (par%dz <= 0.0_wp)         call zremap_error("zremap_par_load", "dz must be > 0.")
+        if (par%sigma_z < 0.0_wp)     call zremap_error("zremap_par_load", "sigma_z must be >= 0.")
         if (par%z_max <= par%z_min)   call zremap_error("zremap_par_load", "z_max must be > z_min.")
         if (par%stride < 1)           call zremap_error("zremap_par_load", "stride must be >= 1.")
         if (par%w_full <= 0.0_wp)     call zremap_error("zremap_par_load", "w_full must be > 0.")
