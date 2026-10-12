@@ -436,6 +436,14 @@ test-tsgen : fesmutils-static
 		@echo "    tsgen test program ready: $(bindir)/test_tsgen.x"
 		@echo " "
 
+# zremap (elevation remapping) test program
+test-zremap : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_zremap.x $(testdir)/zremap/test_zremap.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    zremap test program ready: $(bindir)/test_zremap.x"
+		@echo " "
+
 # map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
 bench-apply : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/bench_apply.x $(testdir)/coords/bench_apply.f90 \
