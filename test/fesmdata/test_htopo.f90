@@ -61,8 +61,8 @@ program test_htopo
     call check("update f_grnd",     all((ht%f_grnd .eq. 1.0_wp) .eqv. (ht%z_bed .ge. 0.0_wp .or. &
                 ht%H_ice - (1028.0_wp/910.0_wp)*(0.0_wp - ht%z_bed) .ge. 0.0_wp)), nfail)
 
-    call htopo_write_init(ht, "test_htopo_out.nc", 0.0_wp)
-    call htopo_write_step(ht, "test_htopo_out.nc", 0.0_wp)
+    call htopo_write_init(ht, "test_htopo_out.nc", 0.0_dp)
+    call htopo_write_step(ht, "test_htopo_out.nc", 0.0_dp)
 
     ! ========================================================================
     ! Defaults (no keys): no basins, z_bed_sd = 0

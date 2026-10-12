@@ -247,12 +247,12 @@ contains
         ! regions and the basins of htopo_basins.
         type(htopo_class), intent(in) :: htopo
         character(len=*),  intent(in) :: filename
-        real(wp),          intent(in) :: time_init
+        real(dp),          intent(in) :: time_init
 
         call nc_create(filename)
         call nc_write_dim(filename, "xc", x=htopo%grid%G%x, units="km")
         call nc_write_dim(filename, "yc", x=htopo%grid%G%y, units="km")
-        call nc_write_dim(filename, "time", x=time_init, dx=1.0_wp, nx=1, &
+        call nc_write_dim(filename, "time", x=time_init, dx=1.0_dp, nx=1, &
                           units="year", unlimited=.TRUE.)
 
         call regions_write(htopo%reg, filename)
@@ -264,7 +264,7 @@ contains
         ! Append the dynamic hi-res geometry at `time`.
         type(htopo_class), intent(in) :: htopo
         character(len=*),  intent(in) :: filename
-        real(wp),          intent(in) :: time
+        real(dp),          intent(in) :: time
 
         integer :: ncid, n
 

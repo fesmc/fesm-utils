@@ -107,14 +107,14 @@ subroutine varslice_init_arg(vs, filename, name, units_in, units_out, &
     character(len=*),     intent(IN)    :: filename, name, units_in, units_out
     real(wp), optional,   intent(IN)    :: scale, offset
     logical,  optional,   intent(IN)    :: with_time
-    real(wp), optional,   intent(IN)    :: time_par(:)
+    real(dp), optional,   intent(IN)    :: time_par(:)
 
 ! Update the field to a given time or time range
 subroutine varslice_update(vs, time, method, fill, rep, print_summary)
     type(varslice_class),       intent(INOUT) :: vs
-    real(wp),         optional, intent(IN)    :: time(:)       ! time or [t0,t1]
+    real(dp),         optional, intent(IN)    :: time(:)       ! time or [t0,t1]
     character(len=*), optional, intent(IN)    :: method        ! slice_method
-    character(len=*), optional, intent(IN)    :: fill          ! only "none" supported
+    character(len=*), optional, intent(IN)    :: fill          ! none, nearest, const (overrides par%fill)
     integer,          optional, intent(IN)    :: rep           ! repetition frequency
     logical,          optional, intent(IN)    :: print_summary
 ```
@@ -136,8 +136,13 @@ applied. `rep=1` reduces the whole range to one value; `rep=12` applies the
 statistic to every 12th index, yielding 12 values along the time dimension
 (e.g. a monthly climatology).
 
-**`fill`** currently only accepts `"none"`; other values abort (not yet
-implemented).
+**`fill`** fills the missing values of the slice: `"nearest"` (value of the nearest
+valid cell, per horizontal slice) or `"const"` (`fill_value`). By default the group's
+`fill` key (`"none"` if absent; `fill = "const"` needs `fill_value`).
+
+The slice is read once: a later call for the same time (range), method, rep and fill
+returns it as it is, and data without a time dimension is read only the first time.
+Callers must not modify `vs%var`.
 
 ## Namelist configuration
 

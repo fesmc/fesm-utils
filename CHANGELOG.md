@@ -63,6 +63,10 @@ All notable changes to fesm-utils are documented here.
   parameters, the series time axis (`ser%time`) and the `time` argument of
   `series_interp`, `series_interp1`, `series_interp_sig` are `real(dp)`. Forcing
   values and rates stay `wp`.
+- **varslice**, **htopo**: time in double precision. The `time` argument of
+  `varslice_update`, `time_par` of `varslice_init_arg`, `time` of `print_var_range`
+  (the time axis and `time_par` already were) and the times of `htopo_write_init` and
+  `htopo_write_step` are `real(dp)`.
 - **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)
   promote only the 3x3 neighbourhood of the cell, not the whole field (O(nx*ny) per
   call). Results unchanged; Yelmo ANT-8KM with `bmb_gl_method = "pmpt"`: 10-yr loop

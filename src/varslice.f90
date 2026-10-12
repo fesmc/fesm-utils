@@ -444,7 +444,7 @@ contains
         implicit none
 
         type(varslice_class), target, intent(INOUT) :: vs
-        real(wp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
+        real(dp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
         character(len=*), optional, intent(IN)    :: method         ! slice_method (only if with_time==True)
         character(len=*), optional, intent(IN)    :: fill           ! none, nearest, const (how to fill in missing values)
         integer,          optional, intent(IN)    :: rep            ! Only if with_time==True
@@ -458,7 +458,7 @@ contains
         type(varslice_param_class) :: par 
         logical  :: with_time
         logical  :: with_time_sub
-        real(wp) :: time_range(2) 
+        real(dp) :: time_range(2) 
         real(wp), allocatable :: time_wt(:)
         character(len=56) :: slice_method
         character(len=56) :: fill_method
@@ -1289,7 +1289,7 @@ contains
         real(wp), optional,    intent(IN)   :: scale 
         real(wp), optional,    intent(IN)   :: offset 
         logical,  optional,    intent(IN)   :: with_time 
-        real(wp), optional,    intent(IN)   :: time_par(:) 
+        real(dp), optional,    intent(IN)   :: time_par(:) 
 
         ! Local variables 
         
@@ -1992,7 +1992,7 @@ contains
         real(wp),         intent(IN) :: var(:,:,:,:) 
         character(len=*), intent(IN) :: name
         real(wp),         intent(IN) :: missing_value 
-        real(wp), intent(IN), optional :: time 
+        real(dp), intent(IN), optional :: time 
 
         ! Local variables 
         real(wp) :: vmin, vmax 
