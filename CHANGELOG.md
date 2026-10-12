@@ -20,6 +20,16 @@ All notable changes to fesm-utils are documented here.
   an undefined value); `hgrad` sets the last x boundary (`du(nx,:)`, was `du(ny,:)`).
 
 ### Added
+- **zremap**: elevation remapping of a 2D field (e.g. SMB, surface temperature).
+  `zremap_update` builds local f(z) profiles from a reference state (f_ref, z_ref,
+  mask_ref) in a Gaussian neighbourhood of width `sigma` (cf. Goelzer et al., 2020,
+  with a radius instead of basins); `zremap_map` evaluates them at z_now. Tables every
+  `stride` points, end gradients `dfdz_lo`/`dfdz_hi`. The profiles are blended with
+  the fallback f_ref + dfdz_lo*(z_now-z_ref) by the data support W (kernel weight of
+  the data, 0-1): alpha = min(1, W/w_full), so the field fades continuously to the
+  fallback away from the data. Optional `dz_ext` from `zremap_map`: elevation distance
+  beyond the data range. `zremap_write` writes the tables, the support `w` and the
+  gradient field `dfdz`. Includes a `make test-zremap` self-check.
 - **varslice**: filling of missing values, optional group keys `fill = "nearest"`
   (nearest valid cell, per horizontal slice) or `fill = "const"` with `fill_value`;
   the `fill` argument of `varslice_update` overrides it.

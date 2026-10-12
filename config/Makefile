@@ -223,6 +223,9 @@ $(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants
 					$(objdir)/series.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
@@ -266,7 +269,8 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/topodata.o \
 					$(objdir)/htopo.o \
 					$(objdir)/series.o \
-					$(objdir)/tsgen.o
+					$(objdir)/tsgen.o \
+					$(objdir)/zremap.o
 
 ###############################################
 ##
@@ -432,6 +436,14 @@ test-tsgen : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    tsgen test program ready: $(bindir)/test_tsgen.x"
+		@echo " "
+
+# zremap (elevation remapping) test program
+test-zremap : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_zremap.x $(testdir)/zremap/test_zremap.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    zremap test program ready: $(bindir)/test_zremap.x"
 		@echo " "
 
 # map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
