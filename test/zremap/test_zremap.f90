@@ -4,7 +4,8 @@ program test_zremap
     ! remapped field must equal f0 + g*z_now wherever there are data:
     !   * reconstruction at z_ref and remapping to z_ref-200 m (interior);
     !   * extrapolation above the summit and below the dome margin;
-    !   * the fallback f_ref + dfdz_lo*(z_now-z_ref) far from the dome;
+    !   * the fallback f_ref + dfdz*(z_now-z_ref) far from the dome, with
+    !     dfdz_hi above z_ref and dfdz_lo below it;
     !   * the gradient diagnostic dfdz = g on the dome;
     !   * the support w (~1 in the dome, 0 far away) and dz_ext (0 inside the
     !     data range, > 0 above the summit);
@@ -121,6 +122,15 @@ contains
         z_now(1,1) = 1000.0_wp
         call zremap_map(zr, f_now, z_now)
         call check(trim(lbl)//" fallback", abs(f_now(1,1) - (f_ref(1,1) + g*1000.0_wp)))
+
+        ! Fallback with dfdz_hi = 0: constant above z_ref, dfdz_lo below it
+        zr%par%dfdz_hi = 0.0_wp
+        call zremap_map(zr, f_now, z_now)
+        call check(trim(lbl)//" fallback above", abs(f_now(1,1) - f_ref(1,1)))
+        z_now(1,1) = z_ref(1,1) - 500.0_wp
+        call zremap_map(zr, f_now, z_now)
+        call check(trim(lbl)//" fallback below", abs(f_now(1,1) - (f_ref(1,1) - g*500.0_wp)))
+        zr%par%dfdz_hi = g
 
         ! Continuity from the dome to the fallback along the centre row at
         ! z_now = 1000 m: profile f0+g*1000 inside, fallback f_ref+g*1000 far

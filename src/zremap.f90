@@ -22,7 +22,8 @@ module zremap
     ! ~1 inside the data, ~0.5 at their edge, decaying over ~sigma beyond).
     ! A grid point interpolates bilinearly between the profiles of the table
     ! points around it, each weighted with its W, and blends the result with the
-    ! fallback f_ref + dfdz_lo*(z_now-z_ref) by alpha = min(1, W/w_full), where W
+    ! fallback f_ref + dfdz*(z_now-z_ref), with dfdz_lo below z_ref and dfdz_hi
+    ! above it, by alpha = min(1, W/w_full), where W
     ! is the bilinear support at the grid point. The remapped field is thus
     ! continuous and fades to the fallback away from the data.
     !
@@ -37,8 +38,8 @@ module zremap
     !   sigma_z  [m]      width of the Gaussian smoothing along z (0 = none)
     !   w_full   [1]      support from which the profiles are fully used (e.g. 0.25)
     !   stride   [-]      table spacing in grid points
-    !   dfdz_lo  [f m-1]  gradient below the data (and where there are no data)
-    !   dfdz_hi  [f m-1]  gradient above the data
+    !   dfdz_lo  [f m-1]  gradient below the data (and below z_ref in the fallback)
+    !   dfdz_hi  [f m-1]  gradient above the data (and above z_ref in the fallback)
 
     use precision
     use constants, only : mv
@@ -369,7 +370,8 @@ contains
     function eval_point(zr, i, j, z) result(f)
         ! Field at grid point (i,j) and elevation z: the support-weighted
         ! profiles of the surrounding table points, blended with the fallback
-        ! f_ref + dfdz_lo*(z-z_ref) by alpha = min(1, W/w_full).
+        ! f_ref + dfdz*(z-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by
+        ! alpha = min(1, W/w_full).
         type(zremap_class), intent(in) :: zr
         integer,            intent(in) :: i, j
         real(wp),           intent(in) :: z
@@ -386,7 +388,13 @@ contains
         wsum = sum(wc)
 
         has_fb = zr%f_ref(i,j) /= mv .and. zr%z_ref(i,j) /= mv
-        if (has_fb) f_fb = zr%f_ref(i,j) + zr%par%dfdz_lo*(z - zr%z_ref(i,j))
+        if (has_fb) then
+            if (z < zr%z_ref(i,j)) then
+                f_fb = zr%f_ref(i,j) + zr%par%dfdz_lo*(z - zr%z_ref(i,j))
+            else
+                f_fb = zr%f_ref(i,j) + zr%par%dfdz_hi*(z - zr%z_ref(i,j))
+            end if
+        end if
 
         if (wsum > 0.0_wp) then
             f = 0.0_wp

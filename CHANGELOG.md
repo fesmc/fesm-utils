@@ -26,7 +26,7 @@ All notable changes to fesm-utils are documented here.
   with a radius instead of basins); `zremap_map` evaluates them at z_now. Tables every
   `stride` points, smoothing of the profiles along z (`sigma_z`), end gradients
   `dfdz_lo`/`dfdz_hi`. The profiles are blended with
-  the fallback f_ref + dfdz_lo*(z_now-z_ref) by the data support W (kernel weight of
+  the fallback f_ref + dfdz*(z_now-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by the data support W (kernel weight of
   the data, 0-1): alpha = min(1, W/w_full), so the field fades continuously to the
   fallback away from the data. Optional `dz_ext` from `zremap_map`: elevation distance
   beyond the data range. `zremap_write` writes the tables, the support `w` and the

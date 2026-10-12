@@ -67,12 +67,17 @@ data the profile at a point rests on, so it is the confidence in the profile.
 
 A grid point interpolates bilinearly between the profiles of the four table
 points around it, each weighted with its `W`. It blends the result with a
-**fallback** built from its own reference value and the gradient `dfdz_lo`:
+**fallback** built from its own reference value and the end gradients:
 
 $$
-f = \alpha\, f_\mathrm{profile}(z_\mathrm{now}) + (1-\alpha)\,\big[f_\mathrm{ref} + \texttt{dfdz\_lo}\,(z_\mathrm{now}-z_\mathrm{ref})\big],
+f = \alpha\, f_\mathrm{profile}(z_\mathrm{now}) + (1-\alpha)\,\big[f_\mathrm{ref} + \texttt{dfdz}\,(z_\mathrm{now}-z_\mathrm{ref})\big],
 \qquad \alpha = \min(1, W/\texttt{w\_full}),
 $$
+
+with `dfdz = dfdz_lo` below `z_ref` and `dfdz_hi` above it, as for a profile
+with a single node at (`z_ref`, `f_ref`). With `dfdz_hi = 0` for SMB, ice that
+thickens away from the data keeps its reference SMB instead of gaining SMB
+with height (which would feed back on the growth).
 
 where `W` here is the bilinear support at the grid point. The field is
 therefore continuous everywhere: it uses the profiles fully down to
@@ -191,7 +196,7 @@ All parameters are required.
     sigma_z = 200.0     ! [m]   width of the Gaussian smoothing along z (0 = none)
     w_full  = 0.25      ! [1]   support from which the profiles are fully used
     stride  = 1         ! [-]   table spacing in grid points
-    dfdz_lo = 2.0       ! [f m-1] gradient below the data (and where there are no data)
+    dfdz_lo = 2.0       ! [f m-1] gradient below the data (and below z_ref in the fallback)
     dfdz_hi = 0.0       ! [f m-1] gradient above the data
 /
 ```
