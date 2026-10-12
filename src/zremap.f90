@@ -11,14 +11,18 @@ module zremap
     ! Profile at a table point (kernel regression in x,y and z):
     !   * each valid reference point contributes, with the horizontal kernel
     !     weight, to the two elevation bins around z_ref (hat weights);
-    !   * a bin with weight >= w_min gives a node (z_bar, f_bar): the weighted
-    !     mean elevation and value of its points (exact for f linear in z);
+    !   * a bin with data gives a node (z_bar, f_bar): the weighted mean
+    !     elevation and value of its points (exact for f linear in z);
     !   * the profile is the piecewise-linear interpolation of the nodes on the
     !     bins zb, extrapolated with gradient dfdz_lo below the lowest node and
     !     dfdz_hi above the highest one.
+    ! The support W of a table point is the kernel weight of all its data (0-1:
+    ! ~1 inside the data, ~0.5 at their edge, decaying over ~sigma beyond).
     ! A grid point interpolates bilinearly between the profiles of the table
-    ! points around it that have data. Where none do, it falls back to
-    ! f_ref + dfdz_lo*(z_now-z_ref).
+    ! points around it, each weighted with its W, and blends the result with the
+    ! fallback f_ref + dfdz_lo*(z_now-z_ref) by alpha = min(1, W/w_full), where W
+    ! is the bilinear support at the grid point. The remapped field is thus
+    ! continuous and fades to the fallback away from the data.
     !
     ! Tables are stored every `stride` grid points (and at the last row/column).
     ! The grid is regular with spacing dx, and fields are on that same grid.
@@ -28,7 +32,7 @@ module zremap
     !   z_min    [m]      lowest elevation bin
     !   z_max    [m]      highest elevation bin
     !   dz       [m]      bin spacing
-    !   w_min    [1]      min kernel weight of a populated bin (the kernel sums to 1)
+    !   w_full   [1]      support from which the profiles are fully used (e.g. 0.25)
     !   stride   [-]      table spacing in grid points
     !   dfdz_lo  [f m-1]  gradient below the data (and where there are no data)
     !   dfdz_hi  [f m-1]  gradient above the data
@@ -44,7 +48,7 @@ module zremap
     type zremap_par_class
         real(wp) :: sigma
         real(wp) :: z_min, z_max, dz
-        real(wp) :: w_min
+        real(wp) :: w_full
         integer  :: stride
         real(wp) :: dfdz_lo, dfdz_hi
     end type
@@ -62,10 +66,13 @@ module zremap
         real(wp), allocatable :: zb(:)          ! [m] bin elevations
         real(wp), allocatable :: tab(:,:,:)     ! (nb,nxo,nyo) profile f(zb)
         real(wp), allocatable :: wt(:,:,:)      ! (nb,nxo,nyo) kernel weight of the data in each bin
-        logical,  allocatable :: sup(:,:)       ! (nxo,nyo) table point has data
+        real(wp), allocatable :: wsup(:,:)      ! (nxo,nyo) support W (kernel weight of all data)
+        real(wp), allocatable :: z_lo(:,:)      ! (nxo,nyo) [m] elevation range of the data (lowest
+        real(wp), allocatable :: z_hi(:,:)      ! (nxo,nyo) [m] and highest node)
         real(wp), allocatable :: f_ref(:,:)     ! reference field
         real(wp), allocatable :: z_ref(:,:)     ! [m] reference elevation
-        real(wp), allocatable :: dfdz(:,:)      ! [f m-1] profile gradient at z_ref
+        real(wp), allocatable :: w(:,:)         ! [1] support W at the grid points
+        real(wp), allocatable :: dfdz(:,:)      ! [f m-1] gradient of the remapped field at z_ref
     end type
 
     public :: zremap_par_class, zremap_class
@@ -114,16 +121,22 @@ contains
 
         allocate(zr%tab(zr%nb,zr%nxo,zr%nyo))
         allocate(zr%wt(zr%nb,zr%nxo,zr%nyo))
-        allocate(zr%sup(zr%nxo,zr%nyo))
+        allocate(zr%wsup(zr%nxo,zr%nyo))
+        allocate(zr%z_lo(zr%nxo,zr%nyo))
+        allocate(zr%z_hi(zr%nxo,zr%nyo))
         allocate(zr%f_ref(nx,ny))
         allocate(zr%z_ref(nx,ny))
+        allocate(zr%w(nx,ny))
         allocate(zr%dfdz(nx,ny))
 
         zr%tab   = mv
         zr%wt    = 0.0_wp
-        zr%sup   = .false.
+        zr%wsup  = 0.0_wp
+        zr%z_lo  = mv
+        zr%z_hi  = mv
         zr%f_ref = mv
         zr%z_ref = mv
+        zr%w     = 0.0_wp
         zr%dfdz  = zr%par%dfdz_lo
 
     end subroutine zremap_init
@@ -139,8 +152,8 @@ contains
 
         real(wp), allocatable :: aw(:,:,:), af(:,:,:), az(:,:,:)
         real(wp), allocatable :: sw(:), sf(:), sz(:)
-        real(wp) :: w, h1
-        integer  :: i, j, ko, jj, b0, b1, nk
+        real(wp) :: w, h1, wc(4)
+        integer  :: i, j, ko, jj, b0, b1, nk, kk(4), ll(4)
 
         call check_shape(zr, f_ref, "zremap_update", "f_ref")
         call check_shape(zr, z_ref, "zremap_update", "z_ref")
@@ -195,26 +208,39 @@ contains
             end do
 
             zr%wt(:,i,j) = sw
-            call calc_profile(zr%tab(:,i,j), zr%sup(i,j), sw, sf, sz, zr%zb, &
-                              zr%par%w_min, zr%par%dfdz_lo, zr%par%dfdz_hi)
+            zr%wsup(i,j) = sum(sw)
+            call calc_profile(zr%tab(:,i,j), zr%z_lo(i,j), zr%z_hi(i,j), sw, sf, sz, zr%zb, &
+                              zr%par%dfdz_lo, zr%par%dfdz_hi)
         end do
         end do
 
-        ! Diagnostic: profile gradient at the reference elevation
+        ! Support at the grid points
+        do j = 1, zr%ny
+        do i = 1, zr%nx
+            call corner_weights(zr, i, j, kk, ll, wc)
+            zr%w(i,j) = sum(wc)
+        end do
+        end do
+
+        ! Diagnostic: gradient of the remapped field at the reference elevation
         call calc_dfdz(zr)
 
     end subroutine zremap_update
 
-    subroutine zremap_map(zr, f_now, z_now)
-        ! Remap the field to the current elevation.
+    subroutine zremap_map(zr, f_now, z_now, dz_ext)
+        ! Remap the field to the current elevation. Optionally, dz_ext is the
+        ! elevation distance beyond the data range of the profiles: z_now-z_hi
+        ! above it (>0), z_now-z_lo below it (<0), 0 within it, mv without data.
         type(zremap_class), intent(in)  :: zr
         real(wp),           intent(out) :: f_now(:,:)
         real(wp),           intent(in)  :: z_now(:,:)    ! [m]
+        real(wp),           intent(out), optional :: dz_ext(:,:)  ! [m]
 
         integer :: i, j
 
         call check_shape(zr, f_now, "zremap_map", "f_now")
         call check_shape(zr, z_now, "zremap_map", "z_now")
+        if (present(dz_ext)) call check_shape(zr, dz_ext, "zremap_map", "dz_ext")
 
         do j = 1, zr%ny
         do i = 1, zr%nx
@@ -222,17 +248,24 @@ contains
         end do
         end do
 
+        if (present(dz_ext)) then
+            do j = 1, zr%ny
+            do i = 1, zr%nx
+                dz_ext(i,j) = calc_dz_ext(zr, i, j, z_now(i,j))
+            end do
+            end do
+        end if
+
     end subroutine zremap_map
 
     subroutine zremap_write(zr, filename)
         ! Write the tables (on the table points) and the 2D reference fields
-        ! with the profile gradient dfdz. x,y are distances [km] from the
-        ! first grid point.
+        ! with the support w and the gradient dfdz. x,y are distances [km]
+        ! from the first grid point.
         type(zremap_class), intent(in) :: zr
         character(len=*),   intent(in) :: filename
 
         real(wp), allocatable :: tmp(:,:,:)
-        integer,  allocatable :: isup(:,:)
         integer :: b, i
 
         call nc_create(filename)
@@ -246,13 +279,17 @@ contains
                       long_name="Reference field")
         call nc_write(filename, "z_ref", zr%z_ref, dim1="xc", dim2="yc", missing_value=mv, &
                       units="m", long_name="Reference elevation")
+        call nc_write(filename, "w", zr%w, dim1="xc", dim2="yc", &
+                      units="1", long_name="Support (kernel weight of the data)")
         call nc_write(filename, "dfdz", zr%dfdz, dim1="xc", dim2="yc", missing_value=mv, &
-                      units="m-1", long_name="Profile gradient at the reference elevation")
+                      units="m-1", long_name="Gradient of the remapped field at the reference elevation")
 
-        allocate(isup(zr%nxo,zr%nyo))
-        isup = 0
-        where (zr%sup) isup = 1
-        call nc_write(filename, "sup", isup, dim1="xo", dim2="yo", long_name="Table point has data")
+        call nc_write(filename, "w_sup", zr%wsup, dim1="xo", dim2="yo", &
+                      units="1", long_name="Support (kernel weight of the data)")
+        call nc_write(filename, "z_lo", zr%z_lo, dim1="xo", dim2="yo", missing_value=mv, &
+                      units="m", long_name="Lowest elevation of the data")
+        call nc_write(filename, "z_hi", zr%z_hi, dim1="xo", dim2="yo", missing_value=mv, &
+                      units="m", long_name="Highest elevation of the data")
 
         allocate(tmp(zr%nxo,zr%nyo,zr%nb))
         do b = 1, zr%nb
@@ -279,53 +316,99 @@ contains
 
     ! === Internal ===
 
-    function eval_point(zr, i, j, z) result(f)
-        ! Field at grid point (i,j) and elevation z: bilinear between the
-        ! profiles of the surrounding table points with data, or the fallback
-        ! gradient from the reference when none have data.
-        type(zremap_class), intent(in) :: zr
-        integer,            intent(in) :: i, j
-        real(wp),           intent(in) :: z
-        real(wp) :: f
+    subroutine corner_weights(zr, i, j, kk, ll, wc)
+        ! The four table points around grid point (i,j), with their bilinear
+        ! weights times their support. sum(wc) is the support W at (i,j).
+        type(zremap_class), intent(in)  :: zr
+        integer,            intent(in)  :: i, j
+        integer,            intent(out) :: kk(4), ll(4)
+        real(wp),           intent(out) :: wc(4)
 
         integer  :: k1, k2, l1, l2
-        real(wp) :: wx(2), wy(2), w, wsum
-        integer  :: kk(2), ll(2), a, c
-
-        if (z == mv) then
-            f = mv
-            return
-        end if
 
         k1 = zr%ki(i)
         k2 = min(k1+1, zr%nxo)
         l1 = zr%kj(j)
         l2 = min(l1+1, zr%nyo)
-        kk = [k1, k2]
-        ll = [l1, l2]
-        wx = [1.0_wp-zr%wi(i), zr%wi(i)]
-        wy = [1.0_wp-zr%wj(j), zr%wj(j)]
+        kk = [k1, k2, k1, k2]
+        ll = [l1, l1, l2, l2]
+        wc = [(1.0_wp-zr%wi(i))*(1.0_wp-zr%wj(j)), zr%wi(i)*(1.0_wp-zr%wj(j)), &
+              (1.0_wp-zr%wi(i))*zr%wj(j),          zr%wi(i)*zr%wj(j)]
+        wc = wc * [zr%wsup(k1,l1), zr%wsup(k2,l1), zr%wsup(k1,l2), zr%wsup(k2,l2)]
 
-        f    = 0.0_wp
-        wsum = 0.0_wp
-        do c = 1, 2
-        do a = 1, 2
-            w = wx(a)*wy(c)
-            if (w <= 0.0_wp .or. .not. zr%sup(kk(a),ll(c))) cycle
-            f    = f    + w*eval_profile(zr, zr%tab(:,kk(a),ll(c)), z)
-            wsum = wsum + w
-        end do
-        end do
+    end subroutine corner_weights
+
+    function eval_point(zr, i, j, z) result(f)
+        ! Field at grid point (i,j) and elevation z: the support-weighted
+        ! profiles of the surrounding table points, blended with the fallback
+        ! f_ref + dfdz_lo*(z-z_ref) by alpha = min(1, W/w_full).
+        type(zremap_class), intent(in) :: zr
+        integer,            intent(in) :: i, j
+        real(wp),           intent(in) :: z
+        real(wp) :: f
+
+        integer  :: kk(4), ll(4), c
+        real(wp) :: wc(4), wsum, alpha, f_fb
+        logical  :: has_fb
+
+        f = mv
+        if (z == mv) return
+
+        call corner_weights(zr, i, j, kk, ll, wc)
+        wsum = sum(wc)
+
+        has_fb = zr%f_ref(i,j) /= mv .and. zr%z_ref(i,j) /= mv
+        if (has_fb) f_fb = zr%f_ref(i,j) + zr%par%dfdz_lo*(z - zr%z_ref(i,j))
 
         if (wsum > 0.0_wp) then
+            f = 0.0_wp
+            do c = 1, 4
+                if (wc(c) > 0.0_wp) f = f + wc(c)*eval_profile(zr, zr%tab(:,kk(c),ll(c)), z)
+            end do
             f = f / wsum
-        else if (zr%f_ref(i,j) /= mv .and. zr%z_ref(i,j) /= mv) then
-            f = zr%f_ref(i,j) + zr%par%dfdz_lo*(z - zr%z_ref(i,j))
-        else
-            f = mv
+            if (has_fb) then
+                alpha = min(1.0_wp, wsum/zr%par%w_full)
+                f = alpha*f + (1.0_wp-alpha)*f_fb
+            end if
+        else if (has_fb) then
+            f = f_fb
         end if
 
     end function eval_point
+
+    function calc_dz_ext(zr, i, j, z) result(dz)
+        ! Elevation distance of z beyond the (support-weighted) data range at
+        ! grid point (i,j); mv without data.
+        type(zremap_class), intent(in) :: zr
+        integer,            intent(in) :: i, j
+        real(wp),           intent(in) :: z
+        real(wp) :: dz
+
+        integer  :: kk(4), ll(4), c
+        real(wp) :: wc(4), wsum, zlo, zhi
+
+        dz = mv
+        if (z == mv) return
+
+        call corner_weights(zr, i, j, kk, ll, wc)
+        wsum = sum(wc)
+        if (wsum <= 0.0_wp) return
+
+        zlo = 0.0_wp
+        zhi = 0.0_wp
+        do c = 1, 4
+            if (wc(c) <= 0.0_wp) cycle
+            zlo = zlo + wc(c)*zr%z_lo(kk(c),ll(c))
+            zhi = zhi + wc(c)*zr%z_hi(kk(c),ll(c))
+        end do
+        zlo = zlo / wsum
+        zhi = zhi / wsum
+
+        dz = 0.0_wp
+        if (z > zhi) dz = z - zhi
+        if (z < zlo) dz = z - zlo
+
+    end function calc_dz_ext
 
     function eval_profile(zr, tab, z) result(f)
         ! Linear interpolation of a profile on the bins, extrapolated with the
@@ -351,15 +434,16 @@ contains
 
     end function eval_profile
 
-    subroutine calc_profile(tab, sup, sw, sf, sz, zb, w_min, dfdz_lo, dfdz_hi)
+    subroutine calc_profile(tab, z_lo, z_hi, sw, sf, sz, zb, dfdz_lo, dfdz_hi)
         ! Profile on the bins zb from the bin sums: nodes (z_bar,f_bar) of the
-        ! bins with weight >= w_min (kept only where z_bar increases), linear
-        ! between nodes and extrapolated with dfdz_lo/hi beyond them.
+        ! bins with data (kept only where z_bar increases), linear between nodes
+        ! and extrapolated with dfdz_lo/hi beyond them. z_lo, z_hi are the
+        ! lowest and highest node (mv without data).
         real(wp), intent(out) :: tab(:)
-        logical,  intent(out) :: sup
+        real(wp), intent(out) :: z_lo, z_hi
         real(wp), intent(in)  :: sw(:), sf(:), sz(:)    ! sums of w, w*f, w*z per bin
         real(wp), intent(in)  :: zb(:)
-        real(wp), intent(in)  :: w_min, dfdz_lo, dfdz_hi
+        real(wp), intent(in)  :: dfdz_lo, dfdz_hi
 
         real(wp) :: zn(size(zb)), fn(size(zb))
         integer  :: nb, nn, b, n
@@ -368,7 +452,7 @@ contains
 
         nn = 0
         do b = 1, nb
-            if (sw(b) < w_min .or. sw(b) <= 0.0_wp) cycle
+            if (sw(b) <= 0.0_wp) cycle
             if (nn > 0) then
                 if (sz(b)/sw(b) <= zn(nn)) cycle
             end if
@@ -377,11 +461,14 @@ contains
             fn(nn) = sf(b)/sw(b)
         end do
 
-        sup = nn > 0
-        if (.not. sup) then
-            tab = mv
+        if (nn == 0) then
+            tab  = mv
+            z_lo = mv
+            z_hi = mv
             return
         end if
+        z_lo = zn(1)
+        z_hi = zn(nn)
 
         n = 1
         do b = 1, nb
@@ -400,8 +487,8 @@ contains
     end subroutine calc_profile
 
     subroutine calc_dfdz(zr)
-        ! Profile gradient at the reference elevation (central difference over
-        ! one bin); dfdz_lo where there are no data.
+        ! Gradient of the remapped field at the reference elevation (central
+        ! difference over one bin).
         type(zremap_class), intent(inout) :: zr
 
         real(wp) :: h
@@ -420,7 +507,6 @@ contains
         end do
 
     end subroutine calc_dfdz
-
     subroutine bin_weights(zr, z, b0, b1, h1)
         ! The two bins around z and the hat weight of the upper one. Elevations
         ! outside [z_min,z_max] go to the end bin.
@@ -487,7 +573,7 @@ contains
         call nml_read(filename, group, "z_min",   par%z_min)
         call nml_read(filename, group, "z_max",   par%z_max)
         call nml_read(filename, group, "dz",      par%dz)
-        call nml_read(filename, group, "w_min",   par%w_min)
+        call nml_read(filename, group, "w_full",  par%w_full)
         call nml_read(filename, group, "stride",  par%stride)
         call nml_read(filename, group, "dfdz_lo", par%dfdz_lo)
         call nml_read(filename, group, "dfdz_hi", par%dfdz_hi)
@@ -496,6 +582,7 @@ contains
         if (par%dz <= 0.0_wp)         call zremap_error("zremap_par_load", "dz must be > 0.")
         if (par%z_max <= par%z_min)   call zremap_error("zremap_par_load", "z_max must be > z_min.")
         if (par%stride < 1)           call zremap_error("zremap_par_load", "stride must be >= 1.")
+        if (par%w_full <= 0.0_wp)     call zremap_error("zremap_par_load", "w_full must be > 0.")
 
     end subroutine zremap_par_load
 
