@@ -3,6 +3,8 @@ program test_zremap
     ! elevation, f = f0 + g*z, and end gradients dfdz_lo = dfdz_hi = g, so the
     ! remapped field must equal f0 + g*z_now wherever there are data:
     !   * reconstruction at z_ref and remapping to z_ref-200 m (interior);
+    !   * exact reproduction of f_ref at z_ref on the data (anomaly form), and
+    !     the profiles off the data where the support is full;
     !   * extrapolation above the summit and below the dome margin;
     !   * the fallback f_ref + dfdz*(z_now-z_ref) far from the dome, with
     !     dfdz_hi above z_ref and dfdz_lo below it;
@@ -92,6 +94,15 @@ contains
         call zremap_map(zr, f_now, z_ref)
         err = maxval(abs(f_now - (f0 + g*z_ref)), mask=inner)
         call check(trim(lbl)//" reconstruction", err)
+
+        ! Anomaly form on the data: f_ref reproduced at z_ref on the dome
+        err = maxval(abs(f_now - f_ref), mask=mask)
+        call check(trim(lbl)//" reproduction of f_ref", err)
+
+        ! Off the data with full support: the profiles, not f_ref (which departs
+        ! from them off the dome)
+        err = maxval(abs(f_now - (f0 + g*z_ref)), mask=.not. mask .and. zr%w >= 0.25_wp)
+        call check(trim(lbl)//" off data = profile", err)
 
         ! Lowering by 200 m
         z_now = z_ref - 200.0_wp

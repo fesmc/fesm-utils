@@ -21,11 +21,16 @@ module zremap
     ! The support W of a table point is the kernel weight of all its data (0-1:
     ! ~1 inside the data, ~0.5 at their edge, decaying over ~sigma beyond).
     ! A grid point interpolates bilinearly between the profiles of the table
-    ! points around it, each weighted with its W, and blends the result with the
-    ! fallback f_ref + dfdz*(z_now-z_ref), with dfdz_lo below z_ref and dfdz_hi
-    ! above it, by alpha = min(1, W/w_full), where W
-    ! is the bilinear support at the grid point. The remapped field is thus
-    ! continuous and fades to the fallback away from the data.
+    ! points around it, each weighted with its W, giving P(z). It is blended
+    ! with the fallback f_ref + dfdz*(z_now-z_ref), with dfdz = dfdz_lo below
+    ! z_ref and dfdz_hi above it, by alpha = min(1, W/w_full), where W is the
+    ! bilinear support at the grid point:
+    !   * on the data points (mask_ref), as an anomaly, so f_now = f_ref at z_ref:
+    !       f_now = f_ref + alpha*[P(z_now) - P(z_ref)] + (1-alpha)*dfdz*(z_now-z_ref)
+    !   * elsewhere, where f_ref is not data (e.g. a gap-filled field):
+    !       f_now = alpha*P(z_now) + (1-alpha)*[f_ref + dfdz*(z_now-z_ref)]
+    ! The remapped field fades to the fallback away from the data. Where f_ref
+    ! or z_ref is missing, f_now = P(z_now).
     !
     ! Tables are stored every `stride` grid points (and at the last row/column).
     ! The grid is regular with spacing dx, and fields are on that same grid.
@@ -78,6 +83,7 @@ module zremap
         real(wp), allocatable :: z_hi(:,:)      ! (nxo,nyo) [m] elevation of the lowest/highest bin)
         real(wp), allocatable :: f_ref(:,:)     ! reference field
         real(wp), allocatable :: z_ref(:,:)     ! [m] reference elevation
+        logical,  allocatable :: is_data(:,:)   ! data points: mask_ref with valid f_ref, z_ref
         real(wp), allocatable :: w(:,:)         ! [1] support W at the grid points
         real(wp), allocatable :: dfdz(:,:)      ! [f m-1] gradient of the remapped field at z_ref
     end type
@@ -179,6 +185,7 @@ contains
 
         zr%f_ref = f_ref
         zr%z_ref = z_ref
+        zr%is_data = mask_ref .and. f_ref /= mv .and. z_ref /= mv
         nk = zr%nk
 
         ! Pass 1 (x): kernel sums along each row, at the table columns.
@@ -308,6 +315,8 @@ contains
                       long_name="Reference field")
         call nc_write(filename, "z_ref", zr%z_ref, dim1="xc", dim2="yc", missing_value=mv, &
                       units="m", long_name="Reference elevation")
+        call nc_write(filename, "is_data", merge(1, 0, zr%is_data), dim1="xc", dim2="yc", &
+                      long_name="Data points (mask_ref with valid f_ref, z_ref)")
         call nc_write(filename, "w", zr%w, dim1="xc", dim2="yc", &
                       units="1", long_name="Support (kernel weight of the data)")
         call nc_write(filename, "dfdz", zr%dfdz, dim1="xc", dim2="yc", missing_value=mv, &
@@ -368,18 +377,18 @@ contains
     end subroutine corner_weights
 
     function eval_point(zr, i, j, z) result(f)
-        ! Field at grid point (i,j) and elevation z: the support-weighted
-        ! profiles of the surrounding table points, blended with the fallback
-        ! f_ref + dfdz*(z-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by
-        ! alpha = min(1, W/w_full).
+        ! Field at grid point (i,j) and elevation z: the profiles P of the
+        ! surrounding table points blended with the fallback f_ref + dfdz*(z-z_ref)
+        ! (dfdz_lo below z_ref, dfdz_hi above) by alpha = min(1, W/w_full); as an
+        ! anomaly f_ref + [P(z) - P(z_ref)] on the data points, P(z) elsewhere.
         type(zremap_class), intent(in) :: zr
         integer,            intent(in) :: i, j
         real(wp),           intent(in) :: z
         real(wp) :: f
 
-        integer  :: kk(4), ll(4), c
-        real(wp) :: wc(4), wsum, alpha, f_fb
-        logical  :: has_fb
+        integer  :: kk(4), ll(4)
+        real(wp) :: wc(4), wsum, alpha, dz, df_fb, p
+        logical  :: has_ref
 
         f = mv
         if (z == mv) return
@@ -387,30 +396,53 @@ contains
         call corner_weights(zr, i, j, kk, ll, wc)
         wsum = sum(wc)
 
-        has_fb = zr%f_ref(i,j) /= mv .and. zr%z_ref(i,j) /= mv
-        if (has_fb) then
-            if (z < zr%z_ref(i,j)) then
-                f_fb = zr%f_ref(i,j) + zr%par%dfdz_lo*(z - zr%z_ref(i,j))
+        has_ref = zr%f_ref(i,j) /= mv .and. zr%z_ref(i,j) /= mv
+        if (has_ref) then
+            dz = z - zr%z_ref(i,j)
+            if (dz < 0.0_wp) then
+                df_fb = zr%par%dfdz_lo*dz
             else
-                f_fb = zr%f_ref(i,j) + zr%par%dfdz_hi*(z - zr%z_ref(i,j))
+                df_fb = zr%par%dfdz_hi*dz
             end if
         end if
 
         if (wsum > 0.0_wp) then
-            f = 0.0_wp
-            do c = 1, 4
-                if (wc(c) > 0.0_wp) f = f + wc(c)*eval_profile(zr, zr%tab(:,kk(c),ll(c)), z)
-            end do
-            f = f / wsum
-            if (has_fb) then
+            p = eval_profiles(zr, kk, ll, wc, z)
+            if (has_ref) then
                 alpha = min(1.0_wp, wsum/zr%par%w_full)
-                f = alpha*f + (1.0_wp-alpha)*f_fb
+                if (zr%is_data(i,j)) then
+                    f = zr%f_ref(i,j) + alpha*(p - eval_profiles(zr, kk, ll, wc, zr%z_ref(i,j))) &
+                        + (1.0_wp-alpha)*df_fb
+                else
+                    f = alpha*p + (1.0_wp-alpha)*(zr%f_ref(i,j) + df_fb)
+                end if
+            else
+                f = p
             end if
-        else if (has_fb) then
-            f = f_fb
+        else if (has_ref) then
+            f = zr%f_ref(i,j) + df_fb
         end if
 
     end function eval_point
+
+    function eval_profiles(zr, kk, ll, wc, z) result(f)
+        ! Weighted mean P(z) of the profiles of the table points (kk,ll) with
+        ! weights wc (sum > 0).
+        type(zremap_class), intent(in) :: zr
+        integer,            intent(in) :: kk(4), ll(4)
+        real(wp),           intent(in) :: wc(4)
+        real(wp),           intent(in) :: z
+        real(wp) :: f
+
+        integer :: c
+
+        f = 0.0_wp
+        do c = 1, 4
+            if (wc(c) > 0.0_wp) f = f + wc(c)*eval_profile(zr, zr%tab(:,kk(c),ll(c)), z)
+        end do
+        f = f / sum(wc)
+
+    end function eval_profiles
 
     function calc_dz_ext(zr, i, j, z) result(dz)
         ! Elevation distance of z beyond the (support-weighted) data range at

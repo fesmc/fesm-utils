@@ -25,10 +25,12 @@ All notable changes to fesm-utils are documented here.
   mask_ref) in a Gaussian neighbourhood of width `sigma` (cf. Goelzer et al., 2020,
   with a radius instead of basins); `zremap_map` evaluates them at z_now. Tables every
   `stride` points, smoothing of the profiles along z (`sigma_z`), end gradients
-  `dfdz_lo`/`dfdz_hi`. The profiles are blended with
-  the fallback f_ref + dfdz*(z_now-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by the data support W (kernel weight of
-  the data, 0-1): alpha = min(1, W/w_full), so the field fades continuously to the
-  fallback away from the data. Optional `dz_ext` from `zremap_map`: elevation distance
+  `dfdz_lo`/`dfdz_hi`. The interpolated profile P is blended with the fallback
+  f_ref + dfdz*(z_now-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by alpha =
+  min(1, W/w_full), W the data support (kernel weight of the data, 0-1), so the field
+  fades continuously to the fallback away from the data. On the data points P enters
+  as an anomaly, f_ref + alpha*[P(z_now) - P(z_ref)] + ..., so f_ref is reproduced
+  exactly at z_ref; elsewhere as alpha*P(z_now) + ... (f_ref there may be gap-filled). Optional `dz_ext` from `zremap_map`: elevation distance
   beyond the data range. `zremap_write` writes the tables, the support `w` and the
   gradient field `dfdz`. Includes a `make test-zremap` self-check.
 - **varslice**: filling of missing values, optional group keys `fill = "nearest"`
