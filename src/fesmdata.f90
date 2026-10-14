@@ -41,7 +41,7 @@ module fesmdata
     public :: len_name
     public :: flag_table_class, flag_table_read, flag_table_merge, flag_table_from_values
     public :: flag_codes, flag_name, flag_names_joined
-    public :: fesmdata_grid_name, fesmdata_grid_read
+    public :: fesmdata_grid_name, fesmdata_grid_read, fesmdata_grid_desc_exists
     public :: fesmdata_map_init, fesmdata_read_field
     public :: fesmdata_parse_path
     public :: fesmdata_flux_conv, fesmdata_temp_ref
@@ -441,7 +441,6 @@ contains
         character(len=256)  :: gname
         character(len=1024) :: fldr
         logical :: found
-        integer :: q
 
         if (present(grid_name)) then
             gname = grid_name
@@ -449,15 +448,7 @@ contains
             gname = fesmdata_grid_name(fname)
         end if
 
-        q = index(fname, "/", back=.true.)
-        fldr = "."
-        if (q .gt. 0) fldr = fname(1:q-1)
-
-        inquire(file=trim(fldr)//"/grid_"//trim(gname)//".txt", exist=found)
-        if (.not. found) then
-            fldr = "maps"
-            inquire(file=trim(fldr)//"/grid_"//trim(gname)//".txt", exist=found)
-        end if
+        found = grid_desc_folder(fname, gname, fldr)
         if (.not. found) then
             call fesmdata_error("fesmdata_grid_read", "no description of the grid of the file.", &
                 "file      = "//trim(fname)//new_line("a")// &
@@ -470,6 +461,45 @@ contains
         return
 
     end subroutine fesmdata_grid_read
+
+    function fesmdata_grid_desc_exists(fname, grid_name) result(found)
+        ! A cdo description of the grid grid_name exists next to the file
+        ! (grid_<grid_name>.txt, as FesmData writes it), else in maps/.
+
+        implicit none
+
+        character(len=*), intent(IN) :: fname, grid_name
+        logical :: found
+
+        character(len=1024) :: fldr
+
+        found = grid_desc_folder(fname, grid_name, fldr)
+
+    end function fesmdata_grid_desc_exists
+
+    function grid_desc_folder(fname, grid_name, fldr) result(found)
+        ! The folder of the cdo description grid_<grid_name>.txt: that of the
+        ! file, else maps/.
+
+        implicit none
+
+        character(len=*), intent(IN)  :: fname, grid_name
+        character(len=*), intent(OUT) :: fldr
+        logical :: found
+
+        integer :: q
+
+        q = index(fname, "/", back=.true.)
+        fldr = "."
+        if (q .gt. 0) fldr = fname(1:q-1)
+
+        inquire(file=trim(fldr)//"/grid_"//trim(grid_name)//".txt", exist=found)
+        if (.not. found) then
+            fldr = "maps"
+            inquire(file=trim(fldr)//"/grid_"//trim(grid_name)//".txt", exist=found)
+        end if
+
+    end function grid_desc_folder
 
     ! ===== Fields on a target grid ============================================
 

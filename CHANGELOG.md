@@ -13,6 +13,10 @@ All notable changes to fesm-utils are documented here.
   depth): each level by `fill_nearest`, else from the level above.
 - **varslice**: `fill = "nearest"` fills a level without data from the level above
   (`fill_nearest_levels`; it stayed missing).
+- **varslice**: `remap` from a projected grid: `grid_src` with a cdo description
+  (`grid_<grid_src>.txt` next to the file, as FesmData writes it, else in `maps/`) is read
+  from it (`fesmdata_grid_read`); otherwise from the lon/lat of the file as before.
+  New `fesmdata_grid_desc_exists`.
 
 ### Fixed
 - **ncio**: `nc_read` without `count` stops when a file dimension covered by the array

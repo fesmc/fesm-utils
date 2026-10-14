@@ -9,6 +9,7 @@ module varslice
     use mapping, only : map_class, map_field, map_init
     use coordinates, only : grid_class, points_class, grid_init, points_init
     use interp2D,    only : fill_nearest_levels
+    use fesmdata,    only : fesmdata_grid_desc_exists, fesmdata_grid_read
 
     implicit none
 
@@ -208,9 +209,11 @@ contains
 
     subroutine varslice_remap_init(vs,grid)
         ! Prepare online remapping of the variable from the grid of its file
-        ! onto `grid`. The file's geometry comes from its lon/lat: those named
-        ! in the variable's CF "coordinates" attribute, else its first two
-        ! dimensions.
+        ! onto `grid`. A projected grid grid_src with a cdo description
+        ! (grid_<grid_src>.txt next to the file, as FesmData writes it, else in
+        ! maps/) is read from it; otherwise the file's geometry comes from its
+        ! lon/lat: those named in the variable's CF "coordinates" attribute,
+        ! else its first two dimensions.
         !   - 1D lon/lat: a regular lon-lat grid; the map is cached in maps/
         !     under par%grid_src.
         !   - 2D lon/lat (curvilinear grids, e.g. tripolar ocean grids): a
@@ -251,51 +254,13 @@ contains
                 "name = "//trim(vs%par%name))
         end if
 
-        call nc_dims(fname,vs%par%name,dim_names,dims)
-        nx = dims(1)
-        ny = dims(2)
-
-        coords_att = ""
-        if (nc_exists_attr(fname,vs%par%name,"coordinates")) &
-            call nc_read_attr(fname,vs%par%name,"coordinates",coords_att)
-
-        ! lon/lat: named by the coordinates attribute (any order), else the
-        ! variable's first two dimensions
-        lon_name = dim_names(1)
-        lat_name = dim_names(2)
-        i0 = 1
-        do while (i0 .le. len_trim(coords_att))
-            i1 = index(coords_att(i0:)," ")
-            if (i1 .eq. 0) i1 = len_trim(coords_att(i0:)) + 1
-            word = coords_att(i0:i0+i1-2)
-            if (len_trim(word) .gt. 0) then
-                if (index(word,"lon") .gt. 0) lon_name = word
-                if (index(word,"lat") .gt. 0) lat_name = word
-            end if
-            i0 = i0 + i1
-        end do
-
-        ! Their rank decides: 2D lon/lat is a curvilinear grid, 1D a regular one
-        call nc_dims(fname,lon_name,dim_names,dims)
-
-        if (size(dims) .eq. 2) then
-            ! Curvilinear grid: a point set of its 2D lon/lat
-            allocate(lon2(nx,ny), lat2(nx,ny))
-            call nc_read(fname,lon_name,lon2)
-            call nc_read(fname,lat_name,lat2)
-            call points_init(pts_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
-                             x=reshape(lon2,[nx*ny]),y=reshape(lat2,[nx*ny]))
-            call map_init(vs%map,pts_src,grid,max_neighbors=10,method=trim(vs%par%remap))
-            vs%map_points = .true.
-        else
-            ! Regular lon-lat grid: its 1D axes
-            allocate(lon1(nx), lat1(ny))
-            call nc_read(fname,lon_name,lon1)
-            call nc_read(fname,lat_name,lat1)
-            call grid_init(grid_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
-                           x=lon1,y=lat1)
+        if (fesmdata_grid_desc_exists(fname,vs%par%grid_src)) then
+            ! Projected grid of its cdo description
+            call fesmdata_grid_read(grid_src,fname,trim(vs%par%grid_src))
             call map_init(vs%map,grid_src,grid,method=trim(vs%par%remap),fldr="maps")
             vs%map_points = .false.
+        else
+            call remap_init_lonlat()
         end if
 
         ! The variable is returned on the target grid
@@ -306,6 +271,60 @@ contains
         vs%y = grid%G%y
 
         return
+
+    contains
+
+        subroutine remap_init_lonlat()
+            ! The map from the lon/lat of the file.
+
+            call nc_dims(fname,vs%par%name,dim_names,dims)
+            nx = dims(1)
+            ny = dims(2)
+
+            coords_att = ""
+            if (nc_exists_attr(fname,vs%par%name,"coordinates")) &
+                call nc_read_attr(fname,vs%par%name,"coordinates",coords_att)
+
+            ! lon/lat: named by the coordinates attribute (any order), else the
+            ! variable's first two dimensions
+            lon_name = dim_names(1)
+            lat_name = dim_names(2)
+            i0 = 1
+            do while (i0 .le. len_trim(coords_att))
+                i1 = index(coords_att(i0:)," ")
+                if (i1 .eq. 0) i1 = len_trim(coords_att(i0:)) + 1
+                word = coords_att(i0:i0+i1-2)
+                if (len_trim(word) .gt. 0) then
+                    if (index(word,"lon") .gt. 0) lon_name = word
+                    if (index(word,"lat") .gt. 0) lat_name = word
+                end if
+                i0 = i0 + i1
+            end do
+
+            ! Their rank decides: 2D lon/lat is a curvilinear grid, 1D a regular one
+            call nc_dims(fname,lon_name,dim_names,dims)
+
+            if (size(dims) .eq. 2) then
+                ! Curvilinear grid: a point set of its 2D lon/lat
+                allocate(lon2(nx,ny), lat2(nx,ny))
+                call nc_read(fname,lon_name,lon2)
+                call nc_read(fname,lat_name,lat2)
+                call points_init(pts_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                                 x=reshape(lon2,[nx*ny]),y=reshape(lat2,[nx*ny]))
+                call map_init(vs%map,pts_src,grid,max_neighbors=10,method=trim(vs%par%remap))
+                vs%map_points = .true.
+            else
+                ! Regular lon-lat grid: its 1D axes
+                allocate(lon1(nx), lat1(ny))
+                call nc_read(fname,lon_name,lon1)
+                call nc_read(fname,lat_name,lat1)
+                call grid_init(grid_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                               x=lon1,y=lat1)
+                call map_init(vs%map,grid_src,grid,method=trim(vs%par%remap),fldr="maps")
+                vs%map_points = .false.
+            end if
+
+        end subroutine remap_init_lonlat
 
     end subroutine varslice_remap_init
 
