@@ -195,7 +195,7 @@ $(objdir)/variable_io.o: $(srcdir)/variable_io.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
-					$(objdir)/mapping.o $(objdir)/interp2D.o
+					$(objdir)/mapping.o $(objdir)/interp2D.o $(objdir)/fesmdata.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/fesmdata.o: $(srcdir)/fesmdata.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
@@ -430,6 +430,22 @@ test-htopo : fesmutils-static
 		@echo "    htopo test program ready: $(bindir)/test_htopo.x"
 		@echo " "
 
+# fesmdata units (water-flux factor, reference temperature) test program
+test-units : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_units.x $(testdir)/fesmdata/test_units.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    units test program ready: $(bindir)/test_units.x"
+		@echo " "
+
+# varslice climatology (sub-annual cycle without years) test program
+test-varslice-clim : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_varslice_clim.x $(testdir)/varslice/test_varslice_clim.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    varslice climatology test program ready: $(bindir)/test_varslice_clim.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
@@ -532,6 +548,8 @@ usage:
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
+	@echo " make test-units       : compiles the fesmdata units test program"
+	@echo " make test-varslice-clim : compiles the varslice climatology test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

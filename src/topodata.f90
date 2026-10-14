@@ -79,7 +79,7 @@ contains
 
     subroutine topodata_init_nml(td, filename, group, domain, grid_name, subs, grid, verbose)
         ! Load the topography as given by a namelist group:
-        !   path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
+        !   path  = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
         !   vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"   (optional; this default)
         !   names = "bed" "surface" "thickness" ""       (optional; "" = as vars)
         !   remap = "con"                                (optional; this default)

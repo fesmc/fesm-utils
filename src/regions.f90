@@ -5,7 +5,7 @@ module regions
     ! A layer is a 2D integer field with a table of names of its codes.
     ! Layers come from any file (regions_load_layer; namelist keys layers,
     ! path_<layer>, ...), from the program (regions_add_layer), or from the
-    ! files of FesmData v2 ($ICE_DATA/v2/<Domain>/<GRID>/):
+    ! files of FesmData v2 ($FESMDATA/products/<Domain>/<GRID>/):
     !   <GRID>_REGIONS.nc       layers region (hierarchical, from region_1..3)
     !                           and zone (regions_load_fesmdata)
     !   <GRID>_BASINS-<set>.nc  layers <set> (basin), <set>.group (basin_group)
@@ -129,8 +129,8 @@ contains
     subroutine regions_init_nml(reg, filename, group, domain, grid_name, subs, grid, verbose)
         ! Load layers and named masks as given by a namelist group (all keys
         ! optional; without any, an empty set on grid):
-        !   path_regions = "ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
-        !   path_basins  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+        !   path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+        !   path_basins  = "fesmdata/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
         !   basin_sets   = "Zwally2012"
         !   layers       = "glaciers"            layers of any file:
         !   path_glaciers  = "glaciers.nc"

@@ -1,0 +1,17 @@
+! test_varslice_clim: climatologies (sub-annual cycle without years)
+
+&ocn_clim
+    filename = "test_varslice_clim.nc"
+    name     = "to"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 12
+/
+
+&atm_clim
+    filename = "test_varslice_clim.nc"
+    name     = "t2m"
+    units    = "K" "K"
+    scaling  = 1.0 0.0
+    time     = 0 0 0 0 12
+/

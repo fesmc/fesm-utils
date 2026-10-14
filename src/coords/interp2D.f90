@@ -50,7 +50,7 @@ module interp2D
 
     private
     public :: interp_bilinear, interp_nearest, interp_nearest_fast
-    public :: fill_weighted, fill_nearest, fill_mean
+    public :: fill_weighted, fill_nearest, fill_nearest_levels, fill_mean
     public :: fill_poisson 
     public :: filter_poisson
     public :: diffuse, limit_gradient 
@@ -650,6 +650,35 @@ contains
 
         return
     end subroutine fill_nearest_dble
+
+    subroutine fill_nearest_levels(z,missing_value)
+        ! Fill the missing values of a field on levels z(nx,ny,nz) (e.g. an
+        ! ocean field by depth): each level from its nearest valid cells
+        ! (fill_nearest), and cells still missing (a level without data) from
+        ! the level above. Stops if the first level has no data.
+
+        implicit none
+
+        real(sp), intent(INOUT) :: z(:,:,:)
+        real(sp), intent(IN)    :: missing_value
+
+        integer :: k
+
+        do k = 1, size(z,3)
+            if (any(z(:,:,k) .ne. missing_value)) call fill_nearest(z(:,:,k),missing_value)
+            if (k .gt. 1) then
+                where (z(:,:,k) .eq. missing_value) z(:,:,k) = z(:,:,k-1)
+            end if
+        end do
+
+        if (any(z .eq. missing_value)) then
+            write(*,*) "fill_nearest_levels:: Error: the first level has no data."
+            stop 1
+        end if
+
+        return
+
+    end subroutine fill_nearest_levels
 
     subroutine fill_bilinear_dble(x,y,z,missing_value,fill_value,cont)
         ! Fill the missing values of an array with a bilinear interpolation

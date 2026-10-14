@@ -4,6 +4,24 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Added
+- **fesmdata**: `fesmdata_flux_conv(fname, varname, units_out)`, the factor of a water flux
+  from the units attribute of the variable to `units_out` (kg m-2 or mm w.e. per s, d or yr;
+  1 yr = 365.25 d), and `fesmdata_temp_ref(fname, varname)`, the reference temperature of
+  the units (0 for K, 273.15 for degC); both stop on missing or unknown units. `make test-units`.
+- **interp2D**: `fill_nearest_levels(z, missing_value)` fills a field on levels (e.g. ocean by
+  depth): each level by `fill_nearest`, else from the level above.
+- **varslice**: `fill = "nearest"` fills a level without data from the level above
+  (`fill_nearest_levels`; it stayed missing).
+- **varslice**: `remap` from a projected grid: `grid_src` with a cdo description
+  (`grid_<grid_src>.txt` next to the file, as FesmData writes it, else in `maps/`) is read
+  from it (`fesmdata_grid_read`); otherwise from the lon/lat of the file as before.
+  New `fesmdata_grid_desc_exists`.
+- **varslice**: climatologies (a sub-annual cycle without years, `time = 0 ... nsub`, `nsub > 1`)
+  of 3D fields (`to(x,y,depth,month)`; was "4D array without time dimension is not yet
+  supported"); a `range_mean` update with `rep = 1` gives the mean over the cycle (also for 2D
+  fields with a cycle), `varslice_sub_mean` averages it. `make test-varslice-clim`.
+
 ### Fixed
 - **ncio**: `nc_read` without `count` stops when a file dimension covered by the array
   has another length than the array (it read the leading block silently, e.g. the corner
