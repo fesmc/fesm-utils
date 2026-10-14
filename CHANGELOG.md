@@ -11,6 +11,8 @@ All notable changes to fesm-utils are documented here.
   the units (0 for K, 273.15 for degC); both stop on missing or unknown units. `make test-units`.
 - **interp2D**: `fill_nearest_levels(z, missing_value)` fills a field on levels (e.g. ocean by
   depth): each level by `fill_nearest`, else from the level above.
+- **varslice**: `fill = "nearest"` fills a level without data from the level above
+  (`fill_nearest_levels`; it stayed missing).
 
 ### Fixed
 - **ncio**: `nc_read` without `count` stops when a file dimension covered by the array

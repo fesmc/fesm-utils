@@ -8,7 +8,7 @@ module varslice
     use nml
     use mapping, only : map_class, map_field, map_init
     use coordinates, only : grid_class, points_class, grid_init, points_init
-    use interp2D,    only : fill_nearest
+    use interp2D,    only : fill_nearest_levels
 
     implicit none
 
@@ -349,8 +349,9 @@ contains
 
     subroutine varslice_fill(vs,method)
         ! Fill the missing values of the slice: "nearest" gives each missing cell
-        ! the value of the nearest valid cell, per horizontal (x,y) slice
-        ! (fill_nearest of interp2D); "const" sets them to par%fill_value.
+        ! the value of the nearest valid cell, per horizontal (x,y) slice, and a
+        ! level without data the values of the level above (fill_nearest_levels
+        ! of interp2D); "const" sets them to par%fill_value.
 
         implicit none
 
@@ -358,7 +359,7 @@ contains
         character(len=*),     intent(IN)    :: method
 
         ! Local variables
-        integer :: k, t, ndim_sp
+        integer :: t, ndim_sp
 
         select case(trim(method))
 
@@ -378,11 +379,9 @@ contains
                 end if
 
                 do t = 1, size(vs%var,4)
-                do k = 1, size(vs%var,3)
-                    if (any(vs%var(:,:,k,t) .eq. mv) .and. any(vs%var(:,:,k,t) .ne. mv)) then
-                        call fill_nearest(vs%var(:,:,k,t), mv)
+                    if (any(vs%var(:,:,:,t) .eq. mv) .and. any(vs%var(:,:,:,t) .ne. mv)) then
+                        call fill_nearest_levels(vs%var(:,:,:,t), mv)
                     end if
-                end do
                 end do
 
         end select
