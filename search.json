@@ -588,6 +588,290 @@
     ]
   },
   {
+    "objectID": "packages/fesmdata.html",
+    "href": "packages/fesmdata.html",
+    "title": "fesmdata",
+    "section": "",
+    "text": "fesmdata holds what the modules reading FesmData v2 products share (regions, topodata, varslice) and what the model hosts use directly. The products are $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_&lt;Dataset&gt;-&lt;product&gt;.nc, usually reached through a link fesmdata/ in the run folder, with the cdo description of their grid, grid_&lt;GRID&gt;.txt, next to them.\n\nGrid of a file: its global attribute grid_name, and the grid itself from grid_&lt;GRID&gt;.txt next to the file, else in maps/.\nFields on a target grid: a 2D field is read as it is when the file is on the target grid, else remapped from the grid of the file (fesmdata_map_init, fesmdata_read_field).\nUnits from the units attribute of a variable: the factor of a water flux to other units and the reference temperature of a temperature. Unknown or missing units stop the program.\nFlag tables: the codes and names of a categorical variable (CF flag_values, flag_meanings).\nPaths: {domain}, {grid_name} and {key} placeholders.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "fesmdata"
+    ]
+  },
+  {
+    "objectID": "packages/fesmdata.html#overview",
+    "href": "packages/fesmdata.html#overview",
+    "title": "fesmdata",
+    "section": "",
+    "text": "fesmdata holds what the modules reading FesmData v2 products share (regions, topodata, varslice) and what the model hosts use directly. The products are $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_&lt;Dataset&gt;-&lt;product&gt;.nc, usually reached through a link fesmdata/ in the run folder, with the cdo description of their grid, grid_&lt;GRID&gt;.txt, next to them.\n\nGrid of a file: its global attribute grid_name, and the grid itself from grid_&lt;GRID&gt;.txt next to the file, else in maps/.\nFields on a target grid: a 2D field is read as it is when the file is on the target grid, else remapped from the grid of the file (fesmdata_map_init, fesmdata_read_field).\nUnits from the units attribute of a variable: the factor of a water flux to other units and the reference temperature of a temperature. Unknown or missing units stop the program.\nFlag tables: the codes and names of a categorical variable (CF flag_values, flag_meanings).\nPaths: {domain}, {grid_name} and {key} placeholders.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "fesmdata"
+    ]
+  },
+  {
+    "objectID": "packages/fesmdata.html#public-api",
+    "href": "packages/fesmdata.html#public-api",
+    "title": "fesmdata",
+    "section": "Public API",
+    "text": "Public API\n\n\n\n\n\n\n\nProcedure\nDescription\n\n\n\n\nfesmdata_grid_name(fname)\nThe global attribute grid_name of a file\n\n\nfesmdata_grid_read(grid, fname, [grid_name])\nThe grid of a file from its cdo description\n\n\nfesmdata_grid_desc_exists(fname, grid_name)\nWhether grid_&lt;grid_name&gt;.txt exists next to the file or in maps/\n\n\nfesmdata_map_init(map, remap, nx, ny, fname, varname, method, [grid], ...)\nHow a field gets onto the target grid: remap and its map, or read as it is\n\n\nfesmdata_read_field(fname, varname, var, nx, ny, remap, map)\nRead a 2D field (real or integer), remapped if needed; missing values as mv\n\n\nfesmdata_flux_conv(fname, varname, units_out)\nFactor of a water flux from the units of the variable to units_out: kg m⁻² or mm w.e. per s, d or yr (1 yr = 365.25 d), e.g. \"kg m-2 yr-1\", \"mm d**-1\", \"mm/d\"\n\n\nfesmdata_temp_ref(fname, varname)\nReference temperature of the units of a temperature, to add to get kelvin: 0 for K, 273.15 for °C (degC, degrees C, degree_celsius, …)\n\n\nfesmdata_parse_path(path, domain, grid_name, [subs])\nReplace the placeholders of a path\n\n\nflag_table_read, flag_codes, flag_name, …\nFlag tables of categorical variables",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "fesmdata"
+    ]
+  },
+  {
+    "objectID": "packages/fesmdata.html#usage-example",
+    "href": "packages/fesmdata.html#usage-example",
+    "title": "fesmdata",
+    "section": "Usage example",
+    "text": "Usage example\nuse fesmdata, only : fesmdata_flux_conv, fesmdata_temp_ref, &\n                     fesmdata_map_init, fesmdata_read_field\n\n! Precipitation in mm/d and temperature in K, whatever the units of the file\ncall nc_read(path, \"pr\", pr)\npr  = pr  * fesmdata_flux_conv(path, \"pr\", \"mm d-1\")\ncall nc_read(path, \"t2m\", t2m)\nt2m = t2m + fesmdata_temp_ref(path, \"t2m\")\n\n! A geothermal heat flux on the model grid, remapped from the grid of the file\ncall fesmdata_map_init(map, remap, nx, ny, path_ghf, \"ghf\", \"bilin\", grid=grid)\ncall fesmdata_read_field(path_ghf, \"ghf\", ghf, nx, ny, remap, map)\nTests: make test-units.",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "fesmdata"
+    ]
+  },
+  {
+    "objectID": "packages/fesmdata.html#see-also",
+    "href": "packages/fesmdata.html#see-also",
+    "title": "fesmdata",
+    "section": "See also",
+    "text": "See also\n\nregions, topodata: layers and topography of FesmData products.\nvarslice: remap from a projected FesmData grid (grid_src with its grid_&lt;GRID&gt;.txt).",
+    "crumbs": [
+      "Home",
+      "Local packages",
+      "fesmdata"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html",
+    "href": "external/shtns.html",
+    "title": "SHTns",
+    "section": "",
+    "text": "SHTns is a high-performance C library for Spherical Harmonic Transforms — the forward and inverse transforms between values on a sphere and their spherical-harmonic coefficients. It provides a Fortran interface and is optimized with vectorized kernels.\nVersion vendored: 3.7.5 (SHTns/shtns-3.7.5/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#role-in-fesm-utils",
+    "href": "external/shtns.html#role-in-fesm-utils",
+    "title": "SHTns",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nSHTns supplies the spherical-harmonic machinery used by downstream models (e.g. spectral transforms on the sphere). It links against the FFTW built in this repository, so FFTW must be installed first.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#building",
+    "href": "external/shtns.html#building",
+    "title": "SHTns",
+    "section": "Building",
+    "text": "Building\nSHTns is built by its own autotools through the root Makefile:\nmake fftw  openmp=0        # prerequisite: build FFTW first\nmake shtns openmp=0        # serial -&gt; SHTns/shtns-serial\nmake shtns openmp=1        # OpenMP -&gt; SHTns/shtns-omp\nThe target runs, in SHTns/shtns-3.7.5/, pointing SHTns at the FFTW prefix:\n./configure --prefix=&lt;repo&gt;/SHTns/shtns-&lt;variant&gt; [--enable-openmp] \\\n    CPPFLAGS='-I&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/include' \\\n    LDFLAGS='-L&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/lib'\nmake && make install\nThe serial and OpenMP variants install side by side into SHTns/shtns-serial and SHTns/shtns-omp. Machine/compiler specifics — the kernel-compiler choice and -march handling — live in config/libs.mk.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#using-it-downstream",
+    "href": "external/shtns.html#using-it-downstream",
+    "title": "SHTns",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/SHTns/shtns-serial/include    # shtns.h, shtns.f03\nfesm-utils/SHTns/shtns-serial/lib        # libshtns.a",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/shtns.html#notes",
+    "href": "external/shtns.html#notes",
+    "title": "SHTns",
+    "section": "Notes",
+    "text": "Notes\n\nSHTns is the last of the three external libraries to build, because of its FFTW link dependency. make libs builds fftw, lis, shtns in that order.\nBuild the external libraries serially (do not pass -j to make libs).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "SHTns"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html",
+    "href": "external/fftw.html",
+    "title": "FFTW",
+    "section": "",
+    "text": "FFTW is a C library for computing discrete Fourier transforms in one or more dimensions, of arbitrary input size, in both real and complex data. It is a mature, widely used, high-performance FFT implementation.\nVersion vendored: 3.3.10 (fftw/fftw-3.3.10/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#role-in-fesm-utils",
+    "href": "external/fftw.html#role-in-fesm-utils",
+    "title": "FFTW",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nFFTW is a build-time dependency of downstream models and of SHTns, which links against the FFTW built here for its spherical-harmonic transforms. Because of that link dependency, FFTW must be installed before SHTns.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#building",
+    "href": "external/fftw.html#building",
+    "title": "FFTW",
+    "section": "Building",
+    "text": "Building\nFFTW is built by its own autotools through the root Makefile:\nmake fftw openmp=0        # serial -&gt; fftw/fftw-serial\nmake fftw openmp=1        # OpenMP -&gt; fftw/fftw-omp\nThe target runs, in fftw/fftw-3.3.10/:\n./configure --prefix=&lt;repo&gt;/fftw/fftw-&lt;variant&gt; --disable-doc [--enable-openmp]\nmake && make install\nThe serial and OpenMP variants install side by side into fftw/fftw-serial and fftw/fftw-omp. Machine/compiler specifics (the C compiler pick, C-standard pins) live in config/libs.mk.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#using-it-downstream",
+    "href": "external/fftw.html#using-it-downstream",
+    "title": "FFTW",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/fftw/fftw-serial/include    # fftw3.h, fftw3.f03\nfesm-utils/fftw/fftw-serial/lib        # libfftw3.a (+ libfftw3_omp for the omp variant)",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "external/fftw.html#updating-the-vendored-source",
+    "href": "external/fftw.html#updating-the-vendored-source",
+    "title": "FFTW",
+    "section": "Updating the vendored source",
+    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the fftw/ container folder and rebuild:\nwget https://www.fftw.org/fftw-3.3.10.tar.gz\ntar -xvf fftw-3.3.10.tar.gz -C fftw/\nrm fftw-3.3.10.tar.gz\nmake fftw openmp=0",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "FFTW"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "fesm-utils",
+    "section": "",
+    "text": "fesm-utils is a convenience repository holding a self-contained Fortran utility library together with the external C/Fortran libraries needed to build and run fast Earth system models such as CLIMBER-X and yelmox.\nEverything is driven from a single root Makefile, generated per machine by configme. A serial and an OpenMP variant build side by side (openmp=0 / openmp=1).",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#whats-inside",
+    "href": "index.html#whats-inside",
+    "title": "fesm-utils",
+    "section": "What’s inside",
+    "text": "What’s inside\nThe repository bundles the local utils library (src/, compiled into libfesmutils.a) plus three vendored external libraries, each in its own container folder with the upstream source and compiled serial/omp install prefixes.\n\nLocal packages\n\n\n\ncoords\nCoordinate geometry, map projections, Gaussian grids, kdtree, and grid-to-grid weight-map remapping (nearest-neighbour / bilinear / conservative) with CDO interop and map caching.\n\n\ntsgen\nTransient scalar forcing from time (ramps, sinusoids), tabulated files, or model-response feedback controllers.\n\n\nseries\nLightweight tabulated time-series reader (ASCII/netCDF), scalar or multi-channel, with clamped-linear interpolation.\n\n\nvarslice\nSlice gridded (x-y-z-time) variables out of netCDF files, with sub-annual axes, multi-file matching, and unit scaling.\n\n\nzremap\nRemap a surface field (SMB, temperature) to a changing ice-sheet surface via local field–elevation profiles in a Gaussian neighbourhood.\n\n\nncio\nHigh-level netCDF input/output for Fortran — create files, dimensions, variables, and attributes with minimal boilerplate.\n\n\nnml\nRead and write Fortran namelist parameter files, with a defaults overlay and validation.\n\n\nroot_finder\nScalar root finding via Newton and secant iterations.\n\n\ntiming\nWall-clock timers, output-write scheduling, and timestep management.\n\n\ngrid operations\nSpatial derivatives, distances, and subgrid interpolation — plus Arakawa-grid staggering (work in progress).\n\n\ngaussian_quadrature\nFinite-element Gaussian quadrature over 3D hexahedral elements.\n\n\nfoundations\nPrecision kinds (wp/sp/dp) and package-wide constants every module builds on.\n\n\n\nExternal libraries\nThree vendored upstream libraries, each built by its own autotools configure/make/make install into &lt;lib&gt;/&lt;lib&gt;-{serial,omp}:\n\nFFTW — the Fastest Fourier Transform in the West.\nLIS — Library of Iterative Solvers for linear systems.\nSHTns — fast Spherical Harmonic Transforms.",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#installation",
+    "href": "index.html#installation",
+    "title": "fesm-utils",
+    "section": "Installation",
+    "text": "Installation\nfesm-utils is built through configme, which is the single source of machine/compiler truth (Fortran flags, netCDF autodetection) and generates the root Makefile.\n\n1. Install configme\npip install configme      # or: pipx install configme\n\n\n2. Install fesm-utils\nClone, configure, and build in one step — select your machine and compiler:\nconfigme install fesm-utils -m macbook -c gfortran\nIn an existing checkout, just (re)generate the Makefile:\nconfigme config fesm-utils -m macbook -c gfortran\n\n\n3. Build with make\nOne consistent interface, selecting the variant with openmp=:\nmake fesmutils-static openmp=0    # the utils library -&gt; include-serial/libfesmutils.a\nmake fftw   openmp=0              # serial FFTW  -&gt; fftw/fftw-serial\nmake lis    openmp=1             # OpenMP LIS   -&gt; lis/lis-omp\nmake shtns  openmp=0             # serial SHTns -&gt; SHTns/shtns-serial\nmake libs   openmp=0             # fftw + lis + shtns, one variant\nmake usage                       # list the main targets\n\n\n\n\n\n\nTip\n\n\n\nBuild the external libraries serially (a one-time autotools build — do not pass -j to make libs). SHTns links the FFTW built here, so fftw must be installed before shtns. On clusters, module load your compiler + netCDF toolchain first — the builds and netCDF autodetection use the environment already loaded in your shell.",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#using-the-libraries-downstream",
+    "href": "index.html#using-the-libraries-downstream",
+    "title": "fesm-utils",
+    "section": "Using the libraries downstream",
+    "text": "Using the libraries downstream\nSymlink the repository into a downstream model and reference the install prefixes directly:\ncd climber-x/\nln -s /path/to/fesm-utils ./\n\nutils: fesm-utils/include-serial (or include-omp)\nFFTW: fesm-utils/fftw/fftw-serial\nLIS: fesm-utils/lis/lis-serial\nSHTns: fesm-utils/SHTns/shtns-serial",
+    "crumbs": [
+      "Home",
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "external/lis.html",
+    "href": "external/lis.html",
+    "title": "LIS",
+    "section": "",
+    "text": "LIS (Library of Iterative Solvers) is a parallel C/Fortran library for solving large, sparse systems of linear equations and eigenvalue problems with iterative methods (a wide range of Krylov-subspace solvers and preconditioners, including algebraic multigrid).\nVersion vendored: 2.1.11 (lis/lis-2.1.11/).",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#role-in-fesm-utils",
+    "href": "external/lis.html#role-in-fesm-utils",
+    "title": "LIS",
+    "section": "Role in fesm-utils",
+    "text": "Role in fesm-utils\nLIS provides the sparse iterative linear solvers used by downstream Earth system models. It is built with the Fortran 90 interface and the SA-AMG (smoothed aggregation algebraic multigrid) preconditioner enabled.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#building",
+    "href": "external/lis.html#building",
+    "title": "LIS",
+    "section": "Building",
+    "text": "Building\nLIS is built by its own autotools through the root Makefile:\nmake lis openmp=0        # serial -&gt; lis/lis-serial\nmake lis openmp=1        # OpenMP -&gt; lis/lis-omp\nThe target runs, in lis/lis-2.1.11/:\n./configure --prefix=&lt;repo&gt;/lis/lis-&lt;variant&gt; --enable-f90 --enable-saamg [--enable-omp]\nmake && make install\nThe serial and OpenMP variants install side by side into lis/lis-serial and lis/lis-omp. Machine/compiler specifics (compiler pick, C-standard pins, Intel runtime-library fixes) live in config/libs.mk; the vendored 2.1.11 autotools were modernized to build cleanly with recent icx/ifx.",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#using-it-downstream",
+    "href": "external/lis.html#using-it-downstream",
+    "title": "LIS",
+    "section": "Using it downstream",
+    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/lis/lis-serial/include     # lis.h, lisf.h, the lis Fortran module\nfesm-utils/lis/lis-serial/lib         # liblis.a",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
+    "objectID": "external/lis.html#updating-the-vendored-source",
+    "href": "external/lis.html#updating-the-vendored-source",
+    "title": "LIS",
+    "section": "Updating the vendored source",
+    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the lis/ container folder and rebuild:\nwget https://www.ssisc.org/lis/dl/lis-2.1.11.zip\nunzip lis-2.1.11.zip -d lis/\nrm lis-2.1.11.zip\nmake lis openmp=0",
+    "crumbs": [
+      "Home",
+      "External libraries",
+      "LIS"
+    ]
+  },
+  {
     "objectID": "packages/coords.html",
     "href": "packages/coords.html",
     "title": "coords",
@@ -681,230 +965,6 @@
       "Home",
       "Local packages",
       "coords"
-    ]
-  },
-  {
-    "objectID": "external/lis.html",
-    "href": "external/lis.html",
-    "title": "LIS",
-    "section": "",
-    "text": "LIS (Library of Iterative Solvers) is a parallel C/Fortran library for solving large, sparse systems of linear equations and eigenvalue problems with iterative methods (a wide range of Krylov-subspace solvers and preconditioners, including algebraic multigrid).\nVersion vendored: 2.1.11 (lis/lis-2.1.11/).",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "LIS"
-    ]
-  },
-  {
-    "objectID": "external/lis.html#role-in-fesm-utils",
-    "href": "external/lis.html#role-in-fesm-utils",
-    "title": "LIS",
-    "section": "Role in fesm-utils",
-    "text": "Role in fesm-utils\nLIS provides the sparse iterative linear solvers used by downstream Earth system models. It is built with the Fortran 90 interface and the SA-AMG (smoothed aggregation algebraic multigrid) preconditioner enabled.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "LIS"
-    ]
-  },
-  {
-    "objectID": "external/lis.html#building",
-    "href": "external/lis.html#building",
-    "title": "LIS",
-    "section": "Building",
-    "text": "Building\nLIS is built by its own autotools through the root Makefile:\nmake lis openmp=0        # serial -&gt; lis/lis-serial\nmake lis openmp=1        # OpenMP -&gt; lis/lis-omp\nThe target runs, in lis/lis-2.1.11/:\n./configure --prefix=&lt;repo&gt;/lis/lis-&lt;variant&gt; --enable-f90 --enable-saamg [--enable-omp]\nmake && make install\nThe serial and OpenMP variants install side by side into lis/lis-serial and lis/lis-omp. Machine/compiler specifics (compiler pick, C-standard pins, Intel runtime-library fixes) live in config/libs.mk; the vendored 2.1.11 autotools were modernized to build cleanly with recent icx/ifx.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "LIS"
-    ]
-  },
-  {
-    "objectID": "external/lis.html#using-it-downstream",
-    "href": "external/lis.html#using-it-downstream",
-    "title": "LIS",
-    "section": "Using it downstream",
-    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/lis/lis-serial/include     # lis.h, lisf.h, the lis Fortran module\nfesm-utils/lis/lis-serial/lib         # liblis.a",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "LIS"
-    ]
-  },
-  {
-    "objectID": "external/lis.html#updating-the-vendored-source",
-    "href": "external/lis.html#updating-the-vendored-source",
-    "title": "LIS",
-    "section": "Updating the vendored source",
-    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the lis/ container folder and rebuild:\nwget https://www.ssisc.org/lis/dl/lis-2.1.11.zip\nunzip lis-2.1.11.zip -d lis/\nrm lis-2.1.11.zip\nmake lis openmp=0",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "LIS"
-    ]
-  },
-  {
-    "objectID": "index.html",
-    "href": "index.html",
-    "title": "fesm-utils",
-    "section": "",
-    "text": "fesm-utils is a convenience repository holding a self-contained Fortran utility library together with the external C/Fortran libraries needed to build and run fast Earth system models such as CLIMBER-X and yelmox.\nEverything is driven from a single root Makefile, generated per machine by configme. A serial and an OpenMP variant build side by side (openmp=0 / openmp=1).",
-    "crumbs": [
-      "Home",
-      "Overview"
-    ]
-  },
-  {
-    "objectID": "index.html#whats-inside",
-    "href": "index.html#whats-inside",
-    "title": "fesm-utils",
-    "section": "What’s inside",
-    "text": "What’s inside\nThe repository bundles the local utils library (src/, compiled into libfesmutils.a) plus three vendored external libraries, each in its own container folder with the upstream source and compiled serial/omp install prefixes.\n\nLocal packages\n\n\n\ncoords\nCoordinate geometry, map projections, Gaussian grids, kdtree, and grid-to-grid weight-map remapping (nearest-neighbour / bilinear / conservative) with CDO interop and map caching.\n\n\ntsgen\nTransient scalar forcing from time (ramps, sinusoids), tabulated files, or model-response feedback controllers.\n\n\nseries\nLightweight tabulated time-series reader (ASCII/netCDF), scalar or multi-channel, with clamped-linear interpolation.\n\n\nvarslice\nSlice gridded (x-y-z-time) variables out of netCDF files, with sub-annual axes, multi-file matching, and unit scaling.\n\n\nzremap\nRemap a surface field (SMB, temperature) to a changing ice-sheet surface via local field–elevation profiles in a Gaussian neighbourhood.\n\n\nncio\nHigh-level netCDF input/output for Fortran — create files, dimensions, variables, and attributes with minimal boilerplate.\n\n\nnml\nRead and write Fortran namelist parameter files, with a defaults overlay and validation.\n\n\nroot_finder\nScalar root finding via Newton and secant iterations.\n\n\ntiming\nWall-clock timers, output-write scheduling, and timestep management.\n\n\ngrid operations\nSpatial derivatives, distances, and subgrid interpolation — plus Arakawa-grid staggering (work in progress).\n\n\ngaussian_quadrature\nFinite-element Gaussian quadrature over 3D hexahedral elements.\n\n\nfoundations\nPrecision kinds (wp/sp/dp) and package-wide constants every module builds on.\n\n\n\nExternal libraries\nThree vendored upstream libraries, each built by its own autotools configure/make/make install into &lt;lib&gt;/&lt;lib&gt;-{serial,omp}:\n\nFFTW — the Fastest Fourier Transform in the West.\nLIS — Library of Iterative Solvers for linear systems.\nSHTns — fast Spherical Harmonic Transforms.",
-    "crumbs": [
-      "Home",
-      "Overview"
-    ]
-  },
-  {
-    "objectID": "index.html#installation",
-    "href": "index.html#installation",
-    "title": "fesm-utils",
-    "section": "Installation",
-    "text": "Installation\nfesm-utils is built through configme, which is the single source of machine/compiler truth (Fortran flags, netCDF autodetection) and generates the root Makefile.\n\n1. Install configme\npip install configme      # or: pipx install configme\n\n\n2. Install fesm-utils\nClone, configure, and build in one step — select your machine and compiler:\nconfigme install fesm-utils -m macbook -c gfortran\nIn an existing checkout, just (re)generate the Makefile:\nconfigme config fesm-utils -m macbook -c gfortran\n\n\n3. Build with make\nOne consistent interface, selecting the variant with openmp=:\nmake fesmutils-static openmp=0    # the utils library -&gt; include-serial/libfesmutils.a\nmake fftw   openmp=0              # serial FFTW  -&gt; fftw/fftw-serial\nmake lis    openmp=1             # OpenMP LIS   -&gt; lis/lis-omp\nmake shtns  openmp=0             # serial SHTns -&gt; SHTns/shtns-serial\nmake libs   openmp=0             # fftw + lis + shtns, one variant\nmake usage                       # list the main targets\n\n\n\n\n\n\nTip\n\n\n\nBuild the external libraries serially (a one-time autotools build — do not pass -j to make libs). SHTns links the FFTW built here, so fftw must be installed before shtns. On clusters, module load your compiler + netCDF toolchain first — the builds and netCDF autodetection use the environment already loaded in your shell.",
-    "crumbs": [
-      "Home",
-      "Overview"
-    ]
-  },
-  {
-    "objectID": "index.html#using-the-libraries-downstream",
-    "href": "index.html#using-the-libraries-downstream",
-    "title": "fesm-utils",
-    "section": "Using the libraries downstream",
-    "text": "Using the libraries downstream\nSymlink the repository into a downstream model and reference the install prefixes directly:\ncd climber-x/\nln -s /path/to/fesm-utils ./\n\nutils: fesm-utils/include-serial (or include-omp)\nFFTW: fesm-utils/fftw/fftw-serial\nLIS: fesm-utils/lis/lis-serial\nSHTns: fesm-utils/SHTns/shtns-serial",
-    "crumbs": [
-      "Home",
-      "Overview"
-    ]
-  },
-  {
-    "objectID": "external/fftw.html",
-    "href": "external/fftw.html",
-    "title": "FFTW",
-    "section": "",
-    "text": "FFTW is a C library for computing discrete Fourier transforms in one or more dimensions, of arbitrary input size, in both real and complex data. It is a mature, widely used, high-performance FFT implementation.\nVersion vendored: 3.3.10 (fftw/fftw-3.3.10/).",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "FFTW"
-    ]
-  },
-  {
-    "objectID": "external/fftw.html#role-in-fesm-utils",
-    "href": "external/fftw.html#role-in-fesm-utils",
-    "title": "FFTW",
-    "section": "Role in fesm-utils",
-    "text": "Role in fesm-utils\nFFTW is a build-time dependency of downstream models and of SHTns, which links against the FFTW built here for its spherical-harmonic transforms. Because of that link dependency, FFTW must be installed before SHTns.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "FFTW"
-    ]
-  },
-  {
-    "objectID": "external/fftw.html#building",
-    "href": "external/fftw.html#building",
-    "title": "FFTW",
-    "section": "Building",
-    "text": "Building\nFFTW is built by its own autotools through the root Makefile:\nmake fftw openmp=0        # serial -&gt; fftw/fftw-serial\nmake fftw openmp=1        # OpenMP -&gt; fftw/fftw-omp\nThe target runs, in fftw/fftw-3.3.10/:\n./configure --prefix=&lt;repo&gt;/fftw/fftw-&lt;variant&gt; --disable-doc [--enable-openmp]\nmake && make install\nThe serial and OpenMP variants install side by side into fftw/fftw-serial and fftw/fftw-omp. Machine/compiler specifics (the C compiler pick, C-standard pins) live in config/libs.mk.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "FFTW"
-    ]
-  },
-  {
-    "objectID": "external/fftw.html#using-it-downstream",
-    "href": "external/fftw.html#using-it-downstream",
-    "title": "FFTW",
-    "section": "Using it downstream",
-    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/fftw/fftw-serial/include    # fftw3.h, fftw3.f03\nfesm-utils/fftw/fftw-serial/lib        # libfftw3.a (+ libfftw3_omp for the omp variant)",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "FFTW"
-    ]
-  },
-  {
-    "objectID": "external/fftw.html#updating-the-vendored-source",
-    "href": "external/fftw.html#updating-the-vendored-source",
-    "title": "FFTW",
-    "section": "Updating the vendored source",
-    "text": "Updating the vendored source\nTo try a different upstream version, unpack it into the fftw/ container folder and rebuild:\nwget https://www.fftw.org/fftw-3.3.10.tar.gz\ntar -xvf fftw-3.3.10.tar.gz -C fftw/\nrm fftw-3.3.10.tar.gz\nmake fftw openmp=0",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "FFTW"
-    ]
-  },
-  {
-    "objectID": "external/shtns.html",
-    "href": "external/shtns.html",
-    "title": "SHTns",
-    "section": "",
-    "text": "SHTns is a high-performance C library for Spherical Harmonic Transforms — the forward and inverse transforms between values on a sphere and their spherical-harmonic coefficients. It provides a Fortran interface and is optimized with vectorized kernels.\nVersion vendored: 3.7.5 (SHTns/shtns-3.7.5/).",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "SHTns"
-    ]
-  },
-  {
-    "objectID": "external/shtns.html#role-in-fesm-utils",
-    "href": "external/shtns.html#role-in-fesm-utils",
-    "title": "SHTns",
-    "section": "Role in fesm-utils",
-    "text": "Role in fesm-utils\nSHTns supplies the spherical-harmonic machinery used by downstream models (e.g. spectral transforms on the sphere). It links against the FFTW built in this repository, so FFTW must be installed first.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "SHTns"
-    ]
-  },
-  {
-    "objectID": "external/shtns.html#building",
-    "href": "external/shtns.html#building",
-    "title": "SHTns",
-    "section": "Building",
-    "text": "Building\nSHTns is built by its own autotools through the root Makefile:\nmake fftw  openmp=0        # prerequisite: build FFTW first\nmake shtns openmp=0        # serial -&gt; SHTns/shtns-serial\nmake shtns openmp=1        # OpenMP -&gt; SHTns/shtns-omp\nThe target runs, in SHTns/shtns-3.7.5/, pointing SHTns at the FFTW prefix:\n./configure --prefix=&lt;repo&gt;/SHTns/shtns-&lt;variant&gt; [--enable-openmp] \\\n    CPPFLAGS='-I&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/include' \\\n    LDFLAGS='-L&lt;repo&gt;/fftw/fftw-&lt;variant&gt;/lib'\nmake && make install\nThe serial and OpenMP variants install side by side into SHTns/shtns-serial and SHTns/shtns-omp. Machine/compiler specifics — the kernel-compiler choice and -march handling — live in config/libs.mk.",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "SHTns"
-    ]
-  },
-  {
-    "objectID": "external/shtns.html#using-it-downstream",
-    "href": "external/shtns.html#using-it-downstream",
-    "title": "SHTns",
-    "section": "Using it downstream",
-    "text": "Using it downstream\nReference the install prefix directly:\nfesm-utils/SHTns/shtns-serial/include    # shtns.h, shtns.f03\nfesm-utils/SHTns/shtns-serial/lib        # libshtns.a",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "SHTns"
-    ]
-  },
-  {
-    "objectID": "external/shtns.html#notes",
-    "href": "external/shtns.html#notes",
-    "title": "SHTns",
-    "section": "Notes",
-    "text": "Notes\n\nSHTns is the last of the three external libraries to build, because of its FFTW link dependency. make libs builds fftw, lis, shtns in that order.\nBuild the external libraries serially (do not pass -j to make libs).",
-    "crumbs": [
-      "Home",
-      "External libraries",
-      "SHTns"
     ]
   },
   {
@@ -1152,7 +1212,7 @@
     "href": "packages/regions.html",
     "title": "regions",
     "section": "",
-    "text": "regions holds named layers on a grid: 2D integer fields with a table of names of their codes, such as regions, zones or basins. Logical masks are derived from them with short selection expressions. The module knows nothing about the content of a layer beyond what it is told:\n\nAny file: an integer variable of any file (regions_load_layer, namelist key layers). The names of its codes are given (codes, names), else read from the CF attributes flag_values and flag_meanings, else the codes themselves.\nThe program: a field already in memory (regions_add_layer).\nFesmData v2 files, which every domain grid folder $ICE_DATA/v2/&lt;Domain&gt;/&lt;GRID&gt;/ holds:\n\n\n\n\n\n\n\n\nFile\nLayers\n\n\n\n\n&lt;GRID&gt;_REGIONS.nc\nregion (hierarchical; values of region_3, names of region_1..3), zone\n\n\n&lt;GRID&gt;_BASINS-&lt;set&gt;.nc\n&lt;set&gt; (basin), &lt;set&gt;.group (basin_group), &lt;set&gt;.mask (basin_mask)\n\n\n\nNegative values (e.g. fill values) are regions_undefined = -1, as are cells without a source value after remapping.\nHierarchical layers (region) have codes of two decimal digits per level below the first: the path 1.3.1 (Canadian Arctic Archipelago) is the code 10301, 1.3 (Greenland) is 103. A cell holds the code of its deepest region, so region:Greenland selects Greenland with all its subregions. Codes of FesmData ocean regions start at 51. Any layer may be hierarchical (hier, or the attribute hierarchical = 1 of its variable).\nFesmData zones: 0 open ocean, 1 shelf-break buffer, 2 continental shelf, 3 land.\nGrids: with a target grid (regions_init(reg, grid), or grid of regions_init_nml), a file whose grid has another name is remapped onto it by nearest neighbour. The grid of a file is its global attribute grid_name, else given (grid_name, namelist grid_&lt;layer&gt;); its cdo description grid_&lt;name&gt;.txt is read next to the file, else from maps/, and the map is cached in maps/. A file without a grid name must be on the target grid. Without a target grid, all layers must have the size of the first one.\nFesmData v1 regions files (one variable mask) are rejected by regions_load_fesmdata.",
+    "text": "regions holds named layers on a grid: 2D integer fields with a table of names of their codes, such as regions, zones or basins. Logical masks are derived from them with short selection expressions. The module knows nothing about the content of a layer beyond what it is told:\n\nAny file: an integer variable of any file (regions_load_layer, namelist key layers). The names of its codes are given (codes, names), else read from the CF attributes flag_values and flag_meanings, else the codes themselves.\nThe program: a field already in memory (regions_add_layer).\nFesmData v2 files, which every domain grid folder $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/ (the link fesmdata/) holds:\n\n\n\n\n\n\n\n\nFile\nLayers\n\n\n\n\n&lt;GRID&gt;_REGIONS.nc\nregion (hierarchical; values of region_3, names of region_1..3), zone\n\n\n&lt;GRID&gt;_BASINS-&lt;set&gt;.nc\n&lt;set&gt; (basin), &lt;set&gt;.group (basin_group), &lt;set&gt;.mask (basin_mask)\n\n\n\nNegative values (e.g. fill values) are regions_undefined = -1, as are cells without a source value after remapping.\nHierarchical layers (region) have codes of two decimal digits per level below the first: the path 1.3.1 (Canadian Arctic Archipelago) is the code 10301, 1.3 (Greenland) is 103. A cell holds the code of its deepest region, so region:Greenland selects Greenland with all its subregions. Codes of FesmData ocean regions start at 51. Any layer may be hierarchical (hier, or the attribute hierarchical = 1 of its variable).\nFesmData zones: 0 open ocean, 1 shelf-break buffer, 2 continental shelf, 3 land.\nGrids: with a target grid (regions_init(reg, grid), or grid of regions_init_nml), a file whose grid has another name is remapped onto it by nearest neighbour. The grid of a file is its global attribute grid_name, else given (grid_name, namelist grid_&lt;layer&gt;); its cdo description grid_&lt;name&gt;.txt is read next to the file, else from maps/, and the map is cached in maps/. A file without a grid name must be on the target grid. Without a target grid, all layers must have the size of the first one.\nFesmData v1 regions files (one variable mask) are rejected by regions_load_fesmdata.",
     "crumbs": [
       "Home",
       "Local packages",
@@ -1164,7 +1224,7 @@
     "href": "packages/regions.html#overview",
     "title": "regions",
     "section": "",
-    "text": "regions holds named layers on a grid: 2D integer fields with a table of names of their codes, such as regions, zones or basins. Logical masks are derived from them with short selection expressions. The module knows nothing about the content of a layer beyond what it is told:\n\nAny file: an integer variable of any file (regions_load_layer, namelist key layers). The names of its codes are given (codes, names), else read from the CF attributes flag_values and flag_meanings, else the codes themselves.\nThe program: a field already in memory (regions_add_layer).\nFesmData v2 files, which every domain grid folder $ICE_DATA/v2/&lt;Domain&gt;/&lt;GRID&gt;/ holds:\n\n\n\n\n\n\n\n\nFile\nLayers\n\n\n\n\n&lt;GRID&gt;_REGIONS.nc\nregion (hierarchical; values of region_3, names of region_1..3), zone\n\n\n&lt;GRID&gt;_BASINS-&lt;set&gt;.nc\n&lt;set&gt; (basin), &lt;set&gt;.group (basin_group), &lt;set&gt;.mask (basin_mask)\n\n\n\nNegative values (e.g. fill values) are regions_undefined = -1, as are cells without a source value after remapping.\nHierarchical layers (region) have codes of two decimal digits per level below the first: the path 1.3.1 (Canadian Arctic Archipelago) is the code 10301, 1.3 (Greenland) is 103. A cell holds the code of its deepest region, so region:Greenland selects Greenland with all its subregions. Codes of FesmData ocean regions start at 51. Any layer may be hierarchical (hier, or the attribute hierarchical = 1 of its variable).\nFesmData zones: 0 open ocean, 1 shelf-break buffer, 2 continental shelf, 3 land.\nGrids: with a target grid (regions_init(reg, grid), or grid of regions_init_nml), a file whose grid has another name is remapped onto it by nearest neighbour. The grid of a file is its global attribute grid_name, else given (grid_name, namelist grid_&lt;layer&gt;); its cdo description grid_&lt;name&gt;.txt is read next to the file, else from maps/, and the map is cached in maps/. A file without a grid name must be on the target grid. Without a target grid, all layers must have the size of the first one.\nFesmData v1 regions files (one variable mask) are rejected by regions_load_fesmdata.",
+    "text": "regions holds named layers on a grid: 2D integer fields with a table of names of their codes, such as regions, zones or basins. Logical masks are derived from them with short selection expressions. The module knows nothing about the content of a layer beyond what it is told:\n\nAny file: an integer variable of any file (regions_load_layer, namelist key layers). The names of its codes are given (codes, names), else read from the CF attributes flag_values and flag_meanings, else the codes themselves.\nThe program: a field already in memory (regions_add_layer).\nFesmData v2 files, which every domain grid folder $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/ (the link fesmdata/) holds:\n\n\n\n\n\n\n\n\nFile\nLayers\n\n\n\n\n&lt;GRID&gt;_REGIONS.nc\nregion (hierarchical; values of region_3, names of region_1..3), zone\n\n\n&lt;GRID&gt;_BASINS-&lt;set&gt;.nc\n&lt;set&gt; (basin), &lt;set&gt;.group (basin_group), &lt;set&gt;.mask (basin_mask)\n\n\n\nNegative values (e.g. fill values) are regions_undefined = -1, as are cells without a source value after remapping.\nHierarchical layers (region) have codes of two decimal digits per level below the first: the path 1.3.1 (Canadian Arctic Archipelago) is the code 10301, 1.3 (Greenland) is 103. A cell holds the code of its deepest region, so region:Greenland selects Greenland with all its subregions. Codes of FesmData ocean regions start at 51. Any layer may be hierarchical (hier, or the attribute hierarchical = 1 of its variable).\nFesmData zones: 0 open ocean, 1 shelf-break buffer, 2 continental shelf, 3 land.\nGrids: with a target grid (regions_init(reg, grid), or grid of regions_init_nml), a file whose grid has another name is remapped onto it by nearest neighbour. The grid of a file is its global attribute grid_name, else given (grid_name, namelist grid_&lt;layer&gt;); its cdo description grid_&lt;name&gt;.txt is read next to the file, else from maps/, and the map is cached in maps/. A file without a grid name must be on the target grid. Without a target grid, all layers must have the size of the first one.\nFesmData v1 regions files (one variable mask) are rejected by regions_load_fesmdata.",
     "crumbs": [
       "Home",
       "Local packages",
@@ -1320,7 +1380,7 @@
     "href": "packages/topodata.html",
     "title": "topodata",
     "section": "",
-    "text": "topodata reads a topography product of FesmData (Topo v2), $ICE_DATA/v2/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_TOPO-&lt;product&gt;.nc, as it is in the file. It holds no model state: updates of the geometry belong to the caller (e.g. htopo). Only the listed variables are loaded; the others stay unallocated (one field of Antarctica at 1 km is about 180 MB).\n\n\n\n\n\n\n\n\nVariable\nType\nMeaning\n\n\n\n\nz_bed, z_srf, H_ice\nreal(wp)\nBed and surface elevation, ice thickness (m)\n\n\nz_bed_sd\nreal(wp)\nStandard deviation of the bed elevation within the cell (m)\n\n\nf_ocn, f_land, f_grnd, f_flt\nreal(wp)\nArea fractions of ice-free ocean, ice-free land, grounded and floating ice\n\n\nmask\ninteger\nDominant surface type: topo_mask_ocean (0), _land (1), _grnd (2), _flt (3)\n\n\nsrc_id\ninteger\nSource with the largest weight (names in tab_src)\n\n\n\nMissing values are mv. The global attributes product and sources of the file are kept in par.\nRemapping: given a target grid whose name differs from the grid of the file, the real fields are remapped onto it with remap (default \"con\", conservative), mask and src_id by nearest neighbour. The grid of the file is read from grid_&lt;GRID&gt;.txt next to the file, else from maps/; the maps are cached in maps/. mask and src_id of target cells without a source value are -1. A conservative map is partial where the target grid reaches beyond the file’s grid, so values there are means over the covered part.\nOther files (e.g. ISMIP7) are read too: names gives the variable of the file for each entry of vars. A file without the global attribute grid_name must be on the target grid (only its size is checked; no remapping), as for the layers of regions.",
+    "text": "topodata reads a topography product of FesmData (Topo v2), $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_TOPO-&lt;product&gt;.nc, as it is in the file. It holds no model state: updates of the geometry belong to the caller (e.g. htopo). Only the listed variables are loaded; the others stay unallocated (one field of Antarctica at 1 km is about 180 MB).\n\n\n\n\n\n\n\n\nVariable\nType\nMeaning\n\n\n\n\nz_bed, z_srf, H_ice\nreal(wp)\nBed and surface elevation, ice thickness (m)\n\n\nz_bed_sd\nreal(wp)\nStandard deviation of the bed elevation within the cell (m)\n\n\nf_ocn, f_land, f_grnd, f_flt\nreal(wp)\nArea fractions of ice-free ocean, ice-free land, grounded and floating ice\n\n\nmask\ninteger\nDominant surface type: topo_mask_ocean (0), _land (1), _grnd (2), _flt (3)\n\n\nsrc_id\ninteger\nSource with the largest weight (names in tab_src)\n\n\n\nMissing values are mv. The global attributes product and sources of the file are kept in par.\nRemapping: given a target grid whose name differs from the grid of the file, the real fields are remapped onto it with remap (default \"con\", conservative), mask and src_id by nearest neighbour. The grid of the file is read from grid_&lt;GRID&gt;.txt next to the file, else from maps/; the maps are cached in maps/. mask and src_id of target cells without a source value are -1. A conservative map is partial where the target grid reaches beyond the file’s grid, so values there are means over the covered part.\nOther files (e.g. ISMIP7) are read too: names gives the variable of the file for each entry of vars. A file without the global attribute grid_name must be on the target grid (only its size is checked; no remapping), as for the layers of regions.",
     "crumbs": [
       "Home",
       "Local packages",
@@ -1332,7 +1392,7 @@
     "href": "packages/topodata.html#overview",
     "title": "topodata",
     "section": "",
-    "text": "topodata reads a topography product of FesmData (Topo v2), $ICE_DATA/v2/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_TOPO-&lt;product&gt;.nc, as it is in the file. It holds no model state: updates of the geometry belong to the caller (e.g. htopo). Only the listed variables are loaded; the others stay unallocated (one field of Antarctica at 1 km is about 180 MB).\n\n\n\n\n\n\n\n\nVariable\nType\nMeaning\n\n\n\n\nz_bed, z_srf, H_ice\nreal(wp)\nBed and surface elevation, ice thickness (m)\n\n\nz_bed_sd\nreal(wp)\nStandard deviation of the bed elevation within the cell (m)\n\n\nf_ocn, f_land, f_grnd, f_flt\nreal(wp)\nArea fractions of ice-free ocean, ice-free land, grounded and floating ice\n\n\nmask\ninteger\nDominant surface type: topo_mask_ocean (0), _land (1), _grnd (2), _flt (3)\n\n\nsrc_id\ninteger\nSource with the largest weight (names in tab_src)\n\n\n\nMissing values are mv. The global attributes product and sources of the file are kept in par.\nRemapping: given a target grid whose name differs from the grid of the file, the real fields are remapped onto it with remap (default \"con\", conservative), mask and src_id by nearest neighbour. The grid of the file is read from grid_&lt;GRID&gt;.txt next to the file, else from maps/; the maps are cached in maps/. mask and src_id of target cells without a source value are -1. A conservative map is partial where the target grid reaches beyond the file’s grid, so values there are means over the covered part.\nOther files (e.g. ISMIP7) are read too: names gives the variable of the file for each entry of vars. A file without the global attribute grid_name must be on the target grid (only its size is checked; no remapping), as for the layers of regions.",
+    "text": "topodata reads a topography product of FesmData (Topo v2), $FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/&lt;GRID&gt;_TOPO-&lt;product&gt;.nc, as it is in the file. It holds no model state: updates of the geometry belong to the caller (e.g. htopo). Only the listed variables are loaded; the others stay unallocated (one field of Antarctica at 1 km is about 180 MB).\n\n\n\n\n\n\n\n\nVariable\nType\nMeaning\n\n\n\n\nz_bed, z_srf, H_ice\nreal(wp)\nBed and surface elevation, ice thickness (m)\n\n\nz_bed_sd\nreal(wp)\nStandard deviation of the bed elevation within the cell (m)\n\n\nf_ocn, f_land, f_grnd, f_flt\nreal(wp)\nArea fractions of ice-free ocean, ice-free land, grounded and floating ice\n\n\nmask\ninteger\nDominant surface type: topo_mask_ocean (0), _land (1), _grnd (2), _flt (3)\n\n\nsrc_id\ninteger\nSource with the largest weight (names in tab_src)\n\n\n\nMissing values are mv. The global attributes product and sources of the file are kept in par.\nRemapping: given a target grid whose name differs from the grid of the file, the real fields are remapped onto it with remap (default \"con\", conservative), mask and src_id by nearest neighbour. The grid of the file is read from grid_&lt;GRID&gt;.txt next to the file, else from maps/; the maps are cached in maps/. mask and src_id of target cells without a source value are -1. A conservative map is partial where the target grid reaches beyond the file’s grid, so values there are means over the covered part.\nOther files (e.g. ISMIP7) are read too: names gives the variable of the file for each entry of vars. A file without the global attribute grid_name must be on the target grid (only its size is checked; no remapping), as for the layers of regions.",
     "crumbs": [
       "Home",
       "Local packages",
@@ -1452,7 +1512,7 @@
     "href": "packages/varslice.html#namelist-configuration",
     "title": "varslice",
     "section": "Namelist configuration",
-    "text": "Namelist configuration\nvarslice_init_nml reads the following keys from the given group (via nml_read in varslice_par_load):\nEach key bundles related quantities so the group stays short while keeping the full provenance explicit in the file:\n\n\n\n\n\n\n\n\nKey\nType\nMeaning\n\n\n\n\nfilename\nstring\nSource file or glob pattern; supports {domain}, {grid_name}, and any extra {key} tokens passed via subs\n\n\nname\nstring\nnetCDF variable name\n\n\nunits\nstring(2)\n\"&lt;units_in&gt;\" \"&lt;units_out&gt;\" (metadata only)\n\n\nscaling\nreal(2)\n&lt;unit_scale&gt; &lt;unit_offset&gt; applied on read: value*scale + offset\n\n\ntime\nreal(5)\n&lt;active&gt; &lt;x0&gt; &lt;x1&gt; &lt;dx&gt; &lt;n_sub&gt; (see below)\n\n\n\nNotes on time = [active, x0, x1, dx, n_sub]:\n\nactive flags time-dependence: 1.0 = the variable is time-varying; 0.0 = the variable is static and x0..x1 merely document the period the data represents (kept for provenance, never collapsed).\nx0, x1, dx define the file’s time axis (used when active = 1.0); the generated axis must match the netCDF time length or init aborts.\nWhen active = 1.0 and dx == 0, x1 is forced to x0 (single timestep).\nn_sub is optional (trailing) and defaults to 0. If n_sub &gt; 1, a sub-annual axis is built with n_sub steps per major unit (e.g. n_sub = 12 for monthly data) and with_time_sub is set .TRUE..\n\nThese keys unpack internally to par%units_in/units_out, par%unit_scale/unit_offset, par%with_time, and par%time_par(4).\nExample namelist group:\n&ts_series\n    filename = \"input/{domain}/{grid_name}_climate.nc\"\n    name     = \"t2m\"\n    units    = \"K\" \"degC\"\n    scaling  = 1.0 -273.15                     ! value*scale + offset\n    time     = 1.0, -22000.0, 0.0, 1.0, 12.0   ! active, x0, x1, dx, n_sub (monthly)\n/",
+    "text": "Namelist configuration\nvarslice_init_nml reads the following keys from the given group (via nml_read in varslice_par_load):\nEach key bundles related quantities so the group stays short while keeping the full provenance explicit in the file:\n\n\n\n\n\n\n\n\nKey\nType\nMeaning\n\n\n\n\nfilename\nstring\nSource file or glob pattern; supports {domain}, {grid_name}, and any extra {key} tokens passed via subs\n\n\nname\nstring\nnetCDF variable name\n\n\nunits\nstring(2)\n\"&lt;units_in&gt;\" \"&lt;units_out&gt;\" (metadata only)\n\n\nscaling\nreal(2)\n&lt;unit_scale&gt; &lt;unit_offset&gt; applied on read: value*scale + offset\n\n\ntime\nreal(5)\n&lt;active&gt; &lt;x0&gt; &lt;x1&gt; &lt;dx&gt; &lt;n_sub&gt; (see below)\n\n\nfill\nstring\nOptional: \"none\" (default), \"nearest\" or \"const\" (with fill_value)\n\n\nremap, grid_src\nstring\nOptional: read the field on its own grid grid_src and remap it with the kernel remap (bilin, con, nn, …) onto the target grid given at init: a projected grid from grid_&lt;grid_src&gt;.txt next to the file (FesmData) or in maps/, else a lon-lat grid from the file’s lon/lat\n\n\n\nNotes on time = [active, x0, x1, dx, n_sub]:\n\nactive flags time-dependence: 1.0 = the variable is time-varying; 0.0 = the variable is static and x0..x1 merely document the period the data represents (kept for provenance, never collapsed).\nx0, x1, dx define the file’s time axis (used when active = 1.0); the generated axis must match the netCDF time length or init aborts.\nWhen active = 1.0 and dx == 0, x1 is forced to x0 (single timestep).\nn_sub is optional (trailing) and defaults to 0. If n_sub &gt; 1, a sub-annual axis is built with n_sub steps per major unit (e.g. n_sub = 12 for monthly data) and with_time_sub is set .TRUE..\n\nThese keys unpack internally to par%units_in/units_out, par%unit_scale/unit_offset, par%with_time, and par%time_par(4).\nExample namelist group:\n&ts_series\n    filename = \"input/{domain}/{grid_name}_climate.nc\"\n    name     = \"t2m\"\n    units    = \"K\" \"degC\"\n    scaling  = 1.0 -273.15                     ! value*scale + offset\n    time     = 1.0, -22000.0, 0.0, 1.0, 12.0   ! active, x0, x1, dx, n_sub (monthly)\n/",
     "crumbs": [
       "Home",
       "Local packages",

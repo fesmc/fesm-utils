@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.9.38">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,13 +12,10 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
+code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: 1.5em;}
-div.column{flex: auto;}
-@media screen {
-div.columns{gap: min(4vw, 1.5em);}
-div.column{overflow-x: auto;}
-}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -79,10 +76,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-d37df8fd7b43e116a420b34c208e916c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-87aa3f3d30365e420552d067b3910e07.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-ad05a1de936d1208ecda519363d22f23.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-c8c2daee7bbd2903b6d8acac72036f8c.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -168,6 +165,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         <li>
     <a class="dropdown-item" href="../packages/htopo.html">
  <span class="dropdown-text">htopo — hi-res geometry hub</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/fesmdata.html">
+ <span class="dropdown-text">fesmdata — FesmData helpers</span></a>
   </li>  
         <li>
     <a class="dropdown-item" href="../packages/zremap.html">
@@ -311,6 +312,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../packages/fesmdata.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesmdata</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../packages/zremap.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">zremap</span></a>
   </div>
@@ -440,7 +447,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ul>
 <li><strong>Any file</strong>: an integer variable of any file (<code>regions_load_layer</code>, namelist key <code>layers</code>). The names of its codes are given (<code>codes</code>, <code>names</code>), else read from the CF attributes <code>flag_values</code> and <code>flag_meanings</code>, else the codes themselves.</li>
 <li><strong>The program</strong>: a field already in memory (<code>regions_add_layer</code>).</li>
-<li><strong><a href="https://github.com/fesmc/FesmData">FesmData</a> v2</strong> files, which every domain grid folder <code>$ICE_DATA/v2/&lt;Domain&gt;/&lt;GRID&gt;/</code> holds:</li>
+<li><strong><a href="https://github.com/fesmc/FesmData">FesmData</a> v2</strong> files, which every domain grid folder <code>$FESMDATA/products/&lt;Domain&gt;/&lt;GRID&gt;/</code> (the link <code>fesmdata/</code>) holds:</li>
 </ul>
 <table class="caption-top table">
 <colgroup>
