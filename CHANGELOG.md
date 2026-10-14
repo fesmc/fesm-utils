@@ -17,6 +17,10 @@ All notable changes to fesm-utils are documented here.
   (`grid_<grid_src>.txt` next to the file, as FesmData writes it, else in `maps/`) is read
   from it (`fesmdata_grid_read`); otherwise from the lon/lat of the file as before.
   New `fesmdata_grid_desc_exists`.
+- **varslice**: climatologies (a sub-annual cycle without years, `time = 0 ... nsub`, `nsub > 1`)
+  of 3D fields (`to(x,y,depth,month)`; was "4D array without time dimension is not yet
+  supported"); a `range_mean` update with `rep = 1` gives the mean over the cycle (also for 2D
+  fields with a cycle), `varslice_sub_mean` averages it. `make test-varslice-clim`.
 
 ### Fixed
 - **ncio**: `nc_read` without `count` stops when a file dimension covered by the array

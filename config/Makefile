@@ -438,6 +438,14 @@ test-units : fesmutils-static
 		@echo "    units test program ready: $(bindir)/test_units.x"
 		@echo " "
 
+# varslice climatology (sub-annual cycle without years) test program
+test-varslice-clim : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_varslice_clim.x $(testdir)/varslice/test_varslice_clim.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    varslice climatology test program ready: $(bindir)/test_varslice_clim.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
@@ -541,6 +549,7 @@ usage:
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
 	@echo " make test-units       : compiles the fesmdata units test program"
+	@echo " make test-varslice-clim : compiles the varslice climatology test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

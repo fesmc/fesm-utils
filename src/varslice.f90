@@ -62,6 +62,7 @@ module varslice
         character(len=56) :: slice_method
         integer           :: range_rep
         character(len=32) :: fill_method = ""
+        logical           :: clim_collapsed = .FALSE.   ! climatology read as the mean of its cycle
         
         ! Variable information
         integer,  allocatable :: dim(:)  
@@ -484,6 +485,8 @@ contains
         integer  :: range_rep
         integer,  allocatable :: kk(:)
         real(wp), allocatable, target :: var(:,:,:,:)
+        real(wp), allocatable :: clim_mean(:,:,:)
+        logical  :: is_clim, collapse
         integer  :: s, nsp
         real(wp), pointer, contiguous :: src2d(:,:), dst2d(:,:)
 
@@ -496,6 +499,13 @@ contains
         else
             range_rep     = 1 
         end if
+
+        ! A climatology: a sub-annual cycle without years (time inactive, nsub > 1),
+        ! its last dimension the cycle; a range mean with rep=1 collapses it
+        is_clim  = (.not. with_time) .and. nint(par%time_par(4)) .gt. 1
+        collapse = .FALSE.
+        if (is_clim .and. present(method)) &
+            collapse = (trim(method) .eq. "range_mean" .and. range_rep .eq. 1)
 
         if (range_rep .gt. 1) then
             with_time_sub = .TRUE.
@@ -572,14 +582,15 @@ contains
         end if 
 
         if ( allocated(vs%var) .and. trim(fill_method) .eq. trim(vs%fill_method) .and. &
-             ( .not. with_time .or. &
+             ( (.not. with_time .and. (.not. is_clim .or. collapse .eqv. vs%clim_collapsed)) .or. &
                ( trim(slice_method) .eq. trim(vs%slice_method) &
                 .and. range_rep .eq. vs%range_rep &
                 .and. vs%time_range(1) .eq. time_range(1) &
                 .and. vs%time_range(2) .eq. time_range(2) ) ) ) then
 
             ! Do nothing, the varslice object is already up to date
-            ! for the current time, method and fill (data without time: always).
+            ! for the current time, method and fill (data without time: always,
+            ! a climatology as long as it is (not) collapsed to its mean alike).
 
         else
 
@@ -623,13 +634,30 @@ contains
                         ! 3D variable 
                         call nc_read(par%filename,par%name,vs%var(:,:,:,1),missing_value=mv)
 
+                    case(4)
+
+                        ! 3D variable with its sub-annual cycle (a climatology:
+                        ! varslice_init_data allows it only with nsub > 1)
+                        allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),vs%dim(4)))
+                        call nc_read(par%filename,par%name,vs%var,missing_value=mv)
+
                     case DEFAULT 
 
                         call varslice_error("varslice_update", &
-                            "ndim >= 4 with no time dimension is not allowed.", &
+                            "ndim > 4 with no time dimension is not allowed.", &
                             "ndim = "//to_str(par%ndim))
 
                 end select
+
+                ! A climatology (sub-annual cycle without years) asked for a
+                ! range mean with rep=1: the mean over its cycle
+                vs%clim_collapsed = collapse
+                if (collapse) then
+                    clim_mean = varslice_sub_mean(vs)
+                    deallocate(vs%var)
+                    allocate(vs%var(size(clim_mean,1),size(clim_mean,2),size(clim_mean,3),1))
+                    vs%var(:,:,:,1) = clim_mean
+                end if
 
             else 
                 ! Cases with a time dimension (more complicated)
@@ -1501,9 +1529,17 @@ contains
                     call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
                     call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
                     call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
+                else if (nint(vs%par%time_par(4)) .gt. 1) then
+                    ! 3D space + sub-annual cycle without years (a climatology,
+                    ! e.g. monthly ocean fields): the last dimension is the cycle
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                    call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
                 else
                     call varslice_error("varslice_init_data", &
-                        "4D array without time dimension is not yet supported.")
+                        "4D array without time dimension needs a sub-annual period "// &
+                        "(time = 0 ... nsub, nsub > 1: the last dimension is the cycle).", &
+                        "name = "//trim(vs%par%name))
                 end if
 
             case DEFAULT
@@ -1687,7 +1723,7 @@ contains
         integer :: shp(3)
         real(wp), allocatable :: src(:,:), dst(:)
 
-        if (.not. vs%par%with_time) then
+        if (.not. vs%par%with_time .and. varslice_nsub(vs) .le. 1) then
             v = vs%var(:,:,:,1)
             return
         end if

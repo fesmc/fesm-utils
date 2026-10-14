@@ -136,6 +136,12 @@ applied. `rep=1` reduces the whole range to one value; `rep=12` applies the
 statistic to every 12th index, yielding 12 values along the time dimension
 (e.g. a monthly climatology).
 
+**Climatologies.** Data with a sub-annual cycle but no years (`time = 0 ... nsub`,
+`nsub > 1`, e.g. a monthly ocean climatology `to(x,y,depth,month)` or `t2m(x,y,month)`)
+keep the cycle in their last dimension (`var(:,:,:,m)`, or `var(:,:,m,1)` without depth).
+An update with `method = "range_mean"` and `rep = 1` gives the mean over the cycle; any
+other update keeps it, and `varslice_sub_mean` averages it.
+
 **`fill`** fills the missing values of the slice: `"nearest"` (value of the nearest
 valid cell, per horizontal slice; a level without data takes the level above,
 `fill_nearest_levels`) or `"const"` (`fill_value`). By default the group's
