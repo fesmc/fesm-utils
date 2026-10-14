@@ -4,6 +4,12 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Added
+- **fesmdata**: `fesmdata_flux_conv(fname, varname, units_out)`, the factor of a water flux
+  from the units attribute of the variable to `units_out` (kg m-2 or mm w.e. per s, d or yr;
+  1 yr = 365.25 d), and `fesmdata_temp_ref(fname, varname)`, the reference temperature of
+  the units (0 for K, 273.15 for degC); both stop on missing or unknown units. `make test-units`.
+
 ### Fixed
 - **ncio**: `nc_read` without `count` stops when a file dimension covered by the array
   has another length than the array (it read the leading block silently, e.g. the corner

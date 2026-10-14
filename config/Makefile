@@ -430,6 +430,14 @@ test-htopo : fesmutils-static
 		@echo "    htopo test program ready: $(bindir)/test_htopo.x"
 		@echo " "
 
+# fesmdata units (water-flux factor, reference temperature) test program
+test-units : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_units.x $(testdir)/fesmdata/test_units.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    units test program ready: $(bindir)/test_units.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
@@ -532,6 +540,7 @@ usage:
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
+	@echo " make test-units       : compiles the fesmdata units test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

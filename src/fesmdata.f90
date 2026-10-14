@@ -1,6 +1,6 @@
 module fesmdata
-    ! Helpers for reading FesmData v2 files ($ICE_DATA/v2/<Domain>/<GRID>/),
-    ! shared by the regions and topodata modules:
+    ! Helpers for reading FesmData v2 files (fesmdata/<Domain>/<GRID>/),
+    ! shared by the regions and topodata modules and the model hosts:
     !   - flag tables: the codes and names of a categorical variable, from its
     !     CF attributes flag_values and flag_meanings
     !   - the grid of a file: its global attribute grid_name, and the grid
@@ -11,6 +11,8 @@ module fesmdata
     !     without grid_name must then be on the target grid)
     !   - reading a 2D field, remapped onto a target grid if needed
     !   - {domain}, {grid_name} and {key} placeholders in paths
+    !   - units of a variable (its units attribute): the factor of a water
+    !     flux to other units, the reference temperature of a temperature
 
     use, intrinsic :: iso_fortran_env, only : error_unit
 
@@ -42,6 +44,7 @@ module fesmdata
     public :: fesmdata_grid_name, fesmdata_grid_read
     public :: fesmdata_map_init, fesmdata_read_field
     public :: fesmdata_parse_path
+    public :: fesmdata_flux_conv, fesmdata_temp_ref
 
 contains
 
@@ -255,6 +258,156 @@ contains
         end do
 
     end function normalize_name
+
+    ! ===== Units of a variable ================================================
+
+    function fesmdata_flux_conv(fname, varname, units_out) result(fac)
+        ! Factor converting a water flux from the units of the variable (its
+        ! units attribute) to units_out: var_out = fac*var. The mass is
+        ! kg m-2 or mm (water equivalent, the same), the time s, d or yr
+        ! (1 yr = 365.25 d, as in FesmData), e.g. "kg m-2 yr-1", "mm d-1",
+        ! "mm w.e. a-1", "mm/d". Stops on missing or unknown units.
+
+        implicit none
+
+        character(len=*), intent(IN) :: fname
+        character(len=*), intent(IN) :: varname
+        character(len=*), intent(IN) :: units_out
+        real(wp) :: fac
+
+        character(len=256) :: units
+
+        units = var_units(fname, varname, "fesmdata_flux_conv")
+        fac   = flux_time(units_out, fname, varname) / flux_time(units, fname, varname)
+
+    end function fesmdata_flux_conv
+
+    function fesmdata_temp_ref(fname, varname) result(t_ref)
+        ! Reference temperature of the units of a temperature variable (its
+        ! units attribute), to add to get kelvin: 0 for K, 273.15 for degC.
+        ! Stops on missing or unknown units.
+
+        implicit none
+
+        character(len=*), intent(IN) :: fname
+        character(len=*), intent(IN) :: varname
+        real(wp) :: t_ref
+
+        character(len=256) :: key
+
+        key = units_key(var_units(fname, varname, "fesmdata_temp_ref"))
+
+        select case(trim(key))
+            case("k","kelvin","degk","degreesk")
+                t_ref = 0.0_wp
+            case("degc","degreesc","degreec","degrees_c","degree_c","deg_c","c","celsius", &
+                 "degreescelsius","degreecelsius","degrees_celsius","degree_celsius", &
+                 "degreescelcius","degreecelcius","degrees_celcius","degree_celcius")
+                ! (the misspelling celcius occurs in older files)
+                t_ref = 273.15_wp
+            case default
+                call fesmdata_error("fesmdata_temp_ref", "temperature units not recognized.", &
+                    "file    = "//trim(fname)//new_line("a")// &
+                    "varname = "//trim(varname)//new_line("a")// &
+                    "units   = "//trim(key))
+        end select
+
+    end function fesmdata_temp_ref
+
+    function var_units(fname, varname, proc) result(units)
+        ! The units attribute of a variable; stops without one.
+
+        implicit none
+
+        character(len=*), intent(IN) :: fname, varname, proc
+        character(len=256) :: units
+
+        if (.not. nc_exists_attr(fname, varname, "units")) then
+            call fesmdata_error(proc, "variable without a units attribute.", &
+                "file    = "//trim(fname)//new_line("a")// &
+                "varname = "//trim(varname))
+        end if
+        call nc_read_attr(fname, varname, "units", units)
+
+    end function var_units
+
+    pure function units_key(units) result(key)
+        ! Units in lower case without blanks and exponent markers:
+        ! "kg m**-2 d**-1" => "kgm-2d-1".
+
+        implicit none
+
+        character(len=*), intent(IN) :: units
+        character(len=256) :: key
+
+        integer :: i, n, c
+
+        key = ""
+        n = 0
+        do i = 1, len_trim(units)
+            if (units(i:i) .eq. " " .or. units(i:i) .eq. "*") cycle
+            c = iachar(units(i:i))
+            if (c .ge. iachar("A") .and. c .le. iachar("Z")) c = c + 32
+            n = n + 1
+            key(n:n) = achar(c)
+        end do
+
+    end function units_key
+
+    function flux_time(units, fname, varname) result(dt)
+        ! The time unit [s] of water-flux units (mass kg m-2 or mm w.e.).
+
+        implicit none
+
+        character(len=*), intent(IN) :: units, fname, varname
+        real(wp) :: dt
+
+        real(wp), parameter :: sec_day  = 86400.0_wp
+        real(wp), parameter :: sec_year = 365.25_wp*sec_day
+
+        character(len=256) :: key, tunit
+        integer :: q
+
+        key = units_key(units)
+
+        ! Mass part
+        if (index(key,"kgm-2") .eq. 1) then
+            key = key(6:)
+        else if (index(key,"mmw.e.") .eq. 1) then
+            key = key(7:)
+        else if (index(key,"mmwe") .eq. 1) then
+            key = key(5:)
+        else if (index(key,"mm") .eq. 1) then
+            key = key(3:)
+        else
+            key = ""
+        end if
+
+        ! Time part: "<t>-1" or "/<t>"
+        tunit = ""
+        q = len_trim(key)
+        if (q .gt. 2) then
+            if (key(q-1:q) .eq. "-1") tunit = key(1:q-2)
+        end if
+        if (len_trim(tunit) .eq. 0 .and. q .gt. 1) then
+            if (key(1:1) .eq. "/") tunit = key(2:q)
+        end if
+
+        select case(trim(tunit))
+            case("s","sec","second")
+                dt = 1.0_wp
+            case("d","day")
+                dt = sec_day
+            case("yr","a","year")
+                dt = sec_year
+            case default
+                call fesmdata_error("fesmdata_flux_conv", "water-flux units not recognized.", &
+                    "file    = "//trim(fname)//new_line("a")// &
+                    "varname = "//trim(varname)//new_line("a")// &
+                    "units   = "//trim(units))
+        end select
+
+    end function flux_time
 
     ! ===== Grid of a file =====================================================
 
