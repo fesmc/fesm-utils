@@ -166,6 +166,8 @@ full provenance explicit in the file:
 | `units` | string(2) | `"<units_in>" "<units_out>"` (metadata only) |
 | `scaling` | real(2) | `<unit_scale> <unit_offset>` applied on read: `value*scale + offset` |
 | `time` | real(5) | `<active> <x0> <x1> <dx> <n_sub>` (see below) |
+| `fill` | string | Optional: `"none"` (default), `"nearest"` or `"const"` (with `fill_value`) |
+| `remap`, `grid_src` | string | Optional: read the field on its own grid `grid_src` and remap it with the kernel `remap` (`bilin`, `con`, `nn`, ...) onto the target grid given at init: a projected grid from `grid_<grid_src>.txt` next to the file (FesmData) or in `maps/`, else a lon-lat grid from the file's lon/lat |
 
 Notes on `time = [active, x0, x1, dx, n_sub]`:
 

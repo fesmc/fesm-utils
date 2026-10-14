@@ -1,0 +1,63 @@
+---
+title: "fesmdata"
+subtitle: "Helpers for reading FesmData v2 products"
+---
+
+## Overview
+
+`fesmdata` holds what the modules reading [FesmData](https://github.com/fesmc/FesmData)
+v2 products share ([regions](regions.qmd), [topodata](topodata.qmd), [varslice](varslice.qmd))
+and what the model hosts use directly. The products are
+`$FESMDATA/products/<Domain>/<GRID>/<GRID>_<Dataset>-<product>.nc`, usually reached
+through a link `fesmdata/` in the run folder, with the cdo description of their grid,
+`grid_<GRID>.txt`, next to them.
+
+- **Grid of a file**: its global attribute `grid_name`, and the grid itself from
+  `grid_<GRID>.txt` next to the file, else in `maps/`.
+- **Fields on a target grid**: a 2D field is read as it is when the file is on the
+  target grid, else remapped from the grid of the file (`fesmdata_map_init`,
+  `fesmdata_read_field`).
+- **Units** from the `units` attribute of a variable: the factor of a water flux to
+  other units and the reference temperature of a temperature. Unknown or missing
+  units stop the program.
+- **Flag tables**: the codes and names of a categorical variable (CF `flag_values`,
+  `flag_meanings`).
+- **Paths**: `{domain}`, `{grid_name}` and `{key}` placeholders.
+
+## Public API
+
+| Procedure | Description |
+|---|---|
+| `fesmdata_grid_name(fname)` | The global attribute `grid_name` of a file |
+| `fesmdata_grid_read(grid, fname, [grid_name])` | The grid of a file from its cdo description |
+| `fesmdata_grid_desc_exists(fname, grid_name)` | Whether `grid_<grid_name>.txt` exists next to the file or in `maps/` |
+| `fesmdata_map_init(map, remap, nx, ny, fname, varname, method, [grid], ...)` | How a field gets onto the target grid: `remap` and its `map`, or read as it is |
+| `fesmdata_read_field(fname, varname, var, nx, ny, remap, map)` | Read a 2D field (real or integer), remapped if needed; missing values as `mv` |
+| `fesmdata_flux_conv(fname, varname, units_out)` | Factor of a water flux from the units of the variable to `units_out`: kg m⁻² or mm w.e. per s, d or yr (1 yr = 365.25 d), e.g. `"kg m-2 yr-1"`, `"mm d**-1"`, `"mm/d"` |
+| `fesmdata_temp_ref(fname, varname)` | Reference temperature of the units of a temperature, to add to get kelvin: 0 for K, 273.15 for °C (`degC`, `degrees C`, `degree_celsius`, ...) |
+| `fesmdata_parse_path(path, domain, grid_name, [subs])` | Replace the placeholders of a path |
+| `flag_table_read`, `flag_codes`, `flag_name`, ... | Flag tables of categorical variables |
+
+## Usage example
+
+```fortran
+use fesmdata, only : fesmdata_flux_conv, fesmdata_temp_ref, &
+                     fesmdata_map_init, fesmdata_read_field
+
+! Precipitation in mm/d and temperature in K, whatever the units of the file
+call nc_read(path, "pr", pr)
+pr  = pr  * fesmdata_flux_conv(path, "pr", "mm d-1")
+call nc_read(path, "t2m", t2m)
+t2m = t2m + fesmdata_temp_ref(path, "t2m")
+
+! A geothermal heat flux on the model grid, remapped from the grid of the file
+call fesmdata_map_init(map, remap, nx, ny, path_ghf, "ghf", "bilin", grid=grid)
+call fesmdata_read_field(path_ghf, "ghf", ghf, nx, ny, remap, map)
+```
+
+Tests: `make test-units`.
+
+## See also
+
+- [regions](regions.qmd), [topodata](topodata.qmd): layers and topography of FesmData products.
+- [varslice](varslice.qmd): `remap` from a projected FesmData grid (`grid_src` with its `grid_<GRID>.txt`).

@@ -16,7 +16,7 @@ about the content of a layer beyond what it is told:
   `flag_meanings`, else the codes themselves.
 - **The program**: a field already in memory (`regions_add_layer`).
 - **[FesmData](https://github.com/fesmc/FesmData) v2** files, which every
-  domain grid folder `$ICE_DATA/v2/<Domain>/<GRID>/` holds:
+  domain grid folder `$FESMDATA/products/<Domain>/<GRID>/` (the link `fesmdata/`) holds:
 
 | File | Layers |
 |---|---|
