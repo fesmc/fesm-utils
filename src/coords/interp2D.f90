@@ -625,17 +625,18 @@ contains
 !             stop 
         end if 
 
-        ! Fill in boundaries too 
-        do i = 1+nr, 1, -1
+        ! Fill in boundaries too (strips clamped to the array, which may be
+        ! narrower than the stencil: nx or ny < nr+2)
+        do i = min(1+nr,nx-1), 1, -1
             where(z(i,:) .eq. missing_value .and. mask_apply(i,:)) z(i,:) = z(i+1,:)
         end do 
-        do i = nx-nr, nx
+        do i = max(nx-nr,2), nx
             where(z(i,:) .eq. missing_value .and. mask_apply(i,:)) z(i,:) = z(i-1,:)
         end do 
-        do j = 1+nr, 1, -1
+        do j = min(1+nr,ny-1), 1, -1
             where(z(:,j) .eq. missing_value .and. mask_apply(:,j)) z(:,j) = z(:,j+1)
         end do 
-        do j = ny-nr, ny
+        do j = max(ny-nr,2), ny
             where(z(:,j) .eq. missing_value .and. mask_apply(:,j)) z(:,j) = z(:,j-1)
         end do 
 
@@ -981,17 +982,18 @@ contains
             stop 
         end if 
 
-        ! Fill in boundaries too 
-        do i = 1+nr, 1, -1
+        ! Fill in boundaries too (strips clamped to the array, which may be
+        ! narrower than the stencil: nx or ny < nr+2)
+        do i = min(1+nr,nx-1), 1, -1
             where(z(i,:) .eq. missing_value) z(i,:) = z(i+1,:)
         end do 
-        do i = nx-nr, nx
+        do i = max(nx-nr,2), nx
             where(z(i,:) .eq. missing_value) z(i,:) = z(i-1,:)
         end do 
-        do j = 1+nr, 1, -1
+        do j = min(1+nr,ny-1), 1, -1
             where(z(:,j) .eq. missing_value) z(:,j) = z(:,j+1)
         end do 
-        do j = ny-nr, ny
+        do j = max(ny-nr,2), ny
             where(z(:,j) .eq. missing_value) z(:,j) = z(:,j-1)
         end do 
 

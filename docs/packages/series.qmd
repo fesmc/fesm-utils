@@ -48,7 +48,9 @@ argument):
 | `series_interp_sig(ser, time)` | Interpolate the per-channel standard deviation to `time`; returns zeros if the series carries no sigma. |
 
 The `series_class` exposes `filename`, `nt` (time points), `nc` (channels),
-`time(nt)`, `var(nt,nc)`, and `sigma(nt,nc)` (unallocated when absent).
+`time(nt)`, `var(nt,nc)`, and `sigma(nt,nc)` (unallocated when absent). The time
+axis `time` and the `time` argument of the interpolators are `real(dp)`; values
+are `wp`.
 
 ## Usage
 
@@ -60,7 +62,7 @@ real(wp) :: co2
 
 ! ASCII: format detected from the extension; no variable names needed
 call series_load(ser, "input/co2.dat")
-co2 = series_interp1(ser, time=1500.0_wp)     ! clamped-linear at t = 1500
+co2 = series_interp1(ser, time=1500.0_dp)     ! clamped-linear at t = 1500
 ```
 
 For a netCDF file, name the value variable (and optionally the time coordinate
@@ -73,8 +75,8 @@ real(wp) :: v(12), s(12)      ! e.g. 12 monthly channels
 call series_load(ser, "input/monthly.nc", varname="pr", &
                  time_name="time", sigma_name="pr_sd")
 
-v = series_interp(ser, time=1850.0_wp)        ! all channels
-s = series_interp_sig(ser, time=1850.0_wp)    ! per-channel stddev (0 if absent)
+v = series_interp(ser, time=1850.0_dp)        ! all channels
+s = series_interp_sig(ser, time=1850.0_dp)    ! per-channel stddev (0 if absent)
 ```
 
 Or load from a namelist group:

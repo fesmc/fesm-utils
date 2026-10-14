@@ -51,6 +51,12 @@ multi-file matching, and unit scaling.
 :::
 
 ::: {.pkg-card}
+### [zremap](packages/zremap.qmd)
+Remap a surface field (SMB, temperature) to a changing ice-sheet surface via
+local field–elevation profiles in a Gaussian neighbourhood.
+:::
+
+::: {.pkg-card}
 ### [ncio](packages/ncio.qmd)
 High-level netCDF input/output for Fortran — create files, dimensions,
 variables, and attributes with minimal boilerplate.

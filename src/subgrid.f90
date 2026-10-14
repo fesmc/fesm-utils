@@ -9,13 +9,17 @@ module subgrid
     public :: calc_subgrid_array            ! generic (sp/dp)
     public :: calc_subgrid_array_mask       ! generic (sp/dp), with mask
     public :: calc_subgrid_array_cell       ! generic (sp/dp)
+    public :: calc_subgrid_array_quad       ! generic (sp/dp)
     public :: calc_subgrid_array_dp         ! double-precision worker
     public :: calc_subgrid_array_mask_dp    ! double-precision worker (mask)
     public :: calc_subgrid_array_cell_dp    ! double-precision worker
+    public :: calc_subgrid_array_quad_dp    ! double-precision worker
 
     ! The subgrid interpolation is always performed in double precision (the _dp
-    ! procedures). The _sp procedures are thin wrappers that promote their
-    ! single-precision arguments, call the _dp worker and demote the result.
+    ! procedures). The _sp procedures are thin wrappers that promote the 3x3
+    ! neighbourhood of cell (i,j) (all the workers read), call the _dp worker on
+    ! it and demote the result. Promoting the whole field instead would cost
+    ! O(nx*ny) per cell.
     ! Exposing each operation as a generic interface lets callers built in
     ! either precision (e.g. Yelmo with wp=sp or wp=dp) use the generic name and
     ! have it resolve to the matching specific by argument kind.
@@ -35,6 +39,11 @@ module subgrid
         module procedure calc_subgrid_array_cell_dp
     end interface calc_subgrid_array_cell
 
+    interface calc_subgrid_array_quad
+        module procedure calc_subgrid_array_quad_sp
+        module procedure calc_subgrid_array_quad_dp
+    end interface calc_subgrid_array_quad
+
 contains
 
     ! ===================================================================
@@ -42,6 +51,7 @@ contains
     ! ===================================================================
 
     subroutine calc_subgrid_array_sp(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Single-precision wrapper for calc_subgrid_array_dp.
 
         implicit none
 
@@ -52,11 +62,13 @@ contains
         integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
 
         ! Local variables
-        real(dp), allocatable :: vint_dble(:,:)
+        real(dp) :: v_nb(3,3)
+        real(dp) :: vint_dble(nxi,nxi)
 
-        allocate(vint_dble(nxi,nxi))
+        ! Neighbourhood of (i,j), at local indices 1:3 with the cell at (2,2)
+        v_nb = neighborhood_dp(v,i,j,im1,ip1,jm1,jp1)
 
-        call calc_subgrid_array_dp(vint_dble,real(v,dp),nxi,i,j,im1,ip1,jm1,jp1)
+        call calc_subgrid_array_dp(vint_dble,v_nb,nxi,2,2,1,3,1,3)
 
         vint = real(vint_dble,sp)
 
@@ -65,6 +77,7 @@ contains
     end subroutine calc_subgrid_array_sp
 
     subroutine calc_subgrid_array_mask_sp(vint,v,mask,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Single-precision wrapper for calc_subgrid_array_mask_dp.
 
         implicit none
 
@@ -76,11 +89,15 @@ contains
         integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
 
         ! Local variables
-        real(dp), allocatable :: vint_dble(:,:)
+        real(dp) :: v_nb(3,3)
+        logical  :: mask_nb(3,3)
+        real(dp) :: vint_dble(nxi,nxi)
 
-        allocate(vint_dble(nxi,nxi))
+        ! Neighbourhood of (i,j), at local indices 1:3 with the cell at (2,2)
+        v_nb = neighborhood_dp(v,i,j,im1,ip1,jm1,jp1)
+        mask_nb = neighborhood_mask(mask,i,j,im1,ip1,jm1,jp1)
 
-        call calc_subgrid_array_mask_dp(vint_dble,real(v,dp),mask,nxi,i,j,im1,ip1,jm1,jp1)
+        call calc_subgrid_array_mask_dp(vint_dble,v_nb,mask_nb,nxi,2,2,1,3,1,3)
 
         vint = real(vint_dble,sp)
 
@@ -110,6 +127,32 @@ contains
         return
 
     end subroutine calc_subgrid_array_cell_sp
+
+    subroutine calc_subgrid_array_quad_sp(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Single-precision wrapper for calc_subgrid_array_quad_dp.
+
+        implicit none
+
+        real(sp), intent(INOUT) :: vint(:,:)
+        real(sp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        real(dp) :: v_nb(3,3)
+        real(dp) :: vint_dble(nxi,nxi)
+
+        ! Neighbourhood of (i,j), at local indices 1:3 with the cell at (2,2)
+        v_nb = neighborhood_dp(v,i,j,im1,ip1,jm1,jp1)
+
+        call calc_subgrid_array_quad_dp(vint_dble,v_nb,nxi,2,2,1,3,1,3)
+
+        vint = real(vint_dble,sp)
+
+        return
+
+    end subroutine calc_subgrid_array_quad_sp
 
     ! ===================================================================
     ! Double-precision workers: the actual computation
@@ -315,6 +358,103 @@ contains
         return
 
     end subroutine calc_subgrid_array_cell_dp
+
+    subroutine calc_subgrid_array_quad_dp(vint,v,nxi,i,j,im1,ip1,jm1,jp1)
+        ! Subgrid values of cell (i,j) from the bilinear interpolation of v
+        ! between cell centres. Each quadrant of the cell is bilinear between
+        ! the cell centre v(i,j), the two face midpoints (mean of v(i,j) and
+        ! the neighbour across the face) and the cell corner (mean of the four
+        ! cells around it), as the grounded-fraction quadrants of Leguy et al.
+        ! (2021). Unlike calc_subgrid_array, which interpolates between the
+        ! corner means only, the field passes through v(i,j) at the centre.
+        ! The nxi*nxi points are the centres of an nxi x nxi partition of the
+        ! cell, so each point stands for the same area (nxi = 1: v(i,j)).
+        ! vint(i1,j1): i1 along x, j1 along y.
+
+        implicit none
+
+        real(dp), intent(INOUT) :: vint(:,:)
+        real(dp), intent(IN)  :: v(:,:)
+        integer,  intent(IN)  :: nxi                    ! Number of interpolation points per side
+        integer,  intent(IN)  :: i, j                   ! Indices of current cell
+        integer,  intent(IN)  :: im1, ip1, jm1, jp1     ! Indices of neighbors
+
+        ! Local variables
+        integer  :: i1, j1, ii, jj
+        real(dp) :: x, y, s, t
+        real(dp) :: v_x, v_y, v_xy
+
+        do j1 = 1, nxi
+
+            ! Quadrant in y and distance from the centre (0) to the face (1)
+            y  = (real(j1,dp)-0.5_dp)/real(nxi,dp)
+            jj = merge(jp1,jm1,y .ge. 0.5_dp)
+            t  = abs(2.0_dp*y-1.0_dp)
+
+            do i1 = 1, nxi
+
+                x  = (real(i1,dp)-0.5_dp)/real(nxi,dp)
+                ii = merge(ip1,im1,x .ge. 0.5_dp)
+                s  = abs(2.0_dp*x-1.0_dp)
+
+                ! Face midpoints and corner of the quadrant
+                v_x  = 0.5_dp *(v(i,j)+v(ii,j))
+                v_y  = 0.5_dp *(v(i,j)+v(i,jj))
+                v_xy = 0.25_dp*(v(i,j)+v(ii,j)+v(i,jj)+v(ii,jj))
+
+                vint(i1,j1) = (1.0_dp-s)*(1.0_dp-t)*v(i,j) + s*(1.0_dp-t)*v_x &
+                            + (1.0_dp-s)*t*v_y + s*t*v_xy
+
+            end do
+        end do
+
+        return
+
+    end subroutine calc_subgrid_array_quad_dp
+
+    pure function neighborhood_dp(v,i,j,im1,ip1,jm1,jp1) result(v_nb)
+        ! 3x3 neighbourhood of cell (i,j) of a single-precision field, in
+        ! double precision, with the cell at (2,2). Gathered by index, so
+        ! wrapped (periodic) neighbour indices are handled.
+
+        implicit none
+
+        real(sp), intent(IN) :: v(:,:)
+        integer,  intent(IN) :: i, j, im1, ip1, jm1, jp1
+        real(dp) :: v_nb(3,3)
+
+        v_nb(1,1) = real(v(im1,jm1),dp)
+        v_nb(2,1) = real(v(i,  jm1),dp)
+        v_nb(3,1) = real(v(ip1,jm1),dp)
+        v_nb(1,2) = real(v(im1,j),  dp)
+        v_nb(2,2) = real(v(i,  j),  dp)
+        v_nb(3,2) = real(v(ip1,j),  dp)
+        v_nb(1,3) = real(v(im1,jp1),dp)
+        v_nb(2,3) = real(v(i,  jp1),dp)
+        v_nb(3,3) = real(v(ip1,jp1),dp)
+
+    end function neighborhood_dp
+
+    pure function neighborhood_mask(mask,i,j,im1,ip1,jm1,jp1) result(mask_nb)
+        ! 3x3 neighbourhood of cell (i,j) of a mask, with the cell at (2,2)
+
+        implicit none
+
+        logical, intent(IN) :: mask(:,:)
+        integer, intent(IN) :: i, j, im1, ip1, jm1, jp1
+        logical :: mask_nb(3,3)
+
+        mask_nb(1,1) = mask(im1,jm1)
+        mask_nb(2,1) = mask(i,  jm1)
+        mask_nb(3,1) = mask(ip1,jm1)
+        mask_nb(1,2) = mask(im1,j)
+        mask_nb(2,2) = mask(i,  j)
+        mask_nb(3,2) = mask(ip1,j)
+        mask_nb(1,3) = mask(im1,jp1)
+        mask_nb(2,3) = mask(i,  jp1)
+        mask_nb(3,3) = mask(ip1,jp1)
+
+    end function neighborhood_mask
 
     function interp_bilin_pt(z1,z2,z3,z4,xout,yout) result(zout)
         ! Interpolate a point given four neighbors at corners of square (0:1,0:1)

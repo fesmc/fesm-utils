@@ -1,0 +1,37 @@
+! Namelist of test_htopo (NorthTest data; {domain} = NorthTest)
+
+&domain
+    basins           = "Zwally2012"
+/
+&topo
+    path  = "../ice_data/v2/{domain}/NHT-16KM/NHT-16KM_TOPO-GEBCO2025.nc"
+    vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    remap = "con"
+/
+&regions
+    path_regions = "../ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+    path_basins  = "../ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+    basin_sets   = "Zwally2012"
+    layers       = "custom"
+    path_custom  = "test_htopo_custom.nc"
+    var_custom   = "my_basins"
+    masks        = "grl"
+    mask_grl     = "region:Greenland"
+/
+
+! Defaults: no keys
+&domain_default
+/
+&topo_default
+    path  = "../ice_data/v2/{domain}/NHT-16KM/NHT-16KM_TOPO-GEBCO2025.nc"
+    vars  = "z_bed" "z_srf" "H_ice"
+/
+&regions_default
+    path_regions = "../ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/
+
+! Data gaps
+&topo_gaps
+    path  = "test_htopo_gaps.nc"
+    vars  = "z_bed" "z_srf" "H_ice"
+/

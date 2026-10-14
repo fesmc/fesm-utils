@@ -19,7 +19,7 @@ module series
     ! is agnostic to the meaning of `time`: whatever axis the caller passes must
     ! match the file's own axis (absolute year, year BP, elapsed time, ...).
 
-    use precision, only: wp
+    use precision, only: dp, wp
     use constants, only: mv
     use ncio
     use nml
@@ -31,7 +31,7 @@ module series
         character(len=512)    :: filename
         integer               :: nt            ! number of time points
         integer               :: nc            ! number of value channels
-        real(wp), allocatable :: time(:)       ! (nt)
+        real(dp), allocatable :: time(:)       ! (nt)
         real(wp), allocatable :: var(:,:)      ! (nt,nc)
         real(wp), allocatable :: sigma(:,:)    ! (nt,nc); unallocated if absent
     end type
@@ -127,13 +127,13 @@ contains
         ! Interpolate all channels to `time`. Returns a length-nc vector.
 
         type(series_class), intent(IN) :: ser
-        real(wp),           intent(IN) :: time
+        real(dp),           intent(IN) :: time
         real(wp) :: v(ser%nc)
 
         integer :: c
 
         do c = 1, ser%nc
-            v(c) = interp_linear(ser%time,ser%var(:,c),xout=time)
+            v(c) = real(interp_linear(ser%time,real(ser%var(:,c),dp),xout=time),wp)
         end do
 
         return
@@ -144,7 +144,7 @@ contains
         ! Scalar convenience for single-channel series (nc==1).
 
         type(series_class), intent(IN) :: ser
-        real(wp),           intent(IN) :: time
+        real(dp),           intent(IN) :: time
         real(wp) :: f
 
         if (ser%nc .ne. 1) then
@@ -153,7 +153,7 @@ contains
             stop
         end if
 
-        f = interp_linear(ser%time,ser%var(:,1),xout=time)
+        f = real(interp_linear(ser%time,real(ser%var(:,1),dp),xout=time),wp)
 
         return
 
@@ -164,7 +164,7 @@ contains
         ! if the series carries no sigma information.
 
         type(series_class), intent(IN) :: ser
-        real(wp),           intent(IN) :: time
+        real(dp),           intent(IN) :: time
         real(wp) :: s(ser%nc)
 
         integer :: c
@@ -175,7 +175,7 @@ contains
         end if
 
         do c = 1, ser%nc
-            s(c) = interp_linear(ser%time,ser%sigma(:,c),xout=time)
+            s(c) = real(interp_linear(ser%time,real(ser%sigma(:,c),dp),xout=time),wp)
         end do
 
         return
@@ -217,7 +217,7 @@ contains
 
         integer :: u, ios, i, ncols
         character(len=4096)   :: line
-        real(wp), allocatable :: row(:)
+        real(dp), allocatable :: row(:)
 
         open(newunit=u,file=filename,status="old",action="read",iostat=ios)
         if (ios .ne. 0) then
@@ -265,7 +265,7 @@ contains
                 stop
             end if
             ser%time(i)  = row(1)
-            ser%var(i,:) = row(2:ncols)
+            ser%var(i,:) = real(row(2:ncols),wp)
         end do
 
         close(u)

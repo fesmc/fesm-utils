@@ -194,8 +194,25 @@ $(objdir)/timestepping.o: $(srcdir)/timestepping.f90 $(objdir)/nml.o $(objdir)/n
 $(objdir)/variable_io.o: $(srcdir)/variable_io.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
-					$(objdir)/mapping.o
+$(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/mapping.o $(objdir)/interp2D.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/fesmdata.o: $(srcdir)/fesmdata.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
+					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/topodata.o: $(srcdir)/topodata.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/htopo.o: $(srcdir)/htopo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
+					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/interp2D.o \
+					$(objdir)/phys_constants.o $(objdir)/topodata.o $(objdir)/regions.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -204,6 +221,9 @@ $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constan
 
 $(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
 					$(objdir)/series.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 fesmutils_libs = 	$(objdir)/constants.o \
@@ -244,8 +264,13 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/timestepping.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o \
+					$(objdir)/fesmdata.o \
+					$(objdir)/regions.o \
+					$(objdir)/topodata.o \
+					$(objdir)/htopo.o \
 					$(objdir)/series.o \
-					$(objdir)/tsgen.o
+					$(objdir)/tsgen.o \
+					$(objdir)/zremap.o
 
 ###############################################
 ##
@@ -253,12 +278,16 @@ fesmutils_libs = 	$(objdir)/constants.o \
 ##
 ###############################################
 
-# Static library compilation
-fesmutils-static: $(fesmutils_libs)
-	ar rc $(objdir)/libfesmutils.a $(fesmutils_libs)
-	ranlib $(objdir)/libfesmutils.a
+# Static library compilation. The archive is a file target, so its mtime only
+# changes when an object does (hosts such as yelmo depend on it to rebuild
+# after a type change).
+fesmutils-static: $(objdir)/libfesmutils.a
+
+$(objdir)/libfesmutils.a: $(fesmutils_libs)
+	ar rc $@ $(fesmutils_libs)
+	ranlib $@
 	@echo " "
-	@echo "    $(objdir)/libfesmutils.a is ready."
+	@echo "    $@ is ready."
 	@echo " "
 
 # coords library test programs
@@ -268,6 +297,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_proj.x $(testdir)/coords/test_proj.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gauss.x $(testdir)/coords/test_gauss.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gaussian_filter.x $(testdir)/coords/test_gaussian_filter.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_rotated.x $(testdir)/coords/test_rotated.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
@@ -375,12 +406,52 @@ test-multitopo : fesmutils-static
 		@echo "    multitopo test program ready: $(bindir)/test_multitopo.x"
 		@echo " "
 
+# regions (FesmData regions, zones and basins) test program
+test-regions : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_regions.x $(testdir)/fesmdata/test_regions.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    regions test program ready: $(bindir)/test_regions.x"
+		@echo " "
+
+# topodata (FesmData topography) test program
+test-topodata : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_topodata.x $(testdir)/fesmdata/test_topodata.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    topodata test program ready: $(bindir)/test_topodata.x"
+		@echo " "
+
+# htopo (hi-res geometry hub) test program
+test-htopo : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_htopo.x $(testdir)/fesmdata/test_htopo.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    htopo test program ready: $(bindir)/test_htopo.x"
+		@echo " "
+
 # tsgen (time-series generator) test program
 test-tsgen : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_tsgen.x $(testdir)/tsgen/test_tsgen.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    tsgen test program ready: $(bindir)/test_tsgen.x"
+		@echo " "
+
+# zremap (elevation remapping) test program
+test-zremap : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_zremap.x $(testdir)/zremap/test_zremap.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    zremap test program ready: $(bindir)/test_zremap.x"
+		@echo " "
+
+# zremap documentation demo (Greenland SMB remapped to the LGM; needs ../ice_data)
+demo-zremap : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/demo_zremap_grl.x $(testdir)/zremap/demo_zremap_grl.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    zremap demo program ready: $(bindir)/demo_zremap_grl.x"
 		@echo " "
 
 # map_field apply-throughput benchmarks (per-timestep remap cost, no cdo needed)
@@ -458,6 +529,9 @@ usage:
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
+	@echo " make test-regions     : compiles the regions test program"
+	@echo " make test-topodata    : compiles the topodata test program"
+	@echo " make test-htopo       : compiles the htopo test program"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

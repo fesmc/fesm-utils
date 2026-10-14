@@ -4,7 +4,102 @@ All notable changes to fesm-utils are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **ncio**: `nc_read` without `count` stops when a file dimension covered by the array
+  has another length than the array (it read the leading block silently, e.g. the corner
+  of a finer grid); further file dimensions (e.g. time) are still read at index 1.
+- **varslice**: `varslice_init_nml` with a target `grid` and no remapping stops when the
+  variable's horizontal dimensions are not the grid's.
+- **varslice**: data without a time dimension is read once (`varslice_update` re-read it
+  on every call); callers must not modify `vs%var`.
+- **gaussian_filter**: `filter_gaussian_fast` without `mask` smooths using all points
+  (it returned the field unchanged); the reflected border now also fills the corners;
+  points outside `mask` stay unchanged (they were filled from valid neighbours), as in
+  `filter_gaussian`.
+- **gaussian_filter**: `filter_gaussian` without `dx` uses `sigma` in grid points (it used
+  an undefined value); `hgrad` sets the last x boundary (`du(nx,:)`, was `du(ny,:)`).
+
+### Added
+- **zremap**: elevation remapping of a 2D field (e.g. SMB, surface temperature).
+  `zremap_update` builds local f(z) profiles from a reference state (f_ref, z_ref,
+  mask_ref) in a Gaussian neighbourhood of width `sigma` (cf. Goelzer et al., 2020,
+  with a radius instead of basins); `zremap_map` evaluates them at z_now. Tables every
+  `stride` points, smoothing of the profiles along z (`sigma_z`), end gradients
+  `dfdz_lo`/`dfdz_hi`. The interpolated profile P is blended with the fallback
+  f_ref + dfdz*(z_now-z_ref) (dfdz_lo below z_ref, dfdz_hi above) by alpha =
+  min(1, W/w_full), W the data support (kernel weight of the data, 0-1), so the field
+  fades continuously to the fallback away from the data. On the data points P enters
+  as an anomaly, f_ref + alpha*[P(z_now) - P(z_ref)] + ..., so f_ref is reproduced
+  exactly at z_ref; elsewhere as alpha*P(z_now) + ... (f_ref there may be gap-filled). Optional `dz_ext` from `zremap_map`: elevation distance
+  beyond the data range. `zremap_write` writes the tables, the support `w` and the
+  gradient field `dfdz`. Includes a `make test-zremap` self-check.
+- **varslice**: filling of missing values, optional group keys `fill = "nearest"`
+  (nearest valid cell, per horizontal slice) or `fill = "const"` with `fill_value`;
+  the `fill` argument of `varslice_update` overrides it.
+- **timer**: `timer_init(tmr, labels)` registers the components up front;
+  `timer_print_totals` and `timer_write_totals` report the time accumulated by
+  each component since the reset (with its share of the total), the latter as a
+  table file (header from the labels with `init=.TRUE.`, one line per call).
+- **regions**: named categorical layers (regions, zones, basins, ...) in a
+  `regions_class`, from any file (`regions_load_layer`; namelist `layers`,
+  `path_<layer>`, ...), from the program (`regions_add_layer`), or from FesmData
+  v2 files (`regions_load_fesmdata`: hierarchical `region` and `zone`;
+  `regions_load_basins`: `<set>`, `<set>.group`, `<set>.mask`), with names from
+  `codes`/`names`, `flag_values`/`flag_meanings` or the codes; masks from
+  selection expressions (`regions_select(reg, "region:Greenland & zone:land")`,
+  named masks, `regions_mask`), `regions_basin_ids`, `regions_write` (layers
+  with their tables, to load again), region-code arithmetic as in FesmUtils.jl,
+  and nearest-neighbour remapping onto a target grid (`regions_init(reg, grid)`).
+- **topodata**: FesmData v2 topography products (`<GRID>_TOPO-<product>.nc`) in a
+  `topodata_class` (`topodata_init_nml`, `topodata_init_arg`): only the listed
+  variables are loaded (default `z_bed z_srf H_ice z_bed_sd`); optional remapping
+  onto a target grid (real fields `con` by default, `mask`/`src_id` nearest
+  neighbour). Other files (e.g. ISMIP7) via `names` (variables of the file);
+  a file without `grid_name` must be on the target grid.
+- **htopo**: the hi-res geometry hub of a domain, moved from yelmox and built on
+  `topodata` and `regions`: `htopo_init(htopo, filename, group, group_topo,
+  group_regions, domain, grid_name, cnst)` (one set of groups per domain),
+  `htopo_basins`. The physics masks (yelmox's `ice_codes`/`relax_codes`/
+  `region_codes`) move to the modules, as selection expressions.
+- **fesmdata**: helpers shared by the readers of FesmData v2 and other files
+  (flag tables, the grid of a file from `grid_<GRID>.txt`, `fesmdata_map_init`:
+  how a field gets onto a target grid, reading with remapping, path
+  placeholders).
+
 ### Changed
+- **timestepping**, **timeout**: model time in double precision. `tstep_class`
+  times (`time`, `time_init`, `time_end`, `time_elapsed`, `time_cal`,
+  `time_rel`, `time_ref`, `time_const_*`), the `tstep_init` time arguments
+  (`time_init`, `time_end`, `time_ref`, `const_cal`, `const_rel`) and the
+  `timeout` times (`timeout_init` `time_init`/`time_end`, `timeout_check` `time`,
+  `tm%times`) and the step (`tstep_update` `dt`, `tstep_init` namelist `dtt`)
+  are `real(dp)`. In single precision the spacing of the time is 0.016 yr at
+  1e5 yr. Callers pass `real(dp)` times and steps.
+- **tsgen**, **series**: times and time intervals in double precision. The `time`
+  arguments of `tsgen_init`, `tsgen_update`, `tsgen_tabulate`, `tsgen_write`,
+  `tsgen_write_step` and `tsgen_restart_write`, the state (`time_init`,
+  `time_prev`, `dt`, history `time(:)`), the `dt_init`/`dt_ramp`/`dt_conv`/`dt_ave`
+  parameters, the series time axis (`ser%time`) and the `time` argument of
+  `series_interp`, `series_interp1`, `series_interp_sig` are `real(dp)`. Forcing
+  values and rates stay `wp`.
+- **varslice**, **htopo**: time in double precision. The `time` argument of
+  `varslice_update`, `time_par` of `varslice_init_arg`, `time` of `print_var_range`
+  (the time axis and `time_par` already were) and the times of `htopo_write_init` and
+  `htopo_write_step` are `real(dp)`.
+- **subgrid**: the single-precision wrappers (`calc_subgrid_array`, `_mask`, `_quad`)
+  promote only the 3x3 neighbourhood of the cell, not the whole field (O(nx*ny) per
+  call). Results unchanged; Yelmo ANT-8KM with `bmb_gl_method = "pmpt"`: 10-yr loop
+  196 -> 120 s (16 threads).
+- **varslice**: optional online remapping (`remap`, `grid_src` group keys; target
+  grid passed to `varslice_init_nml`): regular lon-lat files via a cached map,
+  curvilinear files (2D lon/lat, e.g. tripolar oceans) as a point set.
+- **varslice**: `range_*` on a variable with a sub-annual axis selects whole years
+  also with `rep = 1` (before: the range missed year 0 and returned/stopped on
+  missing values). A file longer than the declared time axis is accepted (its
+  leading steps are used, with a note).
+- **mapping**: map caches are written under a per-process name and renamed into
+  place, so concurrent runs sharing `maps/` no longer read half-written files.
+- **nml**: `nml_has_param` (is a parameter set?).
 - **timestepping**: `tstep_update` advances the time keepers on every call,
   including the first one. Before, the first call left `time == time_init`, so a
   driver loop of the form `do while (.not. ts%is_finished); call tstep_update(...)`
@@ -17,6 +112,14 @@ All notable changes to fesm-utils are documented here.
   silently returned a field of missing values.
 
 ### Added
+- **subgrid**: `calc_subgrid_array_quad(vint,v,nxi,i,j,im1,ip1,jm1,jp1)`, the
+  subgrid values of a cell from the bilinear interpolation of `v` between cell
+  centres (per quadrant: centre, face midpoints, corner mean), at the centres of
+  an `nxi` x `nxi` partition of the cell. Unlike `calc_subgrid_array`, which
+  interpolates between the four corner means, the field passes through `v(i,j)`,
+  so a positive centre surrounded by negative neighbours keeps a positive area
+  (e.g. a grounded cell next to deep ocean). Same quadrants as the grounded
+  fractions of Leguy et al. (2021).
 - **coords**: transverse Mercator projection (`mtype = "transverse_mercator"`,
   ellipsoidal, Snyder 1987), e.g. for UTM grids. `lambda` is the central meridian,
   `phi` the latitude of origin, the new `k0` the scale factor (default 1) and

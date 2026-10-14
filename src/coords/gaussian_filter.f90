@@ -48,10 +48,6 @@ contains
         real(kind=8), intent(in)    :: dx 
         logical,      intent(in), optional :: mask(:,:) 
 
-        real(kind=4), allocatable :: kernel(:,:)
-        real(kind=4) :: sigmap 
-        integer :: nx, ny 
-
         real(kind=4), allocatable :: output4(:,:)
 
         ! Allocate local output array 
@@ -76,13 +72,13 @@ contains
         logical,      intent(in), optional :: mask(:,:)
 
         ! Local variables
-        integer :: nx, ny, i, j, iref, jref 
+        integer :: nx, ny, i, j
         integer :: nk, nk2
         real(kind=4), allocatable :: kernel_ref(:,:) 
         real(kind=4), allocatable :: kernel(:,:) 
         real(kind=4), allocatable :: varext(:,:) 
         logical,      allocatable :: maskext(:,:) 
-        real(4) :: kern_tot 
+        integer,      allocatable :: ii(:), jj(:)
 
         real(4), parameter :: n_sigma_truncate = 1.5
         
@@ -104,50 +100,39 @@ contains
         allocate(kernel(nk,nk))
         call calc_gauss_values(kernel_ref,dx,dx,sigma,nk)
 
-        ! Get output array with buffer on sides 
-        allocate(varext(nx+2*nk2, ny+2*nk2))
+        ! Extend var (and mask) by nk2 points on each side, reflecting about
+        ! the grid edges (edge point repeated). Without a mask all points are valid.
+        allocate(ii(nx+2*nk2))
+        allocate(jj(ny+2*nk2))
+        do i = 1, nx+2*nk2
+            ii(i) = reflect_index(i-nk2,nx)
+        end do
+        do j = 1, ny+2*nk2
+            jj(j) = reflect_index(j-nk2,ny)
+        end do
+
+        allocate(varext(nx+2*nk2,ny+2*nk2))
         allocate(maskext(nx+2*nk2,ny+2*nk2))
 
-        varext  = -9999.0 
-        maskext = .FALSE. 
+        varext = var(ii,jj)
 
-        ! Fill in values 
-        varext(nk2+1:(nk2+nx),nk2+1:(nk2+ny))  = var 
+        if (present(mask)) then
+            maskext = mask(ii,jj)
+        else
+            maskext = .TRUE.
+        end if
 
-        if (present(mask)) then 
-            maskext(nk2+1:(nk2+nx),nk2+1:(nk2+ny)) = mask 
-        end if 
-
-        ! Fill in borders, except corners that won't be used for simplicity
-        do i = 1, nk2
-            varext(i,nk2+1:nk2+ny)           = var(nk2-i+1,:) 
-            varext((nk2+nx+i),nk2+1:nk2+ny)  = var(nx-i+1,:)
-            varext(nk2+1:nk2+nx,i)           = var(:,nk2-i+1) 
-            varext(nk2+1:nk2+nx,(nk2+ny+i))  = var(:,ny-i+1)
-
-            if (present(mask)) then 
-                maskext(i,nk2+1:nk2+ny)          = mask(nk2-i+1,:) 
-                maskext((nk2+nx+i),nk2+1:nk2+ny) = mask(nx-i+1,:)
-                maskext(nk2+1:nk2+nx,i)          = mask(:,nk2-i+1) 
-                maskext(nk2+1:nk2+nx,(nk2+ny+i)) = mask(:,ny-i+1)
-            end if 
-        end do 
-        
         ! Loop over points corresponding to actual var array 
-        ! (ie, over internal points of varext)
+        ! (ie, over internal points of varext). Points outside the mask
+        ! remain unchanged and do not contribute to their neighbours.
         do j = nk2+1,nk2+ny 
         do i = nk2+1,nk2+nx
 
-            ! Get current kernel 
-            kernel = kernel_ref 
-            where(.not. maskext(i-nk2:i+nk2,j-nk2:j+nk2)) kernel = 0.0 
-            kern_tot = sum(kernel)
-
-            ! If weights exist, convolve filter to get new value of var
-            if (kern_tot .gt. 0.0) then 
-                iref = i-nk2 
-                jref = j-nk2
-                var(iref,jref) = sum(kernel*varext(i-nk2:i+nk2,j-nk2:j+nk2)) / kern_tot
+            if (maskext(i,j)) then
+                ! Kernel restricted to valid points (sum > 0: centre is valid)
+                kernel = kernel_ref 
+                where(.not. maskext(i-nk2:i+nk2,j-nk2:j+nk2)) kernel = 0.0 
+                var(i-nk2,j-nk2) = sum(kernel*varext(i-nk2:i+nk2,j-nk2:j+nk2)) / sum(kernel)
             end if 
 
         end do 
@@ -156,6 +141,22 @@ contains
         return 
 
     end subroutine filter_gaussian_fast_float
+
+    elemental function reflect_index(k,n) result(kr)
+        ! Index into 1:n of point k, reflected about the edges (edge point
+        ! repeated: 0 -> 1, n+1 -> n). Valid for 1-n <= k <= 2n.
+        integer, intent(in) :: k, n
+        integer :: kr
+
+        if (k .lt. 1) then
+            kr = 1-k
+        else if (k .gt. n) then
+            kr = 2*n+1-k
+        else
+            kr = k
+        end if
+
+    end function reflect_index
 
 
     ! subroutine smooth_gauss_2D(var,mask_apply,dx,n_smooth,mask_use)
@@ -286,18 +287,19 @@ contains
         logical,      intent(in), optional :: mask(:,:) 
         real(kind=4), intent(in), optional :: truncate
 
-        real(kind=4), allocatable :: kernel(:,:)
         real(kind=4) :: sigmap 
-        integer :: nx, ny 
-
         real(kind=4), allocatable :: output4(:,:)
+
+        ! Get sigma in terms of points
+        sigmap = real(sigma)
+        if (present(dx)) sigmap = real(sigma/dx)
 
         ! Allocate local output array 
         allocate(output4(size(var,1),size(var,2)))
 
         output4 = real(var) 
 
-        call filter_gaussian_float(output4,real(sigma),real(dx),mask,truncate)
+        call filter_gaussian_float(output4,sigmap,mask=mask,truncate=truncate)
         
         ! Return a double array
         var = dble(output4)
@@ -316,10 +318,10 @@ contains
 
         real(kind=4), allocatable :: intmp(:,:), kernel(:,:), output(:,:) 
         real(kind=4) :: sigmap 
-        integer :: nx, ny, nloop, i 
+        integer :: nloop, i 
 
         ! Get sigma in terms of points
-        sigmap = sigmap 
+        sigmap = sigma 
         if (present(dx)) then 
             sigmap = sigma / dx 
         end if 
@@ -569,7 +571,7 @@ contains
 
         ! Assign boundary values
         du(1,:)  = du(2,:)
-        du(ny,:) = du(ny-1,:)
+        du(nx,:) = du(nx-1,:)
 
         return
 

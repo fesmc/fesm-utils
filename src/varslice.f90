@@ -6,9 +6,11 @@ module varslice
     use constants, only: mv, TOL
     use ncio
     use nml
-    use mapping, only : map_class, map_field
+    use mapping, only : map_class, map_field, map_init
+    use coordinates, only : grid_class, points_class, grid_init, points_init
+    use interp2D,    only : fill_nearest
 
-    implicit none 
+    implicit none
 
     logical, parameter :: verbose = .FALSE.
 
@@ -31,6 +33,19 @@ module varslice
         logical  :: with_time 
         logical  :: with_time_sub
 
+        ! Online remapping (optional group keys; remap = "none" reads the file
+        ! as it is): remap = kernel ("nn", "shepard", "quadrant", "bilinear",
+        ! "con") onto the target grid given at init; grid_src = name of the
+        ! file's grid (the map cache key).
+        character(len=32)   :: remap
+        character(len=256)  :: grid_src
+
+        ! Filling of missing values (optional group keys; fill = "none" leaves
+        ! them): fill = "nearest" (value of the nearest valid cell, per
+        ! horizontal slice) or "const" (fill_value).
+        character(len=32)   :: fill = "none"
+        real(wp)            :: fill_value = mv
+
         ! Internal parameters
         integer  :: ndim 
         real(dp) :: time_par(4) 
@@ -43,8 +58,9 @@ module varslice
 
         ! Parameters defined during update call
         real(dp)          :: time_range(2)
-        character(len=56) :: slice_method 
-        integer           :: range_rep 
+        character(len=56) :: slice_method
+        integer           :: range_rep
+        character(len=32) :: fill_method = ""
         
         ! Variable information
         integer,  allocatable :: dim(:)  
@@ -57,6 +73,12 @@ module varslice
         integer, allocatable  :: nt_files(:)   ! per-file time length (cached at init)
 
         real(wp), allocatable :: var(:,:,:,:)
+
+        ! Online remapping: the map from the file's grid (or, for curvilinear
+        ! grids, its point set) to the target grid. var, x and y are on the
+        ! target grid; dim stays the file's.
+        type(map_class) :: map
+        logical         :: map_points = .false.     ! source is a point set (2D lon/lat)
 
     contains
 
@@ -184,6 +206,208 @@ contains
 
     end subroutine varslice_map_to_grid
 
+    subroutine varslice_remap_init(vs,grid)
+        ! Prepare online remapping of the variable from the grid of its file
+        ! onto `grid`. The file's geometry comes from its lon/lat: those named
+        ! in the variable's CF "coordinates" attribute, else its first two
+        ! dimensions.
+        !   - 1D lon/lat: a regular lon-lat grid; the map is cached in maps/
+        !     under par%grid_src.
+        !   - 2D lon/lat (curvilinear grids, e.g. tripolar ocean grids): a
+        !     lon-lat point set.
+        ! Afterwards vs%x, vs%y are the axes of `grid`.
+
+        implicit none
+
+        type(varslice_class), intent(INOUT) :: vs
+        type(grid_class),     intent(IN)    :: grid
+
+        ! Local variables
+        character(len=1024) :: fname
+        character(len=512)  :: coords_att
+        character(len=56)   :: lon_name, lat_name, word
+        character(len=12), allocatable :: dim_names(:)
+        integer,  allocatable :: dims(:)
+        real(dp), allocatable :: lon1(:), lat1(:), lon2(:,:), lat2(:,:)
+        type(grid_class)   :: grid_src
+        type(points_class) :: pts_src
+        integer :: nx, ny, ndim_sp, i0, i1
+
+        fname = vs%par%filenames(1)
+
+        ! Number of spatial dimensions: 2 is required (the 3rd, if any, is the
+        ! vertical, which is kept as it is)
+        ndim_sp = vs%par%ndim
+        if (vs%par%with_time) ndim_sp = ndim_sp - 1
+        if (ndim_sp .lt. 2) then
+            call varslice_error("varslice_remap_init", &
+                "remapping needs a field with two horizontal dimensions.", &
+                "name = "//trim(vs%par%name)//new_line("a")// &
+                "ndim = "//to_str(vs%par%ndim))
+        end if
+        if (len_trim(vs%par%grid_src) .eq. 0) then
+            call varslice_error("varslice_remap_init", &
+                "grid_src (the name of the file's grid) must be set with remap.", &
+                "name = "//trim(vs%par%name))
+        end if
+
+        call nc_dims(fname,vs%par%name,dim_names,dims)
+        nx = dims(1)
+        ny = dims(2)
+
+        coords_att = ""
+        if (nc_exists_attr(fname,vs%par%name,"coordinates")) &
+            call nc_read_attr(fname,vs%par%name,"coordinates",coords_att)
+
+        ! lon/lat: named by the coordinates attribute (any order), else the
+        ! variable's first two dimensions
+        lon_name = dim_names(1)
+        lat_name = dim_names(2)
+        i0 = 1
+        do while (i0 .le. len_trim(coords_att))
+            i1 = index(coords_att(i0:)," ")
+            if (i1 .eq. 0) i1 = len_trim(coords_att(i0:)) + 1
+            word = coords_att(i0:i0+i1-2)
+            if (len_trim(word) .gt. 0) then
+                if (index(word,"lon") .gt. 0) lon_name = word
+                if (index(word,"lat") .gt. 0) lat_name = word
+            end if
+            i0 = i0 + i1
+        end do
+
+        ! Their rank decides: 2D lon/lat is a curvilinear grid, 1D a regular one
+        call nc_dims(fname,lon_name,dim_names,dims)
+
+        if (size(dims) .eq. 2) then
+            ! Curvilinear grid: a point set of its 2D lon/lat
+            allocate(lon2(nx,ny), lat2(nx,ny))
+            call nc_read(fname,lon_name,lon2)
+            call nc_read(fname,lat_name,lat2)
+            call points_init(pts_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                             x=reshape(lon2,[nx*ny]),y=reshape(lat2,[nx*ny]))
+            call map_init(vs%map,pts_src,grid,max_neighbors=10,method=trim(vs%par%remap))
+            vs%map_points = .true.
+        else
+            ! Regular lon-lat grid: its 1D axes
+            allocate(lon1(nx), lat1(ny))
+            call nc_read(fname,lon_name,lon1)
+            call nc_read(fname,lat_name,lat1)
+            call grid_init(grid_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                           x=lon1,y=lat1)
+            call map_init(vs%map,grid_src,grid,method=trim(vs%par%remap),fldr="maps")
+            vs%map_points = .false.
+        end if
+
+        ! The variable is returned on the target grid
+        if (allocated(vs%x)) deallocate(vs%x)
+        if (allocated(vs%y)) deallocate(vs%y)
+        allocate(vs%x(grid%G%nx), vs%y(grid%G%ny))
+        vs%x = grid%G%x
+        vs%y = grid%G%y
+
+        return
+
+    end subroutine varslice_remap_init
+
+    subroutine varslice_remap(vs)
+        ! Remap vs%var from the file's grid onto the target grid (the map of
+        ! varslice_remap_init), slice by slice over the trailing (vertical /
+        ! time) dimensions. Missing values are excluded from the kernel; target
+        ! points without a valid source value are missing.
+
+        implicit none
+
+        type(varslice_class), intent(INOUT) :: vs
+
+        ! Local variables
+        real(wp), allocatable :: src(:,:,:,:)
+        integer :: nxs, nys, n3, n4, k, t
+
+        nxs = size(vs%var,1)
+        nys = size(vs%var,2)
+        n3  = size(vs%var,3)
+        n4  = size(vs%var,4)
+
+        call move_alloc(vs%var,src)
+        allocate(vs%var(vs%map%G%nx,vs%map%G%ny,n3,n4))
+
+        do t = 1, n4
+        do k = 1, n3
+            if (vs%map_points) then
+                call map_field(vs%map,trim(vs%par%name),reshape(src(:,:,k,t),[nxs*nys]), &
+                               vs%var(:,:,k,t),missing_value=mv,reset=.TRUE.)
+            else
+                call map_field(vs%map,trim(vs%par%name),src(:,:,k,t), &
+                               vs%var(:,:,k,t),missing_value=mv,reset=.TRUE.)
+            end if
+        end do
+        end do
+
+        return
+
+    end subroutine varslice_remap
+
+    subroutine varslice_fill(vs,method)
+        ! Fill the missing values of the slice: "nearest" gives each missing cell
+        ! the value of the nearest valid cell, per horizontal (x,y) slice
+        ! (fill_nearest of interp2D); "const" sets them to par%fill_value.
+
+        implicit none
+
+        type(varslice_class), intent(INOUT) :: vs
+        character(len=*),     intent(IN)    :: method
+
+        ! Local variables
+        integer :: k, t, ndim_sp
+
+        select case(trim(method))
+
+            case("none")
+                ! Leave the missing values
+
+            case("const")
+                where (vs%var .eq. mv) vs%var = vs%par%fill_value
+
+            case("nearest")
+                ndim_sp = vs%par%ndim
+                if (vs%par%with_time) ndim_sp = ndim_sp - 1
+                if (ndim_sp .lt. 2 .and. trim(vs%par%remap) .eq. "none") then
+                    call varslice_error("varslice_fill", &
+                        "fill = ""nearest"" needs a variable with two horizontal dimensions.", &
+                        "variable = "//trim(vs%par%name))
+                end if
+
+                do t = 1, size(vs%var,4)
+                do k = 1, size(vs%var,3)
+                    if (any(vs%var(:,:,k,t) .eq. mv) .and. any(vs%var(:,:,k,t) .ne. mv)) then
+                        call fill_nearest(vs%var(:,:,k,t), mv)
+                    end if
+                end do
+                end do
+
+        end select
+
+        return
+
+    end subroutine varslice_fill
+
+    subroutine check_fill_method(method,proc)
+
+        implicit none
+
+        character(len=*), intent(IN) :: method
+        character(len=*), intent(IN) :: proc
+
+        select case(trim(method))
+            case("none","nearest","const")
+                ! ok
+            case DEFAULT
+                call varslice_error(proc, "fill must be ""none"", ""nearest"" or ""const"".", &
+                    "fill = "//trim(method))
+        end select
+
+    end subroutine check_fill_method
+
     subroutine varslice_update(vs,time,method,fill,rep,print_summary)
         ! Routine to update transient climate forcing to match 
         ! current `time`. 
@@ -210,15 +434,19 @@ contains
         ! If rep=12, then calculation will be applied to every 12th index, resulting in 
         ! 12 values along dimension.
 
-        ! fill: method to handle missing values. By default, no treatment and missing values
-        ! are included in returned fields. TODO
+        ! fill: method to fill the missing values of the slice ("none", "nearest", "const";
+        ! see varslice_fill). Overrides the group's fill (par%fill).
 
-        implicit none 
+        ! The slice is read once: a later call for the same time (range), method, rep
+        ! and fill returns it as it is, and data without a time dimension is read only
+        ! the first time. Callers must not modify vs%var.
+
+        implicit none
 
         type(varslice_class), target, intent(INOUT) :: vs
-        real(wp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
+        real(dp),         optional, intent(IN)    :: time(:)        ! [yr] Current time, or time range
         character(len=*), optional, intent(IN)    :: method         ! slice_method (only if with_time==True)
-        character(len=*), optional, intent(IN)    :: fill           ! none, min, max, mean (how to fill in missing values)
+        character(len=*), optional, intent(IN)    :: fill           ! none, nearest, const (how to fill in missing values)
         integer,          optional, intent(IN)    :: rep            ! Only if with_time==True
         logical,          optional, intent(IN)    :: print_summary  ! Print summary of updated variable
 
@@ -230,7 +458,7 @@ contains
         type(varslice_param_class) :: par 
         logical  :: with_time
         logical  :: with_time_sub
-        real(wp) :: time_range(2) 
+        real(dp) :: time_range(2) 
         real(wp), allocatable :: time_wt(:)
         character(len=56) :: slice_method
         character(len=56) :: fill_method
@@ -278,14 +506,14 @@ contains
         slice_method = "exact"
         if (present(method)) slice_method = trim(method)
 
-        fill_method = "none"
-        if (present(fill)) fill_method = trim(fill) 
+        ! A range over a variable with a sub-annual axis selects whole years
+        ! (all their sub-annual steps) also when it is collapsed to one field
+        ! (rep=1), e.g. the annual mean of a monthly series over [y0,y1].
+        if (par%with_time_sub .and. index(slice_method,"range") .eq. 1) with_time_sub = .TRUE.
 
-        if (trim(fill_method) .ne. "none") then
-            call varslice_error("varslice_update", &
-                "fill methods have not yet been implemented. Set fill_method='none' for now.", &
-                "fill_method = "//trim(fill_method))
-        end if
+        fill_method = par%fill
+        if (present(fill)) fill_method = trim(fill)
+        call check_fill_method(fill_method, "varslice_update")
 
         ! Validate that the requested repetition count is consistent with the
         ! variable's declared sub-annual period (time_par(4), i.e. varslice_nsub).
@@ -325,21 +553,23 @@ contains
 
         end if 
 
-        
-        if ( with_time .and. trim(slice_method) .eq. trim(vs%slice_method) &
+        if ( allocated(vs%var) .and. trim(fill_method) .eq. trim(vs%fill_method) .and. &
+             ( .not. with_time .or. &
+               ( trim(slice_method) .eq. trim(vs%slice_method) &
                 .and. range_rep .eq. vs%range_rep &
                 .and. vs%time_range(1) .eq. time_range(1) &
-                .and. vs%time_range(2) .eq. time_range(2) ) then 
+                .and. vs%time_range(2) .eq. time_range(2) ) ) ) then
 
-            ! Do nothing, the varslice object is already up to date 
-            ! fo the current time and method. 
+            ! Do nothing, the varslice object is already up to date
+            ! for the current time, method and fill (data without time: always).
 
-        else 
+        else
 
-            ! Set parameters in varslice object 
+            ! Set parameters in varslice object
             vs%slice_method = trim(slice_method)
-            vs%range_rep    = range_rep 
-            vs%time_range   = time_range 
+            vs%range_rep    = range_rep
+            vs%time_range   = time_range
+            vs%fill_method  = trim(fill_method)
 
             ! 2. Read variable and convert units as needed
 
@@ -676,7 +906,13 @@ contains
             where (vs%var .ne. mv) 
                 vs%var = vs%var*par%unit_scale + par%unit_offset
             end where 
-            
+
+            ! Remap the slice onto the target grid
+            if (trim(par%remap) .ne. "none") call varslice_remap(vs)
+
+            ! Fill the missing values
+            call varslice_fill(vs, fill_method)
+
         end if 
 
         if (present(print_summary)) then
@@ -964,9 +1200,12 @@ contains
 
     end subroutine calc_vec_value
 
-    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs)
+    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs,grid)
         ! Routine to load information related to a given 
         ! transient variable, so that it can be processed properly.
+        ! grid: the target grid. Required with remap /= "none"; without
+        ! remapping the file must be on it (its two horizontal dimensions
+        ! are checked against the grid's).
 
         implicit none 
 
@@ -977,6 +1216,7 @@ contains
         character(len=*),       intent(IN), optional :: grid_name
         logical,                intent(IN), optional :: verbose
         character(len=*),       intent(IN), optional :: subs(:,:)   ! extra {key}->value path substitutions
+        type(grid_class),       intent(IN), optional :: grid
         ! Local variables
 
         ! First load parameters from nml file
@@ -985,9 +1225,54 @@ contains
         ! Perform remaining init operations 
         call varslice_init_data(vs) 
 
+        if (trim(vs%par%remap) .ne. "none") then
+            if (.not. present(grid)) then
+                call varslice_error("varslice_init_nml", &
+                    "remap is set, but no target grid was given.", &
+                    "group = "//trim(group)//new_line("a")// &
+                    "remap = "//trim(vs%par%remap))
+            end if
+            call varslice_remap_init(vs,grid)
+        else if (present(grid)) then
+            call varslice_check_grid(vs,grid,group)
+        end if
+
         return 
 
     end subroutine varslice_init_nml
+
+    subroutine varslice_check_grid(vs,grid,group)
+        ! A variable read without remapping must be on the target grid: its
+        ! first two dimensions (when it has two besides time) must have the
+        ! grid's size, else the caller would get a block of a larger field
+        ! (e.g. a corner of a finer grid) or an incomplete one.
+
+        implicit none
+
+        type(varslice_class), intent(IN) :: vs
+        type(grid_class),     intent(IN) :: grid
+        character(len=*),     intent(IN) :: group
+
+        ! Local variables
+        integer :: ndim_sp
+        character(len=256) :: msg
+
+        ndim_sp = vs%par%ndim
+        if (vs%par%with_time) ndim_sp = ndim_sp - 1
+        if (ndim_sp < 2) return
+
+        if (vs%dim(1) /= grid%G%nx .or. vs%dim(2) /= grid%G%ny) then
+            write(msg,"(a,i0,a,i0,a,i0,a,i0,a)") "file: ", vs%dim(1), " x ", vs%dim(2), &
+                                               ", grid "//trim(grid%name)//": ", grid%G%nx, " x ", grid%G%ny, "."
+            call varslice_error("varslice_init_nml", &
+                "the variable is not on the target grid (set remap and grid_src to remap it).", &
+                "group = "//trim(group)//new_line("a")// &
+                "file  = "//trim(vs%par%filenames(1))//new_line("a")//trim(msg))
+        end if
+
+        return
+
+    end subroutine varslice_check_grid
 
     subroutine varslice_init_arg(vs,filename,name,units_in,units_out,scale,offset, &
                                                             with_time,time_par)
@@ -1004,7 +1289,7 @@ contains
         real(wp), optional,    intent(IN)   :: scale 
         real(wp), optional,    intent(IN)   :: offset 
         logical,  optional,    intent(IN)   :: with_time 
-        real(wp), optional,    intent(IN)   :: time_par(:) 
+        real(dp), optional,    intent(IN)   :: time_par(:) 
 
         ! Local variables 
         
@@ -1025,6 +1310,12 @@ contains
 
         vs%par%time_par = [0.0,0.0,0.0,0.0]
         if (present(time_par)) vs%par%time_par(1:size(time_par)) = time_par
+
+        vs%par%remap    = "none"
+        vs%par%grid_src = ""
+
+        vs%par%fill       = "none"
+        vs%par%fill_value = mv
 
         ! Resolve file list and derive internal time parameters
         ! (mirrors the nml path; without this par%filenames and
@@ -1082,17 +1373,6 @@ contains
             vs%dim(vs%par%ndim) = sum(vs%nt_files)
         end if
 
-! ======== TO DO =============
-! In the case, of using nc_read_interp, data in arrays will have shape nx,ny
-! of target grid, not necessarily of input data file. Adjust dims here
-! based on target grid definition.
-
-        !call nc_read()
-
-
-! ============================
-
-
         if (with_time) then
 
             if (with_time_sub) then
@@ -1138,8 +1418,14 @@ contains
 
             end if
 
-            ! Check to make sure time vector matches netcdf file length 
-            if (size(vs%time,1) .ne. vs%dim(vs%par%ndim)) then
+            ! Check to make sure the netcdf file covers the time vector. A longer
+            ! file is allowed: the time vector describes its leading steps (e.g.
+            ! a CMIP experiment that one model extended beyond the protocol).
+            if (size(vs%time,1) .lt. vs%dim(vs%par%ndim)) then
+                write(*,*) "varslice_init_data:: note: ", trim(vs%par%name), ": the file has ", &
+                    vs%dim(vs%par%ndim), " time steps; the first ", size(vs%time,1), &
+                    " (time_par) are used."
+            else if (size(vs%time,1) .gt. vs%dim(vs%par%ndim)) then
                 fnames = ""
                 if (size(vs%par%filenames,1) .gt. 1) then
                     fnames = "filenames    ="
@@ -1149,8 +1435,8 @@ contains
                     fnames = fnames//new_line("a")
                 end if
                 call varslice_error("varslice_init_data", &
-                    "generated time coordinate does not match the length of the time "// &
-                    "dimension in the netcdf file.", &
+                    "generated time coordinate is longer than the time dimension in the "// &
+                    "netcdf file.", &
                     "time_par    = "//to_str(vs%par%time_par)//new_line("a")// &
                     "size(time)  = "//to_str(size(vs%time,1))//new_line("a")// &
                     "nt (netcdf) = "//to_str(vs%dim(vs%par%ndim))//new_line("a")// &
@@ -1454,6 +1740,29 @@ contains
         call nml_read(filename,group,"scaling",  scaling)
         call nml_read(filename,group,"time",     time)
 
+        ! Optional: online remapping onto the target grid given at init
+        par%remap    = "none"
+        par%grid_src = ""
+        if (nml_has_param(filename,group,"remap")) then
+            call nml_read(filename,group,"remap",    par%remap)
+            call nml_read(filename,group,"grid_src", par%grid_src)
+        end if
+
+        ! Optional: filling of missing values (fill_value with fill = "const")
+        par%fill       = "none"
+        par%fill_value = mv
+        if (nml_has_param(filename,group,"fill")) then
+            call nml_read(filename,group,"fill", par%fill)
+            call check_fill_method(par%fill, "varslice_par_load")
+            if (trim(par%fill) .eq. "const") then
+                if (.not. nml_has_param(filename,group,"fill_value")) then
+                    call varslice_error("varslice_par_load", &
+                        "fill = ""const"" needs fill_value.", "group = "//trim(group))
+                end if
+                call nml_read(filename,group,"fill_value", par%fill_value)
+            end if
+        end if
+
         ! Unpack into the internal parameter fields
         par%units_in    = units(1)
         par%units_out   = units(2)
@@ -1465,6 +1774,7 @@ contains
         ! Parse filename placeholders ({domain}/{grid_name} and any extra subs).
         ! parse_path skips whichever optionals are absent.
         call parse_path(par%filename,domain,grid_name,subs)
+        if (len_trim(par%grid_src) .gt. 0) call parse_path(par%grid_src,domain,grid_name,subs)
 
         ! Resolve file list and derive internal time parameters
         call varslice_par_finalize(par)
@@ -1485,6 +1795,14 @@ contains
             write(*,*) "unit_scale    = ", par%unit_scale
             write(*,*) "unit_offset   = ", par%unit_offset
             write(*,*) "with_time     = ", par%with_time
+            if (trim(par%remap) .ne. "none") then
+                write(*,*) "remap         = ", trim(par%remap)
+                write(*,*) "grid_src      = ", trim(par%grid_src)
+            end if
+            if (trim(par%fill) .ne. "none") then
+                write(*,*) "fill          = ", trim(par%fill)
+                if (trim(par%fill) .eq. "const") write(*,*) "fill_value    = ", par%fill_value
+            end if
             write(*,*) "with_time_sub = ", par%with_time_sub
             if (par%with_time) then
                 write(*,*) "time_par    = ", par%time_par
@@ -1674,7 +1992,7 @@ contains
         real(wp),         intent(IN) :: var(:,:,:,:) 
         character(len=*), intent(IN) :: name
         real(wp),         intent(IN) :: missing_value 
-        real(wp), intent(IN), optional :: time 
+        real(dp), intent(IN), optional :: time 
 
         ! Local variables 
         real(wp) :: vmin, vmax 
