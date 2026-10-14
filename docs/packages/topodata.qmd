@@ -61,7 +61,7 @@ remapping), as for the layers of [regions](regions.qmd).
 
 ```
 &topo
-    path  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
+    path  = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
     vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"     ! optional; this default
     remap = "con"                                   ! optional; this default
 /

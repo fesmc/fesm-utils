@@ -129,8 +129,8 @@ contains
     subroutine regions_init_nml(reg, filename, group, domain, grid_name, subs, grid, verbose)
         ! Load layers and named masks as given by a namelist group (all keys
         ! optional; without any, an empty set on grid):
-        !   path_regions = "ice_data/v2/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
-        !   path_basins  = "ice_data/v2/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+        !   path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+        !   path_basins  = "fesmdata/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
         !   basin_sets   = "Zwally2012"
         !   layers       = "glaciers"            layers of any file:
         !   path_glaciers  = "glaciers.nc"

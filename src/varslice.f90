@@ -8,7 +8,8 @@ module varslice
     use nml
     use mapping, only : map_class, map_field, map_init
     use coordinates, only : grid_class, points_class, grid_init, points_init
-    use interp2D,    only : fill_nearest
+    use interp2D,    only : fill_nearest_levels
+    use fesmdata,    only : fesmdata_grid_desc_exists, fesmdata_grid_read
 
     implicit none
 
@@ -61,6 +62,7 @@ module varslice
         character(len=56) :: slice_method
         integer           :: range_rep
         character(len=32) :: fill_method = ""
+        logical           :: clim_collapsed = .FALSE.   ! climatology read as the mean of its cycle
         
         ! Variable information
         integer,  allocatable :: dim(:)  
@@ -208,9 +210,11 @@ contains
 
     subroutine varslice_remap_init(vs,grid)
         ! Prepare online remapping of the variable from the grid of its file
-        ! onto `grid`. The file's geometry comes from its lon/lat: those named
-        ! in the variable's CF "coordinates" attribute, else its first two
-        ! dimensions.
+        ! onto `grid`. A projected grid grid_src with a cdo description
+        ! (grid_<grid_src>.txt next to the file, as FesmData writes it, else in
+        ! maps/) is read from it; otherwise the file's geometry comes from its
+        ! lon/lat: those named in the variable's CF "coordinates" attribute,
+        ! else its first two dimensions.
         !   - 1D lon/lat: a regular lon-lat grid; the map is cached in maps/
         !     under par%grid_src.
         !   - 2D lon/lat (curvilinear grids, e.g. tripolar ocean grids): a
@@ -251,51 +255,13 @@ contains
                 "name = "//trim(vs%par%name))
         end if
 
-        call nc_dims(fname,vs%par%name,dim_names,dims)
-        nx = dims(1)
-        ny = dims(2)
-
-        coords_att = ""
-        if (nc_exists_attr(fname,vs%par%name,"coordinates")) &
-            call nc_read_attr(fname,vs%par%name,"coordinates",coords_att)
-
-        ! lon/lat: named by the coordinates attribute (any order), else the
-        ! variable's first two dimensions
-        lon_name = dim_names(1)
-        lat_name = dim_names(2)
-        i0 = 1
-        do while (i0 .le. len_trim(coords_att))
-            i1 = index(coords_att(i0:)," ")
-            if (i1 .eq. 0) i1 = len_trim(coords_att(i0:)) + 1
-            word = coords_att(i0:i0+i1-2)
-            if (len_trim(word) .gt. 0) then
-                if (index(word,"lon") .gt. 0) lon_name = word
-                if (index(word,"lat") .gt. 0) lat_name = word
-            end if
-            i0 = i0 + i1
-        end do
-
-        ! Their rank decides: 2D lon/lat is a curvilinear grid, 1D a regular one
-        call nc_dims(fname,lon_name,dim_names,dims)
-
-        if (size(dims) .eq. 2) then
-            ! Curvilinear grid: a point set of its 2D lon/lat
-            allocate(lon2(nx,ny), lat2(nx,ny))
-            call nc_read(fname,lon_name,lon2)
-            call nc_read(fname,lat_name,lat2)
-            call points_init(pts_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
-                             x=reshape(lon2,[nx*ny]),y=reshape(lat2,[nx*ny]))
-            call map_init(vs%map,pts_src,grid,max_neighbors=10,method=trim(vs%par%remap))
-            vs%map_points = .true.
-        else
-            ! Regular lon-lat grid: its 1D axes
-            allocate(lon1(nx), lat1(ny))
-            call nc_read(fname,lon_name,lon1)
-            call nc_read(fname,lat_name,lat1)
-            call grid_init(grid_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
-                           x=lon1,y=lat1)
+        if (fesmdata_grid_desc_exists(fname,vs%par%grid_src)) then
+            ! Projected grid of its cdo description
+            call fesmdata_grid_read(grid_src,fname,trim(vs%par%grid_src))
             call map_init(vs%map,grid_src,grid,method=trim(vs%par%remap),fldr="maps")
             vs%map_points = .false.
+        else
+            call remap_init_lonlat()
         end if
 
         ! The variable is returned on the target grid
@@ -306,6 +272,60 @@ contains
         vs%y = grid%G%y
 
         return
+
+    contains
+
+        subroutine remap_init_lonlat()
+            ! The map from the lon/lat of the file.
+
+            call nc_dims(fname,vs%par%name,dim_names,dims)
+            nx = dims(1)
+            ny = dims(2)
+
+            coords_att = ""
+            if (nc_exists_attr(fname,vs%par%name,"coordinates")) &
+                call nc_read_attr(fname,vs%par%name,"coordinates",coords_att)
+
+            ! lon/lat: named by the coordinates attribute (any order), else the
+            ! variable's first two dimensions
+            lon_name = dim_names(1)
+            lat_name = dim_names(2)
+            i0 = 1
+            do while (i0 .le. len_trim(coords_att))
+                i1 = index(coords_att(i0:)," ")
+                if (i1 .eq. 0) i1 = len_trim(coords_att(i0:)) + 1
+                word = coords_att(i0:i0+i1-2)
+                if (len_trim(word) .gt. 0) then
+                    if (index(word,"lon") .gt. 0) lon_name = word
+                    if (index(word,"lat") .gt. 0) lat_name = word
+                end if
+                i0 = i0 + i1
+            end do
+
+            ! Their rank decides: 2D lon/lat is a curvilinear grid, 1D a regular one
+            call nc_dims(fname,lon_name,dim_names,dims)
+
+            if (size(dims) .eq. 2) then
+                ! Curvilinear grid: a point set of its 2D lon/lat
+                allocate(lon2(nx,ny), lat2(nx,ny))
+                call nc_read(fname,lon_name,lon2)
+                call nc_read(fname,lat_name,lat2)
+                call points_init(pts_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                                 x=reshape(lon2,[nx*ny]),y=reshape(lat2,[nx*ny]))
+                call map_init(vs%map,pts_src,grid,max_neighbors=10,method=trim(vs%par%remap))
+                vs%map_points = .true.
+            else
+                ! Regular lon-lat grid: its 1D axes
+                allocate(lon1(nx), lat1(ny))
+                call nc_read(fname,lon_name,lon1)
+                call nc_read(fname,lat_name,lat1)
+                call grid_init(grid_src,name=trim(vs%par%grid_src),mtype="latlon",units="degrees", &
+                               x=lon1,y=lat1)
+                call map_init(vs%map,grid_src,grid,method=trim(vs%par%remap),fldr="maps")
+                vs%map_points = .false.
+            end if
+
+        end subroutine remap_init_lonlat
 
     end subroutine varslice_remap_init
 
@@ -349,8 +369,9 @@ contains
 
     subroutine varslice_fill(vs,method)
         ! Fill the missing values of the slice: "nearest" gives each missing cell
-        ! the value of the nearest valid cell, per horizontal (x,y) slice
-        ! (fill_nearest of interp2D); "const" sets them to par%fill_value.
+        ! the value of the nearest valid cell, per horizontal (x,y) slice, and a
+        ! level without data the values of the level above (fill_nearest_levels
+        ! of interp2D); "const" sets them to par%fill_value.
 
         implicit none
 
@@ -358,7 +379,7 @@ contains
         character(len=*),     intent(IN)    :: method
 
         ! Local variables
-        integer :: k, t, ndim_sp
+        integer :: t, ndim_sp
 
         select case(trim(method))
 
@@ -378,11 +399,9 @@ contains
                 end if
 
                 do t = 1, size(vs%var,4)
-                do k = 1, size(vs%var,3)
-                    if (any(vs%var(:,:,k,t) .eq. mv) .and. any(vs%var(:,:,k,t) .ne. mv)) then
-                        call fill_nearest(vs%var(:,:,k,t), mv)
+                    if (any(vs%var(:,:,:,t) .eq. mv) .and. any(vs%var(:,:,:,t) .ne. mv)) then
+                        call fill_nearest_levels(vs%var(:,:,:,t), mv)
                     end if
-                end do
                 end do
 
         end select
@@ -466,6 +485,8 @@ contains
         integer  :: range_rep
         integer,  allocatable :: kk(:)
         real(wp), allocatable, target :: var(:,:,:,:)
+        real(wp), allocatable :: clim_mean(:,:,:)
+        logical  :: is_clim, collapse
         integer  :: s, nsp
         real(wp), pointer, contiguous :: src2d(:,:), dst2d(:,:)
 
@@ -478,6 +499,13 @@ contains
         else
             range_rep     = 1 
         end if
+
+        ! A climatology: a sub-annual cycle without years (time inactive, nsub > 1),
+        ! its last dimension the cycle; a range mean with rep=1 collapses it
+        is_clim  = (.not. with_time) .and. nint(par%time_par(4)) .gt. 1
+        collapse = .FALSE.
+        if (is_clim .and. present(method)) &
+            collapse = (trim(method) .eq. "range_mean" .and. range_rep .eq. 1)
 
         if (range_rep .gt. 1) then
             with_time_sub = .TRUE.
@@ -554,14 +582,15 @@ contains
         end if 
 
         if ( allocated(vs%var) .and. trim(fill_method) .eq. trim(vs%fill_method) .and. &
-             ( .not. with_time .or. &
+             ( (.not. with_time .and. (.not. is_clim .or. collapse .eqv. vs%clim_collapsed)) .or. &
                ( trim(slice_method) .eq. trim(vs%slice_method) &
                 .and. range_rep .eq. vs%range_rep &
                 .and. vs%time_range(1) .eq. time_range(1) &
                 .and. vs%time_range(2) .eq. time_range(2) ) ) ) then
 
             ! Do nothing, the varslice object is already up to date
-            ! for the current time, method and fill (data without time: always).
+            ! for the current time, method and fill (data without time: always,
+            ! a climatology as long as it is (not) collapsed to its mean alike).
 
         else
 
@@ -605,13 +634,30 @@ contains
                         ! 3D variable 
                         call nc_read(par%filename,par%name,vs%var(:,:,:,1),missing_value=mv)
 
+                    case(4)
+
+                        ! 3D variable with its sub-annual cycle (a climatology:
+                        ! varslice_init_data allows it only with nsub > 1)
+                        allocate(vs%var(vs%dim(1),vs%dim(2),vs%dim(3),vs%dim(4)))
+                        call nc_read(par%filename,par%name,vs%var,missing_value=mv)
+
                     case DEFAULT 
 
                         call varslice_error("varslice_update", &
-                            "ndim >= 4 with no time dimension is not allowed.", &
+                            "ndim > 4 with no time dimension is not allowed.", &
                             "ndim = "//to_str(par%ndim))
 
                 end select
+
+                ! A climatology (sub-annual cycle without years) asked for a
+                ! range mean with rep=1: the mean over its cycle
+                vs%clim_collapsed = collapse
+                if (collapse) then
+                    clim_mean = varslice_sub_mean(vs)
+                    deallocate(vs%var)
+                    allocate(vs%var(size(clim_mean,1),size(clim_mean,2),size(clim_mean,3),1))
+                    vs%var(:,:,:,1) = clim_mean
+                end if
 
             else 
                 ! Cases with a time dimension (more complicated)
@@ -1483,9 +1529,17 @@ contains
                     call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
                     call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
                     call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
+                else if (nint(vs%par%time_par(4)) .gt. 1) then
+                    ! 3D space + sub-annual cycle without years (a climatology,
+                    ! e.g. monthly ocean fields): the last dimension is the cycle
+                    call load_or_generate_axis(filename_dims,dim_names(1),vs%dim(1),vs%x)
+                    call load_or_generate_axis(filename_dims,dim_names(2),vs%dim(2),vs%y)
+                    call load_or_generate_axis(filename_dims,dim_names(3),vs%dim(3),vs%z)
                 else
                     call varslice_error("varslice_init_data", &
-                        "4D array without time dimension is not yet supported.")
+                        "4D array without time dimension needs a sub-annual period "// &
+                        "(time = 0 ... nsub, nsub > 1: the last dimension is the cycle).", &
+                        "name = "//trim(vs%par%name))
                 end if
 
             case DEFAULT
@@ -1669,7 +1723,7 @@ contains
         integer :: shp(3)
         real(wp), allocatable :: src(:,:), dst(:)
 
-        if (.not. vs%par%with_time) then
+        if (.not. vs%par%with_time .and. varslice_nsub(vs) .le. 1) then
             v = vs%var(:,:,:,1)
             return
         end if
