@@ -498,6 +498,14 @@ Figure&nbsp;1: Clamped-linear interpolation of a tabulated curve: linear between
 <td><code>series_interp_sig(ser, time)</code></td>
 <td>Interpolate the per-channel standard deviation to <code>time</code>; returns zeros if the series carries no sigma.</td>
 </tr>
+<tr class="even">
+<td><code>series_mean(ser, tw(2))</code></td>
+<td>Per-channel mean over the window <code>[tw(1), tw(2)]</code> of the clamped-linear interpolant (exact); a zero-width window gives the value at that time.</td>
+</tr>
+<tr class="odd">
+<td><code>series_normalize(ser, v0(:), v1(:))</code></td>
+<td>Rescale every channel in place, <code>var = (var - v0)/(v1 - v0)</code>, <code>sigma = sigma/|v1 - v0|</code>; stops if <code>v1 == v0</code>.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>series_class</code> exposes <code>filename</code>, <code>nt</code> (time points), <code>nc</code> (channels), <code>time(nt)</code>, <code>var(nt,nc)</code>, and <code>sigma(nt,nc)</code> (unallocated when absent). The time axis <code>time</code> and the <code>time</code> argument of the interpolators are <code>real(dp)</code>; values are <code>wp</code>.</p>

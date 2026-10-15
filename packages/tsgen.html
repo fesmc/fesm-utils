@@ -618,39 +618,49 @@ Figure&nbsp;6: Noise is layered on top of the mean forcing; <code>sigma</code> s
 </section>
 <section id="tabulated-series-method" class="level2">
 <h2 class="anchored" data-anchor-id="tabulated-series-method">Tabulated series method</h2>
-<p><code>method = "series"</code> reads a curve from file (ASCII or netCDF, auto-detected by extension) through the <a href="../packages/series.html">series</a> module and interpolates it on the file’s own absolute time axis. Only <code>method</code>, <code>sigma</code>, and the <code>series_*</code> keys are consulted. A multi-channel series (e.g.&nbsp;12 monthly values) reports the channel mean in <code>ts%f_now</code>, with per-channel values in <code>ts%vec%f_now(:)</code>.</p>
+<p><code>method = "series"</code> reads a curve from file (ASCII or netCDF, auto-detected by extension) through the <a href="../packages/series.html">series</a> module and interpolates it on the file’s own absolute time axis. Only <code>method</code>, <code>sigma</code>, the <code>series_*</code> keys and the optional <code>norm_t0</code>/<code>norm_t1</code> are consulted. A multi-channel series (e.g.&nbsp;12 monthly values) reports the channel mean in <code>ts%f_now</code>, with per-channel values in <code>ts%vec%f_now(:)</code>.</p>
+<p><strong>Normalisation.</strong> With both <code>norm_t0</code> and <code>norm_t1</code> given, the series is rescaled at load so that it is an index, 0 at <code>norm_t0</code> and 1 at <code>norm_t1</code>: <code>f = (S - S0)/(S1 - S0)</code> (the standard deviation, if any, scaled by <code>1/|S1 - S0|</code>). A single time takes the value of the series there; two times take its mean over that window (exact for the linear interpolant). For example, a proxy as a glacial index, 0 at present and 1 at the LGM:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>snap_idx_at</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    method      <span class="kw">=</span> <span class="st">"series"</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    sigma       <span class="kw">=</span> <span class="fl">0.0</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    series_file <span class="kw">=</span> <span class="st">"input/ngrip_d18o.dat"</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    norm_t0     <span class="kw">=</span> <span class="kw">-</span><span class="fl">2e3</span>, <span class="fl">0.0</span>       <span class="co">! [yr] mean over 2-0 ka  -&gt; 0</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    norm_t1     <span class="kw">=</span> <span class="kw">-</span><span class="fl">23e3</span>, <span class="kw">-</span><span class="fl">19e3</span>    <span class="co">! [yr] mean over 23-19 ka -&gt; 1</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="namelist-configuration" class="level2">
 <h2 class="anchored" data-anchor-id="namelist-configuration">Namelist configuration</h2>
 <p>Parameters are read from the namelist group named by <code>group</code> (used verbatim, default <code>"tsgen"</code>; here <code>&amp;tsgen_climate</code>). Only the keys relevant to the chosen <code>method</code> are read.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>tsgen_climate</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    method    <span class="kw">=</span> <span class="st">"ramp-time"</span>   <span class="co">! const | ramp-time | ramp-time-step | ramp-slope</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                              <span class="co">! | sin | series | exp | PI42 | H312b | H312PID</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                              <span class="co">! | H321PID | PID1</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    with_kill <span class="kw">=</span> <span class="cn">.FALSE.</span>       <span class="co">! stop once the response equilibrates at a bound</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    sigma     <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! stddev of the additive Gaussian noise [f]</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    df_sign   <span class="kw">=</span> <span class="fl">1.0</span>           <span class="co">! ramp direction, +1 or -1 (sin requires +1)</span></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    f_min     <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! lower forcing bound</span></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    f_max     <span class="kw">=</span> <span class="fl">10.0</span>          <span class="co">! upper forcing bound</span></span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    f_conv    <span class="kw">=</span> <span class="fl">5.0</span>           <span class="co">! convergence value (ramp-time-step)</span></span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    dt_init   <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! initialization hold before forcing starts [yr]</span></span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    dt_ramp   <span class="kw">=</span> <span class="fl">1000.0</span>        <span class="co">! ramp duration; also the period for method="sin" [yr]</span></span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    dt_conv   <span class="kw">=</span> <span class="fl">1000.0</span>        <span class="co">! relaxation duration (ramp-time-step) [yr]</span></span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    dt_ave    <span class="kw">=</span> <span class="fl">200.0</span>         <span class="co">! response-averaging window (feedback/kill) [yr]</span></span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    df_dt_max <span class="kw">=</span> <span class="fl">0.01</span>          <span class="co">! max/constant forcing rate [f/yr]</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>    tol       <span class="kw">=</span> <span class="fl">1.0e-4</span>        <span class="co">! feedback convergence tolerance on |dv_dt_ave|</span></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>For a tabulated series, replace the ramp/feedback keys with the file location:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>tsgen_climate</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    method           <span class="kw">=</span> <span class="st">"series"</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    sigma            <span class="kw">=</span> <span class="fl">0.0</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    series_file      <span class="kw">=</span> <span class="st">"input/co2.nc"</span>   <span class="co">! .nc/.nc4/.cdf -&gt; netCDF, else ASCII</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    series_var       <span class="kw">=</span> <span class="st">"co2"</span>            <span class="co">! (netCDF only) value variable</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    series_time_name <span class="kw">=</span> <span class="st">"time"</span>           <span class="co">! (netCDF only) time coordinate</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    method    <span class="kw">=</span> <span class="st">"ramp-time"</span>   <span class="co">! const | ramp-time | ramp-time-step | ramp-slope</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>                              <span class="co">! | sin | series | exp | PI42 | H312b | H312PID</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>                              <span class="co">! | H321PID | PID1</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    with_kill <span class="kw">=</span> <span class="cn">.FALSE.</span>       <span class="co">! stop once the response equilibrates at a bound</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    sigma     <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! stddev of the additive Gaussian noise [f]</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    df_sign   <span class="kw">=</span> <span class="fl">1.0</span>           <span class="co">! ramp direction, +1 or -1 (sin requires +1)</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    f_min     <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! lower forcing bound</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    f_max     <span class="kw">=</span> <span class="fl">10.0</span>          <span class="co">! upper forcing bound</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    f_conv    <span class="kw">=</span> <span class="fl">5.0</span>           <span class="co">! convergence value (ramp-time-step)</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    dt_init   <span class="kw">=</span> <span class="fl">0.0</span>           <span class="co">! initialization hold before forcing starts [yr]</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    dt_ramp   <span class="kw">=</span> <span class="fl">1000.0</span>        <span class="co">! ramp duration; also the period for method="sin" [yr]</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    dt_conv   <span class="kw">=</span> <span class="fl">1000.0</span>        <span class="co">! relaxation duration (ramp-time-step) [yr]</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    dt_ave    <span class="kw">=</span> <span class="fl">200.0</span>         <span class="co">! response-averaging window (feedback/kill) [yr]</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    df_dt_max <span class="kw">=</span> <span class="fl">0.01</span>          <span class="co">! max/constant forcing rate [f/yr]</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    tol       <span class="kw">=</span> <span class="fl">1.0e-4</span>        <span class="co">! feedback convergence tolerance on |dv_dt_ave|</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For a tabulated series, replace the ramp/feedback keys with the file location:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>tsgen_climate</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    method           <span class="kw">=</span> <span class="st">"series"</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    sigma            <span class="kw">=</span> <span class="fl">0.0</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    series_file      <span class="kw">=</span> <span class="st">"input/co2.nc"</span>   <span class="co">! .nc/.nc4/.cdf -&gt; netCDF, else ASCII</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    series_var       <span class="kw">=</span> <span class="st">"co2"</span>            <span class="co">! (netCDF only) value variable</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    series_time_name <span class="kw">=</span> <span class="st">"time"</span>           <span class="co">! (netCDF only) time coordinate</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    norm_t0          <span class="kw">=</span> <span class="fl">0.0</span>              <span class="co">! (optional) time or window [yr] -&gt; 0</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    norm_t1          <span class="kw">=</span> <span class="kw">-</span><span class="fl">21e3</span>            <span class="co">! (optional) time or window [yr] -&gt; 1</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -668,23 +678,23 @@ Note
 <section id="tabulating-and-writing-a-series" class="level2">
 <h2 class="anchored" data-anchor-id="tabulating-and-writing-a-series">Tabulating and writing a series</h2>
 <p>For validation or offline output, sample an analytic/<code>series</code> forcing over a time axis and write it to netCDF:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">real(dp)</span> <span class="dt">::</span> time(<span class="dv">2001</span>)</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> f(<span class="dv">2001</span>), dfdt(<span class="dv">2001</span>)</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="dt">integer</span>  <span class="dt">::</span> i</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span> i <span class="kw">=</span> <span class="dv">1</span>, <span class="fu">size</span>(time)</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    time(i) <span class="kw">=</span> <span class="dt">real(i-1, dp)</span>      <span class="co">! 0 .. 2000 yr</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")</span></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_write("forcing_out.nc", ts, time, f, dfdt)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">real(dp)</span> <span class="dt">::</span> time(<span class="dv">2001</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="dt">real(wp)</span> <span class="dt">::</span> f(<span class="dv">2001</span>), dfdt(<span class="dv">2001</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="dt">integer</span>  <span class="dt">::</span> i</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="kw">do</span> i <span class="kw">=</span> <span class="dv">1</span>, <span class="fu">size</span>(time)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    time(i) <span class="kw">=</span> <span class="dt">real(i-1, dp)</span>      <span class="co">! 0 .. 2000 yr</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="kw">end do</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co">call tsgen_write("forcing_out.nc", ts, time, f, dfdt)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="reproducing-the-figures" class="level2">
 <h2 class="anchored" data-anchor-id="reproducing-the-figures">Reproducing the figures</h2>
 <p>The annotated figures on this page are generated by <a href="https://github.com/fesmc/fesm-utils/blob/main/docs/figures/make_figures.jl"><code>docs/figures/make_figures.jl</code></a>, which re-implements the analytic <code>eval_open</code> formulas from <code>src/tsgen.f90</code> for illustration. Regenerate them with:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> docs/figures</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">julia</span> <span class="at">--project</span><span class="op">=</span>. make_figures.jl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> docs/figures</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">julia</span> <span class="at">--project</span><span class="op">=</span>. make_figures.jl</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="see-also" class="level2">
 <h2 class="anchored" data-anchor-id="see-also">See also</h2>
