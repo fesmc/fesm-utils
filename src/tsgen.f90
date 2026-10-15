@@ -35,6 +35,13 @@ module tsgen
         character(len=56)  :: series_var
         character(len=56)  :: series_time_name
 
+        ! Optional normalisation of a series ("series"): f = (S - S0)/(S1 - S0),
+        ! S0/S1 the series at norm_t0/norm_t1 (one time: the value there; two
+        ! times: the mean over that window). Active when both are given.
+        logical  :: norm
+        real(dp) :: norm_t0(2)
+        real(dp) :: norm_t1(2)
+
         ! Derived at init: .TRUE. for response-driven (feedback) methods
         logical  :: feedback
     end type
@@ -142,6 +149,20 @@ contains
             end if
 
             ts%nc = ts%ser%nc
+
+            ! Optional normalisation of the loaded series (in place, so every
+            ! later evaluation, tabulation and output sees the index itself).
+            ts%par%norm = nml_has_param(filename,trim(par_group),"norm_t0") .and. &
+                          nml_has_param(filename,trim(par_group),"norm_t1")
+            if (ts%par%norm) then
+                ts%par%norm_t0 = MV
+                ts%par%norm_t1 = MV
+                call nml_read(filename,trim(par_group),"norm_t0",ts%par%norm_t0)
+                call nml_read(filename,trim(par_group),"norm_t1",ts%par%norm_t1)
+                if (ts%par%norm_t0(2) .eq. MV) ts%par%norm_t0(2) = ts%par%norm_t0(1)
+                if (ts%par%norm_t1(2) .eq. MV) ts%par%norm_t1(2) = ts%par%norm_t1(1)
+                call normalize_series(ts)
+            end if
 
         else
             ! Time-driven (analytic) or response-driven (feedback) scalar forcing
@@ -787,10 +808,34 @@ contains
         par%f_min     = 0.0_wp
         par%f_max     = 0.0_wp
         par%f_conv    = 0.0_wp
+        par%norm      = .FALSE.
+        par%norm_t0   = 0.0_dp
+        par%norm_t1   = 0.0_dp
 
         return
 
     end subroutine tsgen_par_defaults
+
+    subroutine normalize_series(ts)
+        ! Rescale the loaded series so that its value (or window mean) at
+        ! norm_t0 becomes 0 and at norm_t1 becomes 1.
+
+        type(tsgen_class), intent(INOUT) :: ts
+
+        real(wp) :: v0(ts%ser%nc), v1(ts%ser%nc)
+
+        v0 = series_mean(ts%ser,ts%par%norm_t0)
+        v1 = series_mean(ts%ser,ts%par%norm_t1)
+
+        call series_normalize(ts%ser,v0,v1)
+
+        write(*,"(a,a)")        "tsgen:: normalised series: ", trim(ts%par%series_file)
+        write(*,"(a,2g14.5,a,g14.5)") "    norm_t0 = ", ts%par%norm_t0, " -> S0 = ", sum(v0)/real(ts%ser%nc,wp)
+        write(*,"(a,2g14.5,a,g14.5)") "    norm_t1 = ", ts%par%norm_t1, " -> S1 = ", sum(v1)/real(ts%ser%nc,wp)
+
+        return
+
+    end subroutine normalize_series
 
     logical function series_is_netcdf(filename)
         ! .TRUE. when the filename extension denotes a netCDF file.

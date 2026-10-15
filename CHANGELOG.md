@@ -5,6 +5,11 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
+- **tsgen**: normalisation of a `series` into an index, `f = (S - S0)/(S1 - S0)`, with
+  `norm_t0`/`norm_t1` (one time: the value there; two times: the mean over that window);
+  active when both are given.
+- **series**: `series_mean(ser, tw)` (exact window mean of the interpolant) and
+  `series_normalize(ser, v0, v1)`. `make test-series` covers both.
 - **fesmdata**: `fesmdata_flux_conv(fname, varname, units_out)`, the factor of a water flux
   from the units attribute of the variable to `units_out` (kg m-2 or mm w.e. per s, d or yr;
   1 yr = 365.25 d), and `fesmdata_temp_ref(fname, varname)`, the reference temperature of

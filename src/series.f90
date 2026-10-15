@@ -43,6 +43,8 @@ module series
     public :: series_interp
     public :: series_interp1
     public :: series_interp_sig
+    public :: series_mean
+    public :: series_normalize
 
 contains
 
@@ -181,6 +183,83 @@ contains
         return
 
     end function series_interp_sig
+
+    function series_mean(ser,tw) result(v)
+        ! Per-channel mean over the window [tw(1),tw(2)] of the clamped-linear
+        ! interpolant (exact: trapezoids between the window ends and the file
+        ! times inside it). A zero-width window gives the interpolated value.
+
+        type(series_class), intent(IN) :: ser
+        real(dp),           intent(IN) :: tw(2)
+        real(wp) :: v(ser%nc)
+
+        real(dp), allocatable :: tt(:)
+        real(wp), allocatable :: vv(:,:)
+        real(dp) :: ta, tb
+        integer  :: n, i, k
+
+        ta = min(tw(1),tw(2))
+        tb = max(tw(1),tw(2))
+
+        if (tb - ta .le. 0.0_dp) then
+            v = series_interp(ser,ta)
+            return
+        end if
+
+        n = 2 + count(ser%time .gt. ta .and. ser%time .lt. tb)
+        allocate(tt(n),vv(n,ser%nc))
+
+        tt(1) = ta
+        k = 1
+        do i = 1, ser%nt
+            if (ser%time(i) .gt. ta .and. ser%time(i) .lt. tb) then
+                k = k + 1
+                tt(k) = ser%time(i)
+            end if
+        end do
+        tt(n) = tb
+
+        do k = 1, n
+            vv(k,:) = series_interp(ser,tt(k))
+        end do
+
+        v = 0.0_wp
+        do k = 1, n-1
+            v = v + real(0.5_dp*(tt(k+1)-tt(k)),wp)*(vv(k,:)+vv(k+1,:))
+        end do
+        v = v / real(tb-ta,wp)
+
+        return
+
+    end function series_mean
+
+    subroutine series_normalize(ser,v0,v1)
+        ! Rescale every channel in place so that v0 -> 0 and v1 -> 1:
+        ! var = (var - v0)/(v1 - v0); sigma (if present) = sigma/|v1 - v0|.
+
+        type(series_class), intent(INOUT) :: ser
+        real(wp),           intent(IN)    :: v0(:), v1(:)
+
+        integer :: c
+
+        if (size(v0) .ne. ser%nc .or. size(v1) .ne. ser%nc) then
+            write(*,*) "series_normalize:: Error: v0/v1 must have nc = ", ser%nc, " values."
+            stop
+        end if
+
+        do c = 1, ser%nc
+            if (v1(c) .eq. v0(c)) then
+                write(*,*) "series_normalize:: Error: reference values are equal &
+                            &(v0 = v1 = ", v0(c), ") in channel ", c, " of ", trim(ser%filename)
+                stop
+            end if
+            ser%var(:,c) = (ser%var(:,c) - v0(c)) / (v1(c) - v0(c))
+            if (allocated(ser%sigma)) ser%sigma(:,c) = ser%sigma(:,c) / abs(v1(c) - v0(c))
+        end do
+
+        return
+
+    end subroutine series_normalize
 
     ! === Internals ============================================================
 

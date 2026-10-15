@@ -2,7 +2,8 @@ program test_series
     ! Exercise the series (tabulated time-series reader) module:
     !   * ASCII 1-D and 2-D (multi-channel) tables;
     !   * netCDF 1-D and 2-D variables, with an optional _sd sigma companion;
-    !   * clamped-linear interpolation at, between, and outside the nodes.
+    !   * clamped-linear interpolation at, between, and outside the nodes;
+    !   * window means and normalisation (series_mean, series_normalize).
     ! All input files are written by the test itself, then removed.
 
     use precision, only: dp, wp
@@ -30,6 +31,7 @@ program test_series
     call test_netcdf_1d()
     call test_netcdf_2d()
     call test_sigma()
+    call test_mean_normalize()
 
     write(*,"(a)") ""
     if (nfail == 0) then
@@ -162,6 +164,36 @@ contains
     end subroutine test_sigma
 
     ! ---- helpers ----
+
+    subroutine test_mean_normalize()
+        ! time=[0,1000,2000], var=[0,10,20] (rewritten): window means of the
+        ! linear interpolant, then normalisation of S(0) -> 0, mean(1000:2000) -> 1.
+        type(series_class) :: s
+        real(wp) :: v(1), v0(1), v1(1)
+        integer :: u
+
+        open(newunit=u,file=f_asc1,status="replace",action="write")
+        write(u,"(a)") "   0.0    0.0"
+        write(u,"(a)") "1000.0   10.0"
+        write(u,"(a)") "2000.0   20.0"
+        close(u)
+
+        call series_load(s,f_asc1)
+
+        v = series_mean(s,[500.0_dp,500.0_dp])
+        call check("mean      point(500)        == 5 ", v(1),  5.0_wp)
+        v = series_mean(s,[500.0_dp,1500.0_dp])
+        call check("mean      window(500:1500)  == 10", v(1), 10.0_wp)
+        v = series_mean(s,[1500.0_dp,2500.0_dp])
+        call check("mean      clamped(1500:2500)== 18.75", v(1), 18.75_wp)
+
+        v0 = series_mean(s,[0.0_dp,0.0_dp])
+        v1 = series_mean(s,[1000.0_dp,2000.0_dp])
+        call series_normalize(s,v0,v1)
+        call check("normalize interp(0)    == 0   ", series_interp1(s,   0.0_dp), 0.0_wp)
+        call check("normalize interp(1500) == 1   ", series_interp1(s,1500.0_dp), 1.0_wp)
+        call check("normalize interp(2000) == 4/3 ", series_interp1(s,2000.0_dp), 4.0_wp/3.0_wp)
+    end subroutine test_mean_normalize
 
     subroutine check(name, got, expected)
         character(len=*), intent(in) :: name
