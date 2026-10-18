@@ -107,6 +107,11 @@ not declared in the defaults file (under `defaults_group`, or `group` if that
 optional is absent). `halt_on_error` defaults to `.TRUE.`, in which case the
 program stops after reporting all unknown parameters.
 
+`nml_has_param(filename, group, name)` and `nml_has_group(filename, group)` are
+queries without side effects: is the parameter set, does the file hold the group
+(a `&group ... /` block, possibly empty, or a flat `group.param` line). The group
+query lets a caller look a group up in a list of files, first file that has it.
+
 The helper `nml_replace(s, text, rep, outs)` performs substring replacement on
 a string (optionally writing to `outs` rather than in place) and is also
 public.
