@@ -5,6 +5,8 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
+- **tsgen**: `tsgen_init(..., defaults_file, defaults_group)`: keys not set in the par group fall
+  back to a template group in a defaults file (as `nml_read`); `norm_t0`/`norm_t1` stay optional.
 - **tsgen**: normalisation of a `series` into an index, `f = (S - S0)/(S1 - S0)`, with
   `norm_t0`/`norm_t1` (one time: the value there; two times: the mean over that window);
   active when both are given.

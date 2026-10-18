@@ -4,6 +4,8 @@ program test_tsgen
     !     tabulation path, checked against known values;
     !   * a feedback method (PI42) stepped online, checked to stay within bounds;
     !   * the kill switch (const forcing that saturates at f_max).
+    !   * defaults: keys missing from the par group fall back to a template group
+    !     in a defaults file (defaults_file/defaults_group).
     ! The namelist is written by the test itself, so no external files are needed.
 
     use precision, only: dp, wp
@@ -13,6 +15,7 @@ program test_tsgen
 
     character(len=*), parameter :: nml_file = "test_tsgen_tmp.nml"
     character(len=*), parameter :: ser_file = "test_tsgen_series.dat"
+    character(len=*), parameter :: def_file = "test_tsgen_defaults_tmp.nml"
     real(wp),         parameter :: tol = real(1e-4,wp)
     integer :: nfail
 
@@ -31,6 +34,7 @@ program test_tsgen
     call test_series_method()
     call test_feedback_bounds()
     call test_kill()
+    call test_defaults()
 
     write(*,"(a)") ""
     if (nfail == 0) then
@@ -42,6 +46,7 @@ program test_tsgen
     ! Clean up the temporary files
     call remove_file(nml_file)
     call remove_file(ser_file)
+    call remove_file(def_file)
 
     if (nfail > 0) stop 1
 
@@ -169,6 +174,31 @@ contains
         call check_logical("const+kill activates at saturation ", ts%kill)
     end subroutine test_kill
 
+    subroutine test_defaults()
+        ! Template group "tsgen_tmpl" in def_file holds every key (ramp 0 -> 10
+        ! over dt_ramp=1000). Par group "tsgen_user" sets only method and f_max=20,
+        ! so dt_ramp etc. come from the template and f_max is overlaid: f(500) == 10.
+        type(tsgen_class) :: ts
+        real(dp) :: time(21)
+        real(wp) :: f(21)
+        integer  :: i, u
+
+        open(newunit=u, file=def_file, status="replace", action="write")
+        call put(u, "tmpl", "const", ".FALSE.", 100.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.01_wp, 1.0_wp)
+        close(u)
+
+        do i = 1, 21
+            time(i) = real(i-1,dp)*100.0_dp
+        end do
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_user", &
+                        defaults_file=def_file, defaults_group="tsgen_tmpl")
+        call tsgen_tabulate(ts, time, f)
+
+        call check("defaults   f_max overlaid == 20", ts%par%f_max, 20.0_wp)
+        call check("defaults   f(500)  == 10       ", f(6),  10.0_wp)
+        call check("defaults   f(1000) == 20       ", f(11), 20.0_wp)
+    end subroutine test_defaults
+
     ! ---- helpers ----
 
     subroutine check(name, got, expected)
@@ -205,6 +235,13 @@ contains
         call put(u, "sin",  "sin",            ".FALSE.", 100.0_wp, 2000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.01_wp, 1.0_wp)
         call put(u, "pi",   "PI42",           ".TRUE.",  200.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-2_wp, 0.05_wp, 1.0_wp)
         call put(u, "kill", "const",          ".TRUE.",  100.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.02_wp, 1.0_wp)
+
+        ! Partial group for test_defaults: other keys come from the template.
+        write(u,"(a)") "&tsgen_user"
+        write(u,"(a)") "    method = ""ramp-time"""
+        write(u,"(a)") "    f_max  = 20.0"
+        write(u,"(a)") "/"
+        write(u,"(a)") ""
 
         ! Tabulated-series method: only method/sigma/series_file are consulted.
         write(u,"(a)") "&tsgen_ser"

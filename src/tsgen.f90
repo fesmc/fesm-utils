@@ -99,14 +99,20 @@ module tsgen
 
 contains
 
-    subroutine tsgen_init(ts,filename,time,group)
+    subroutine tsgen_init(ts,filename,time,group,defaults_file,defaults_group)
         ! `group` is the namelist group name to read (default "tsgen"). It is used
         ! verbatim -- no prefix is forced -- so callers fully control the group name.
+        ! With `defaults_file`, each key read here must exist in the template group
+        ! `defaults_group` (default: `group`) of that file; its value is taken from
+        ! there and overlaid by `filename` when set (see nml_read). norm_t0/norm_t1
+        ! stay optional: they are read only when both are set in `filename`.
 
         type(tsgen_class), intent(INOUT) :: ts
         character(len=*),   intent(IN)    :: filename
         real(dp),           intent(IN)    :: time
         character(len=*),   intent(IN), optional :: group
+        character(len=*),   intent(IN), optional :: defaults_file
+        character(len=*),   intent(IN), optional :: defaults_group
 
         integer :: ntot
         character(len=56) :: par_group
@@ -115,11 +121,13 @@ contains
         if (present(group)) par_group = trim(group)
 
         ! The method determines which parameters are relevant, so read it first.
-        call nml_read(filename,trim(par_group),"method",      ts%par%method)
+        call nml_read(filename,trim(par_group),"method",      ts%par%method, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
         ! Noise amplitude applies to every method (it is added on top of the
         ! mean forcing), so it is always read.
-        call nml_read(filename,trim(par_group),"sigma",       ts%par%sigma)
+        call nml_read(filename,trim(par_group),"sigma",       ts%par%sigma, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
         ! Classify the method: response-driven (feedback) vs time-driven
         select case(trim(ts%par%method))
@@ -135,11 +143,14 @@ contains
             call tsgen_par_defaults(ts%par)
             ts%par%with_kill = .FALSE.
 
-            call nml_read(filename,trim(par_group),"series_file",ts%par%series_file)
+            call nml_read(filename,trim(par_group),"series_file",ts%par%series_file, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
             if (series_is_netcdf(ts%par%series_file)) then
-                call nml_read(filename,trim(par_group),"series_var",      ts%par%series_var)
-                call nml_read(filename,trim(par_group),"series_time_name",ts%par%series_time_name)
+                call nml_read(filename,trim(par_group),"series_var",      ts%par%series_var, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+                call nml_read(filename,trim(par_group),"series_time_name",ts%par%series_time_name, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
                 call series_load(ts%ser,ts%par%series_file, &
                                     varname=ts%par%series_var, &
                                     time_name=ts%par%series_time_name, &
@@ -166,17 +177,28 @@ contains
 
         else
             ! Time-driven (analytic) or response-driven (feedback) scalar forcing
-            call nml_read(filename,trim(par_group),"with_kill",   ts%par%with_kill)
-            call nml_read(filename,trim(par_group),"dt_ave",      ts%par%dt_ave)
-            call nml_read(filename,trim(par_group),"dt_init",     ts%par%dt_init)
-            call nml_read(filename,trim(par_group),"dt_ramp",     ts%par%dt_ramp)
-            call nml_read(filename,trim(par_group),"dt_conv",     ts%par%dt_conv)
-            call nml_read(filename,trim(par_group),"df_sign",     ts%par%df_sign)
-            call nml_read(filename,trim(par_group),"tol",         ts%par%tol)
-            call nml_read(filename,trim(par_group),"df_dt_max",   ts%par%df_dt_max)
-            call nml_read(filename,trim(par_group),"f_min",       ts%par%f_min)
-            call nml_read(filename,trim(par_group),"f_max",       ts%par%f_max)
-            call nml_read(filename,trim(par_group),"f_conv",      ts%par%f_conv)
+            call nml_read(filename,trim(par_group),"with_kill",   ts%par%with_kill, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_ave",      ts%par%dt_ave, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_init",     ts%par%dt_init, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_ramp",     ts%par%dt_ramp, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_conv",     ts%par%dt_conv, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"df_sign",     ts%par%df_sign, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"tol",         ts%par%tol, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"df_dt_max",   ts%par%df_dt_max, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_min",       ts%par%f_min, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_max",       ts%par%f_max, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_conv",      ts%par%f_conv, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
             ! Make sure sign is only +1/-1
             ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)

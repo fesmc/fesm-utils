@@ -51,7 +51,7 @@ ts%f_mean_now + ts%eps`.
 
 | Procedure | Purpose |
 |---|---|
-| `tsgen_init(ts, filename, time, [group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`), classify the method, allocate state, set the initial value at simulation time `time`. |
+| `tsgen_init(ts, filename, time, [group], [defaults_file], [defaults_group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`); with `defaults_file`, keys not set in `group` are taken from the template group `defaults_group` (default `group`) of that file, which must declare every key read (`norm_t0`/`norm_t1` excepted). Then classify the method, allocate state, set the initial value at simulation time `time`. |
 | `tsgen_update(ts, time, var, [dv_dt])` | Advance to `time`; compute `ts%f_now` from the method, the response `var`, and (optionally) its rate `dv_dt`. |
 | `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
 | `tsgen_write(filename, ts, time(:), f(:), [df_dt(:)])` | Write a tabulated series to netCDF (`time`, `f`, optional `df_dt`). |
