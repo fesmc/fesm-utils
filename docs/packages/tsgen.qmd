@@ -45,18 +45,20 @@ end do
 
 The object carries both the mean forcing (`ts%f_mean_now`), the realized noise
 sample (`ts%eps`), and the reported rate of change (`ts%df_dt`). `ts%f_now =
-ts%f_mean_now + ts%eps`.
+ts%f_mean_now + ts%eps`, with the [window modifier](#window-modifier), when
+active, applied to the mean before the noise: `ts%f_now = W(t, ts%f_mean_now) +
+ts%eps`.
 
 ## Public API
 
 | Procedure | Purpose |
 |---|---|
-| `tsgen_init(ts, filename, time, [group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`), classify the method, allocate state, set the initial value at simulation time `time`. |
+| `tsgen_init(ts, filename, time, [group], [defaults_file], [defaults_group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`); with `defaults_file`, keys not set in `group` are taken from the template group `defaults_group` (default `group`) of that file, which must declare every key read (`norm_t0`/`norm_t1` excepted; this includes the `win_*` keys, which are optional only without `defaults_file`). Then classify the method, allocate state, set the initial value at simulation time `time`. |
 | `tsgen_update(ts, time, var, [dv_dt])` | Advance to `time`; compute `ts%f_now` from the method, the response `var`, and (optionally) its rate `dv_dt`. |
-| `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
+| `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing without noise (window modifier included) over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
 | `tsgen_write(filename, ts, time(:), f(:), [df_dt(:)])` | Write a tabulated series to netCDF (`time`, `f`, optional `df_dt`). |
 | `tsgen_write_step(filename, ts, time, [label])` | Append a per-step 1-D diagnostic record (variables prefixed by the tsgen label, or `label` if given). |
-| `tsgen_restart_write(filename, ts, time)` / `tsgen_restart_read(ts, filename)` | Persist and restore controller state across a restart (`tsgen_restart_read` runs after `tsgen_init`). |
+| `tsgen_restart_write(filename, ts, time)` / `tsgen_restart_read(ts, filename)` | Persist and restore controller state across a restart (`tsgen_restart_read` runs after `tsgen_init`), and the random number generator state when the object draws noise (see [Noise](#noise)). |
 
 `tsgen_class` holds the configuration (`ts%par`), the loaded `series` (if any),
 history buffers for feedback/kill, and the runtime outputs listed above.
@@ -109,6 +111,46 @@ variable, the per-time `sigma` from the file is used instead (falling back to
 `par%sigma` where absent).
 
 ![Noise is layered on top of the mean forcing; `sigma` sets its spread.](../figures/tsgen_noise.png){#fig-noise width=90%}
+
+The noise comes from the intrinsic `random_number`. When the object draws noise,
+`tsgen_restart_write` saves the generator state (`random_seed(get=)`, variable
+`rng_seed` on dimension `rng`) and `tsgen_restart_read` restores it
+(`random_seed(put=)`), so a restarted run continues with the same noise as
+an uninterrupted one. The generator is process-wide (shared with any other
+user of `random_number`), and the state size depends on the compiler: a restart
+file without the state, or with a state of another size, keeps the current state
+(with a message).
+
+## Window modifier
+
+A modifier of the value within a time window, for every method, applied to the
+mean after the method (and the normalisation of a `series`) and before the
+noise:
+
+$$
+f' = f + w(t)\,(\mathrm{win\_fac} - 1)\,(f - \mathrm{win\_ref}),
+$$
+
+i.e. `f' = win_ref + win_fac*(f - win_ref)` at full effect. With
+`win_above = .TRUE.` it applies only where `f > win_ref`. The weight is
+`w = 1` for `win_t0 < t < win_t1` and 0 outside, with linear ramps of width
+`win_taper` inside both edges, `w = min(1, (t - win_t0)/win_taper, (win_t1 -
+t)/win_taper)`, so the modifier is continuous in time. `t` is the absolute
+simulation time. The window is inactive when `win_t1 <= win_t0` (the default).
+`ts%f_mean_now` stays the unmodified value (the state of feedback methods and
+the kill switch use it; `ts%df_dt` is its rate).
+
+For example, damping the part of a glacial index above 1 during the Holocene
+(the former snapclim `f_hol` rule):
+
+```fortran
+    win_t0    = -12e3     ! [yr]
+    win_t1    = -1e3      ! [yr]
+    win_taper = 0.0       ! [yr]
+    win_fac   = 0.5       ! f_hol
+    win_ref   = 1.0
+    win_above = .TRUE.
+```
 
 ## Response-driven (feedback) methods
 
@@ -182,6 +224,13 @@ default `"tsgen"`; here `&tsgen_climate`). Only the keys relevant to the chosen
 
     df_dt_max = 0.01          ! max/constant forcing rate [f/yr]
     tol       = 1.0e-4        ! feedback convergence tolerance on |dv_dt_ave|
+
+    win_t0    = 0.0           ! window modifier: start [yr]
+    win_t1    = 0.0           ! window modifier: end [yr] (inactive if <= win_t0)
+    win_taper = 0.0           ! linear ramps at both window edges [yr]
+    win_fac   = 1.0           ! factor on f - win_ref inside the window
+    win_ref   = 0.0           ! reference value
+    win_above = .FALSE.       ! modify only where f > win_ref
 /
 ```
 

@@ -4,6 +4,10 @@ program test_tsgen
     !     tabulation path, checked against known values;
     !   * a feedback method (PI42) stepped online, checked to stay within bounds;
     !   * the kill switch (const forcing that saturates at f_max).
+    !   * defaults: keys missing from the par group fall back to a template group
+    !     in a defaults file (defaults_file/defaults_group).
+    !   * the window modifier (win_*), analytic and series methods;
+    !   * the RNG state in the restart: noise after a restart as without it.
     ! The namelist is written by the test itself, so no external files are needed.
 
     use precision, only: dp, wp
@@ -13,6 +17,9 @@ program test_tsgen
 
     character(len=*), parameter :: nml_file = "test_tsgen_tmp.nml"
     character(len=*), parameter :: ser_file = "test_tsgen_series.dat"
+    character(len=*), parameter :: def_file = "test_tsgen_defaults_tmp.nml"
+    character(len=*), parameter :: win_file = "test_tsgen_win_series.dat"
+    character(len=*), parameter :: rst_file = "test_tsgen_restart_tmp.nc"
     real(wp),         parameter :: tol = real(1e-4,wp)
     integer :: nfail
 
@@ -31,6 +38,9 @@ program test_tsgen
     call test_series_method()
     call test_feedback_bounds()
     call test_kill()
+    call test_defaults()
+    call test_window()
+    call test_rng_restart()
 
     write(*,"(a)") ""
     if (nfail == 0) then
@@ -42,6 +52,9 @@ program test_tsgen
     ! Clean up the temporary files
     call remove_file(nml_file)
     call remove_file(ser_file)
+    call remove_file(def_file)
+    call remove_file(win_file)
+    call remove_file(rst_file)
 
     if (nfail > 0) stop 1
 
@@ -169,6 +182,118 @@ contains
         call check_logical("const+kill activates at saturation ", ts%kill)
     end subroutine test_kill
 
+    subroutine test_defaults()
+        ! Template group "tsgen_tmpl" in def_file holds every key (ramp 0 -> 10
+        ! over dt_ramp=1000). Par group "tsgen_user" sets only method and f_max=20,
+        ! so dt_ramp etc. come from the template and f_max is overlaid: f(500) == 10.
+        type(tsgen_class) :: ts
+        real(dp) :: time(21)
+        real(wp) :: f(21)
+        integer  :: i, u
+
+        open(newunit=u, file=def_file, status="replace", action="write")
+        call put(u, "tmpl", "const", ".FALSE.", 100.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.01_wp, 1.0_wp, &
+                 win=.TRUE.)
+        close(u)
+
+        do i = 1, 21
+            time(i) = real(i-1,dp)*100.0_dp
+        end do
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_user", &
+                        defaults_file=def_file, defaults_group="tsgen_tmpl")
+        call tsgen_tabulate(ts, time, f)
+
+        call check("defaults   f_max overlaid == 20", ts%par%f_max, 20.0_wp)
+        call check("defaults   f(500)  == 10       ", f(6),  10.0_wp)
+        call check("defaults   f(1000) == 20       ", f(11), 20.0_wp)
+    end subroutine test_defaults
+
+    subroutine test_window()
+        ! Constant value 2 with win_ref = 1, win_fac = 0.5, win_above in the
+        ! window -12 ka < t < -1 ka: 1 + 0.5*(2 - 1) = 1.5 inside, 2 outside.
+        ! A taper of 1 kyr gives half the effect 500 yr inside the edges (1.75).
+        ! A value below win_ref is untouched with win_above (scaled without).
+        type(tsgen_class) :: ts
+        real(dp) :: time(5)
+        real(wp) :: f(5)
+        integer  :: u
+
+        time = [-15e3_dp, -12e3_dp, -6e3_dp, -1e3_dp, 0.0_dp]
+
+        call tsgen_init(ts, nml_file, -20e3_dp, group="tsgen_win")
+        call check("window     f_now(init) outside == 2", ts%f_now, 2.0_wp)
+        call tsgen_tabulate(ts, time, f)
+        call check("window     f(-15ka) == 2  ", f(1), 2.0_wp)
+        call check("window     f(-12ka) == 2  ", f(2), 2.0_wp)
+        call check("window     f(-6ka)  == 1.5", f(3), 1.5_wp)
+        call check("window     f(-1ka)  == 2  ", f(4), 2.0_wp)
+        call check("window     f(0)     == 2  ", f(5), 2.0_wp)
+        call tsgen_update(ts, -6e3_dp, 0.0_wp)
+        call check("window     f_now(-6ka) == 1.5", ts%f_now, 1.5_wp)
+        call check("window     f_mean(-6ka) == 2 ", ts%f_mean_now, 2.0_wp)
+
+        time = [-12e3_dp, -11.5e3_dp, -11e3_dp, -1.5e3_dp, -1e3_dp]
+        call tsgen_init(ts, nml_file, -20e3_dp, group="tsgen_win_taper")
+        call tsgen_tabulate(ts, time, f)
+        call check("taper      f(-12ka)   == 2   ", f(1), 2.0_wp)
+        call check("taper      f(-11.5ka) == 1.75", f(2), 1.75_wp)
+        call check("taper      f(-11ka)   == 1.5 ", f(3), 1.5_wp)
+        call check("taper      f(-1.5ka)  == 1.75", f(4), 1.75_wp)
+        call check("taper      f(-1ka)    == 2   ", f(5), 2.0_wp)
+
+        call tsgen_init(ts, nml_file, -20e3_dp, group="tsgen_win_below")
+        call tsgen_update(ts, -6e3_dp, 0.0_wp)
+        call check("win_above  below ref untouched == 0.5", ts%f_now, 0.5_wp)
+
+        call tsgen_init(ts, nml_file, -20e3_dp, group="tsgen_win_both")
+        call tsgen_update(ts, -6e3_dp, 0.0_wp)
+        call check("no above   below ref scaled == 0.75 ", ts%f_now, 0.75_wp)
+
+        ! Series path (eval_series): constant series of 2
+        open(newunit=u, file=win_file, status="replace", action="write")
+        write(u,"(a)") "-20000.0   2.0"
+        write(u,"(a)") "     0.0   2.0"
+        close(u)
+        call tsgen_init(ts, nml_file, -20e3_dp, group="tsgen_win_ser")
+        call tsgen_update(ts, -15e3_dp, 0.0_wp)
+        call check("win series f_now(-15ka) == 2  ", ts%f_now, 2.0_wp)
+        call tsgen_update(ts, -6e3_dp, 0.0_wp)
+        call check("win series f_now(-6ka)  == 1.5", ts%f_now, 1.5_wp)
+    end subroutine test_window
+
+    subroutine test_rng_restart()
+        ! Noisy ramp (sigma > 0) run to t1 = 100, restart written, continued to
+        ! t2 = 200. A fresh object restarted from the file (after other draws
+        ! from the generator) must give the identical noise from t1 to t2.
+        type(tsgen_class) :: ts
+        real(wp) :: f_a(10), f_b(10), eps_a(10), eps_b(10), junk(7)
+        integer  :: i
+
+        call tsgen_init(ts, nml_file, 0.0_dp, group="tsgen_noise")
+        do i = 1, 10
+            call tsgen_update(ts, real(i,dp)*10.0_dp, 0.0_wp)
+        end do
+        call tsgen_restart_write(rst_file, ts, 100.0_dp)
+        do i = 1, 10
+            call tsgen_update(ts, 100.0_dp + real(i,dp)*10.0_dp, 0.0_wp)
+            f_a(i)   = ts%f_now
+            eps_a(i) = ts%eps
+        end do
+
+        call tsgen_init(ts, nml_file, 100.0_dp, group="tsgen_noise")
+        call random_number(junk)            ! move the generator on
+        call tsgen_restart_read(ts, rst_file)
+        do i = 1, 10
+            call tsgen_update(ts, 100.0_dp + real(i,dp)*10.0_dp, 0.0_wp)
+            f_b(i)   = ts%f_now
+            eps_b(i) = ts%eps
+        end do
+
+        call check_logical("rng        noise drawn (eps /= 0)        ", any(eps_a .ne. 0.0_wp))
+        call check_logical("rng        restart: identical noise t1-t2", all(eps_a .eq. eps_b))
+        call check_logical("rng        restart: identical f_now t1-t2", all(f_a .eq. f_b))
+    end subroutine test_rng_restart
+
     ! ---- helpers ----
 
     subroutine check(name, got, expected)
@@ -206,6 +331,49 @@ contains
         call put(u, "pi",   "PI42",           ".TRUE.",  200.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-2_wp, 0.05_wp, 1.0_wp)
         call put(u, "kill", "const",          ".TRUE.",  100.0_wp, 1000.0_wp, 1000.0_wp, 5.0_wp, 1.0e-4_wp, 0.02_wp, 1.0_wp)
 
+        ! Partial group for test_defaults: other keys come from the template.
+        write(u,"(a)") "&tsgen_user"
+        write(u,"(a)") "    method = ""ramp-time"""
+        write(u,"(a)") "    f_max  = 20.0"
+        write(u,"(a)") "/"
+        write(u,"(a)") ""
+
+        ! Window modifier on a constant value (const, f_min = f_max)
+        call put_win(u, "win",       2.0_wp, "0.0",    ".TRUE.")
+        call put_win(u, "win_taper", 2.0_wp, "1000.0", ".TRUE.")
+        call put_win(u, "win_below", 0.5_wp, "0.0",    ".TRUE.")
+        call put_win(u, "win_both",  0.5_wp, "0.0",    ".FALSE.")
+
+        write(u,"(a)") "&tsgen_win_ser"
+        write(u,"(a)") "    method      = ""series"""
+        write(u,"(a)") "    sigma       = 0.0"
+        write(u,"(a)") "    series_file = """//win_file//""""
+        write(u,"(a)") "    win_t0      = -12e3"
+        write(u,"(a)") "    win_t1      = -1e3"
+        write(u,"(a)") "    win_fac     = 0.5"
+        write(u,"(a)") "    win_ref     = 1.0"
+        write(u,"(a)") "    win_above   = .TRUE."
+        write(u,"(a)") "/"
+        write(u,"(a)") ""
+
+        ! Noisy ramp for the RNG restart test
+        write(u,"(a)") "&tsgen_noise"
+        write(u,"(a)") "    method    = ""ramp-time"""
+        write(u,"(a)") "    with_kill = .FALSE."
+        write(u,"(a)") "    dt_ave    = 100.0"
+        write(u,"(a)") "    dt_init   = 0.0"
+        write(u,"(a)") "    dt_ramp   = 1000.0"
+        write(u,"(a)") "    dt_conv   = 1000.0"
+        write(u,"(a)") "    df_sign   = 1.0"
+        write(u,"(a)") "    tol       = 1e-4"
+        write(u,"(a)") "    df_dt_max = 0.01"
+        write(u,"(a)") "    sigma     = 0.5"
+        write(u,"(a)") "    f_min     = 0.0"
+        write(u,"(a)") "    f_max     = 10.0"
+        write(u,"(a)") "    f_conv    = 5.0"
+        write(u,"(a)") "/"
+        write(u,"(a)") ""
+
         ! Tabulated-series method: only method/sigma/series_file are consulted.
         write(u,"(a)") "&tsgen_ser"
         write(u,"(a)") "    method      = ""series"""
@@ -217,10 +385,13 @@ contains
         close(u)
     end subroutine write_namelist
 
-    subroutine put(u, label, method, kill, dt_ave, dt_ramp, dt_conv, f_conv, tolv, df_dt_max, df_sign)
+    subroutine put(u, label, method, kill, dt_ave, dt_ramp, dt_conv, f_conv, tolv, df_dt_max, df_sign, win)
+        ! win: also write the window keys at their defaults (a template group
+        ! must declare every key tsgen_init reads)
         integer,          intent(in) :: u
         character(len=*), intent(in) :: label, method, kill
         real(wp),         intent(in) :: dt_ave, dt_ramp, dt_conv, f_conv, tolv, df_dt_max, df_sign
+        logical, optional, intent(in) :: win
         write(u,"(a)")        "&tsgen_"//trim(label)
         write(u,"(a)")        "    method    = """//trim(method)//""""
         write(u,"(a)")        "    with_kill = "//trim(kill)
@@ -235,9 +406,49 @@ contains
         write(u,"(a)")        "    f_min     = 0.0"
         write(u,"(a)")        "    f_max     = 10.0"
         write(u,"(a,g0)")     "    f_conv    = ", f_conv
+        if (present(win)) then
+            if (win) then
+                write(u,"(a)") "    win_t0    = 0.0"
+                write(u,"(a)") "    win_t1    = 0.0"
+                write(u,"(a)") "    win_taper = 0.0"
+                write(u,"(a)") "    win_fac   = 1.0"
+                write(u,"(a)") "    win_ref   = 0.0"
+                write(u,"(a)") "    win_above = .FALSE."
+            end if
+        end if
         write(u,"(a)")        "/"
         write(u,"(a)")        ""
     end subroutine put
+
+    subroutine put_win(u, label, fval, taper, above)
+        ! const method held at fval (f_min = f_max = fval, df_dt_max = 0), with
+        ! the window -12 ka < t < -1 ka, win_ref = 1, win_fac = 0.5.
+        integer,          intent(in) :: u
+        character(len=*), intent(in) :: label, taper, above
+        real(wp),         intent(in) :: fval
+        write(u,"(a)")        "&tsgen_"//trim(label)
+        write(u,"(a)")        "    method    = ""const"""
+        write(u,"(a)")        "    with_kill = .FALSE."
+        write(u,"(a)")        "    dt_ave    = 100.0"
+        write(u,"(a)")        "    dt_init   = 0.0"
+        write(u,"(a)")        "    dt_ramp   = 1000.0"
+        write(u,"(a)")        "    dt_conv   = 1000.0"
+        write(u,"(a)")        "    df_sign   = 1.0"
+        write(u,"(a)")        "    tol       = 1e-4"
+        write(u,"(a)")        "    df_dt_max = 0.0"
+        write(u,"(a)")        "    sigma     = 0.0"
+        write(u,"(a,g0)")     "    f_min     = ", fval
+        write(u,"(a,g0)")     "    f_max     = ", fval
+        write(u,"(a,g0)")     "    f_conv    = ", fval
+        write(u,"(a)")        "    win_t0    = -12e3"
+        write(u,"(a)")        "    win_t1    = -1e3"
+        write(u,"(a)")        "    win_taper = "//trim(taper)
+        write(u,"(a)")        "    win_fac   = 0.5"
+        write(u,"(a)")        "    win_ref   = 1.0"
+        write(u,"(a)")        "    win_above = "//trim(above)
+        write(u,"(a)")        "/"
+        write(u,"(a)")        ""
+    end subroutine put_win
 
     subroutine remove_file(fname)
         character(len=*), intent(in) :: fname

@@ -42,6 +42,7 @@ module nml
     public :: nml_replace
     public :: nml_validate
     public :: nml_has_param
+    public :: nml_has_group
 
 contains
 
@@ -104,6 +105,61 @@ contains
         call nml_find_param(filename,group,name,value,found)
 
     end function nml_has_param
+
+    function nml_has_group(filename,group) result(found)
+        ! Does `filename` hold the group `group` (a &group ... / block, possibly
+        ! empty, or a flat 'group.param = value' line)? Lets a caller look a
+        ! group up in a list of files (first file that has it).
+
+        implicit none
+
+        character(len=*), intent(IN) :: filename, group
+        logical :: found
+
+        integer :: io, file_unit, iostat, l, ltype, i, n_flat
+        character(len=1000) :: line, name1, value1, comment1
+        logical :: is_flat
+        integer, parameter :: MAX_FLAT = 32
+        character(len=128) :: flat_groups(MAX_FLAT), flat_names(MAX_FLAT)
+        character(len=1024) :: flat_values(MAX_FLAT)
+
+        found = .false.
+
+        inquire(file=trim(filename),NUMBER=file_unit)
+        if (file_unit .eq. -1) then
+            open(unit=newunit(io),file=trim(filename),status="old",iostat=iostat)
+            if (iostat /= 0) then
+                write(io_unit_err,*) "nml:: namelist file could not be opened: "//trim(filename)
+                error stop
+            end if
+        else
+            io = file_unit
+            rewind(io)
+        end if
+
+        do l = 1, 5000
+            read(io,"(a1000)",iostat=iostat) line
+            if (iostat /= 0) exit
+
+            call parse_flat_line(line, is_flat, flat_groups, flat_names, flat_values, n_flat)
+            if (is_flat) then
+                do i = 1, n_flat
+                    if (trim(flat_groups(i)) == trim(group)) found = .true.
+                end do
+                if (found) exit
+                cycle
+            end if
+
+            call parse_line(line, ltype, name1, value1, comment1)
+            if (ltype == 1 .and. trim(name1) == trim(group)) then
+                found = .true.
+                exit
+            end if
+        end do
+
+        if (file_unit .eq. -1) close(io)
+
+    end function nml_has_group
 
     ! This is the basic nml reading subroutine.
     ! All interfaces use this to read the parameter, then it

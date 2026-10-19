@@ -42,6 +42,15 @@ module tsgen
         real(dp) :: norm_t0(2)
         real(dp) :: norm_t1(2)
 
+        ! Window modifier of the value, every method (see apply_window).
+        ! Inactive when win_t1 <= win_t0.
+        real(dp) :: win_t0
+        real(dp) :: win_t1
+        real(dp) :: win_taper
+        real(wp) :: win_fac
+        real(wp) :: win_ref
+        logical  :: win_above
+
         ! Derived at init: .TRUE. for response-driven (feedback) methods
         logical  :: feedback
     end type
@@ -99,14 +108,21 @@ module tsgen
 
 contains
 
-    subroutine tsgen_init(ts,filename,time,group)
+    subroutine tsgen_init(ts,filename,time,group,defaults_file,defaults_group)
         ! `group` is the namelist group name to read (default "tsgen"). It is used
         ! verbatim -- no prefix is forced -- so callers fully control the group name.
+        ! With `defaults_file`, each key read here must exist in the template group
+        ! `defaults_group` (default: `group`) of that file; its value is taken from
+        ! there and overlaid by `filename` when set (see nml_read). norm_t0/norm_t1
+        ! stay optional: they are read only when both are set in `filename`; the
+        ! win_* keys are optional only without `defaults_file`.
 
         type(tsgen_class), intent(INOUT) :: ts
         character(len=*),   intent(IN)    :: filename
         real(dp),           intent(IN)    :: time
         character(len=*),   intent(IN), optional :: group
+        character(len=*),   intent(IN), optional :: defaults_file
+        character(len=*),   intent(IN), optional :: defaults_group
 
         integer :: ntot
         character(len=56) :: par_group
@@ -115,11 +131,16 @@ contains
         if (present(group)) par_group = trim(group)
 
         ! The method determines which parameters are relevant, so read it first.
-        call nml_read(filename,trim(par_group),"method",      ts%par%method)
+        call nml_read(filename,trim(par_group),"method",      ts%par%method, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
         ! Noise amplitude applies to every method (it is added on top of the
         ! mean forcing), so it is always read.
-        call nml_read(filename,trim(par_group),"sigma",       ts%par%sigma)
+        call nml_read(filename,trim(par_group),"sigma",       ts%par%sigma, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+
+        ! Window modifier, also applies to every method
+        call read_window_par(ts%par,filename,trim(par_group),defaults_file,defaults_group)
 
         ! Classify the method: response-driven (feedback) vs time-driven
         select case(trim(ts%par%method))
@@ -135,11 +156,14 @@ contains
             call tsgen_par_defaults(ts%par)
             ts%par%with_kill = .FALSE.
 
-            call nml_read(filename,trim(par_group),"series_file",ts%par%series_file)
+            call nml_read(filename,trim(par_group),"series_file",ts%par%series_file, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
             if (series_is_netcdf(ts%par%series_file)) then
-                call nml_read(filename,trim(par_group),"series_var",      ts%par%series_var)
-                call nml_read(filename,trim(par_group),"series_time_name",ts%par%series_time_name)
+                call nml_read(filename,trim(par_group),"series_var",      ts%par%series_var, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+                call nml_read(filename,trim(par_group),"series_time_name",ts%par%series_time_name, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
                 call series_load(ts%ser,ts%par%series_file, &
                                     varname=ts%par%series_var, &
                                     time_name=ts%par%series_time_name, &
@@ -166,17 +190,28 @@ contains
 
         else
             ! Time-driven (analytic) or response-driven (feedback) scalar forcing
-            call nml_read(filename,trim(par_group),"with_kill",   ts%par%with_kill)
-            call nml_read(filename,trim(par_group),"dt_ave",      ts%par%dt_ave)
-            call nml_read(filename,trim(par_group),"dt_init",     ts%par%dt_init)
-            call nml_read(filename,trim(par_group),"dt_ramp",     ts%par%dt_ramp)
-            call nml_read(filename,trim(par_group),"dt_conv",     ts%par%dt_conv)
-            call nml_read(filename,trim(par_group),"df_sign",     ts%par%df_sign)
-            call nml_read(filename,trim(par_group),"tol",         ts%par%tol)
-            call nml_read(filename,trim(par_group),"df_dt_max",   ts%par%df_dt_max)
-            call nml_read(filename,trim(par_group),"f_min",       ts%par%f_min)
-            call nml_read(filename,trim(par_group),"f_max",       ts%par%f_max)
-            call nml_read(filename,trim(par_group),"f_conv",      ts%par%f_conv)
+            call nml_read(filename,trim(par_group),"with_kill",   ts%par%with_kill, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_ave",      ts%par%dt_ave, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_init",     ts%par%dt_init, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_ramp",     ts%par%dt_ramp, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"dt_conv",     ts%par%dt_conv, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"df_sign",     ts%par%df_sign, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"tol",         ts%par%tol, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"df_dt_max",   ts%par%df_dt_max, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_min",       ts%par%f_min, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_max",       ts%par%f_max, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+            call nml_read(filename,trim(par_group),"f_conv",      ts%par%f_conv, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
 
             ! Make sure sign is only +1/-1
             ts%par%df_sign = sign(1.0_wp,ts%par%df_sign)
@@ -240,7 +275,7 @@ contains
             ! Analytic series at elapsed time zero
             ts%f_mean_now = eval_open(ts%par,0.0_dp)
             ts%eps        = 0.0_wp
-            ts%f_now      = ts%f_mean_now
+            ts%f_now      = apply_window(ts%par,time,ts%f_mean_now)
         end if
 
         ! Kill switch off to start
@@ -342,8 +377,8 @@ contains
             end if
         end if
 
-        ! Real forcing value = mean + noise
-        ts%f_now = ts%f_mean_now + ts%eps
+        ! Real forcing value = windowed mean + noise
+        ts%f_now = apply_window(ts%par,time,ts%f_mean_now) + ts%eps
 
         ! Kill switch: stop once the response has equilibrated at a bound
         if (ts%par%with_kill .and. abs(ts%dv_dt_ave) .lt. ts%par%tol) then
@@ -369,11 +404,13 @@ contains
 
         ! Local automatic arrays sized by the channel count
         real(wp) :: vmean(ts%nc)
+        real(wp) :: vwin(ts%nc)
         real(wp) :: vsig(ts%nc)
         real(wp) :: vnoise(ts%nc)
         integer  :: c
 
         vmean = series_interp(ts%ser,time)
+        vwin  = apply_window(ts%par,time,vmean)
 
         ! Per-channel noise (only on a non-zero step): use the series' own
         ! standard deviation if present, otherwise fall back to par%sigma.
@@ -389,13 +426,13 @@ contains
         ! Scalar outputs (channel mean for a multi-channel series)
         ts%f_mean_now = sum(vmean)  / real(ts%nc,wp)
         ts%eps        = sum(vnoise) / real(ts%nc,wp)
-        ts%f_now      = ts%f_mean_now + ts%eps
+        ts%f_now      = sum(vwin)   / real(ts%nc,wp) + ts%eps
 
         ! Per-channel outputs
         if (ts%nc .gt. 1) then
             ts%vec%f_mean = vmean
             ts%vec%eps    = vnoise
-            ts%vec%f_now  = vmean + vnoise
+            ts%vec%f_now  = vwin + vnoise
         end if
 
         return
@@ -563,10 +600,10 @@ contains
 
     subroutine tsgen_tabulate(ts,time,f,df_dt,verbose)
         ! Sample the (time-driven) forcing series over a caller-supplied time
-        ! axis, for validation / diagnostics / output. Valid for the analytic
-        ! and tabulated-series methods (the latter reported as the channel mean);
-        ! feedback methods have no closed form and must be stepped online via
-        ! tsgen_update.
+        ! axis, for validation / diagnostics / output: f_now without noise (the
+        ! window modifier included). Valid for the analytic and tabulated-series
+        ! methods (the latter reported as the channel mean); feedback methods
+        ! have no closed form and must be stepped online via tsgen_update.
 
         type(tsgen_class),  intent(IN)  :: ts
         real(dp),           intent(IN)  :: time(:)      ! [yr] simulation-time axis
@@ -596,9 +633,10 @@ contains
             if (is_series) then
                 ! Series carries its own absolute time axis (no init offset);
                 ! report the channel mean to match the scalar f_now semantics.
-                f(i) = sum(series_interp(ts%ser,time(i))) / real(ts%nc,wp)
+                f(i) = sum(apply_window(ts%par,time(i),series_interp(ts%ser,time(i)))) &
+                                                                    / real(ts%nc,wp)
             else
-                f(i) = eval_open(ts%par, time(i) - ts%time_init)
+                f(i) = apply_window(ts%par,time(i),eval_open(ts%par,time(i) - ts%time_init))
             end if
         end do
 
@@ -696,14 +734,17 @@ contains
         ! feedback methods (exp, PI/PID) additionally need the integrated forcing
         ! (f_mean_now), the PI-controller history (pi_df/pi_eta) and the response
         ! history buffers, which are written when allocated. "series" carries no
-        ! prognostic state (it interpolates the file on the absolute axis).
+        ! prognostic state (it interpolates the file on the absolute axis). When
+        ! the object draws noise, the state of the (process-wide) random number
+        ! generator is written too (rng_seed, of compiler-dependent length rng).
 
         character(len=*),  intent(IN) :: filename
         type(tsgen_class), intent(IN) :: ts
         real(dp),          intent(IN) :: time
 
-        integer  :: ncid
+        integer  :: ncid, nseed
         real(wp) :: kill_r
+        integer, allocatable :: seed(:)
 
         kill_r = 0.0_wp
         if (ts%kill) kill_r = 1.0_wp
@@ -738,6 +779,16 @@ contains
             call nc_write(filename,"hist_dv_dt",ts%dv_dt,dim1="hist",ncid=ncid)
         end if
 
+        ! Random number generator state (noise only)
+        if (draws_noise(ts)) then
+            call random_seed(size=nseed)
+            allocate(seed(nseed))
+            call random_seed(get=seed)
+            call nc_write_dim(filename,"rng",x=1,dx=1,nx=nseed,ncid=ncid)
+            call nc_write(filename,"rng_seed",seed,dim1="rng",ncid=ncid, &
+                            long_name="random_seed(get=) state of the generator")
+        end if
+
         call nc_close(ncid)
 
         write(*,*) "tsgen_restart_write:: wrote "//trim(filename)
@@ -751,7 +802,9 @@ contains
         ! tsgen_init (which reads the namelist, classifies the method and allocates
         ! the history buffers); this routine overwrites the runtime state so the
         ! series continues from where it stopped. Missing variables are tolerated
-        ! (older restart files, or a method that never wrote buffers).
+        ! (older restart files, or a method that never wrote buffers). When the
+        ! object draws noise, the generator state is restored (random_seed(put=)),
+        ! so the noise continues as without the restart.
 
         type(tsgen_class), intent(INOUT) :: ts
         character(len=*),  intent(IN)    :: filename
@@ -784,11 +837,152 @@ contains
             call nc_read(filename,"hist_dv_dt",ts%dv_dt,start=[1],count=[size(ts%dv_dt)])
         end if
 
+        if (draws_noise(ts)) call rng_state_read(filename)
+
         write(*,*) "tsgen_restart_read:: restored f_now = ", ts%f_now, " from "//trim(filename)
 
         return
 
     end subroutine tsgen_restart_read
+
+    subroutine rng_state_read(filename)
+        ! Restore the random number generator state written by tsgen_restart_write.
+        ! The seed size is compiler dependent: a file without the state, or with
+        ! a state of another size, keeps the current state (with a message).
+
+        character(len=*), intent(IN) :: filename
+
+        integer :: nseed, nseed_file
+        integer, allocatable :: seed(:)
+
+        if (.not. nc_exists_var(filename,"rng_seed")) then
+            write(*,*) "tsgen_restart_read:: no RNG state in "//trim(filename)// &
+                "; the noise continues from the current generator state."
+            return
+        end if
+
+        call random_seed(size=nseed)
+        nseed_file = nc_size(filename,"rng")
+
+        if (nseed_file .ne. nseed) then
+            write(*,*) "tsgen_restart_read:: WARNING: RNG state in "//trim(filename)// &
+                " has size ", nseed_file, " /= ", nseed, " (other compiler?);"// &
+                " the noise continues from the current generator state."
+            return
+        end if
+
+        allocate(seed(nseed))
+        call nc_read(filename,"rng_seed",seed)
+        call random_seed(put=seed)
+
+        return
+
+    end subroutine rng_state_read
+
+    logical function draws_noise(ts)
+        ! .TRUE. when updates draw random numbers: sigma > 0, or a series with
+        ! its own standard deviation.
+
+        type(tsgen_class), intent(IN) :: ts
+
+        draws_noise = (ts%par%sigma .gt. 0.0_wp) .or. allocated(ts%ser%sigma)
+
+        return
+
+    end function draws_noise
+
+    subroutine read_window_par(par,filename,group,defaults_file,defaults_group)
+        ! Keys of the window modifier (see apply_window). With defaults_file they
+        ! are read like the other keys (each must exist in the template group);
+        ! without it they are optional, so namelists without them keep working.
+
+        type(tsgen_par_class), intent(INOUT) :: par
+        character(len=*),      intent(IN)    :: filename
+        character(len=*),      intent(IN)    :: group
+        character(len=*),      intent(IN), optional :: defaults_file
+        character(len=*),      intent(IN), optional :: defaults_group
+
+        ! Defaults: no window
+        par%win_t0    = 0.0_dp
+        par%win_t1    = 0.0_dp
+        par%win_taper = 0.0_dp
+        par%win_fac   = 1.0_wp
+        par%win_ref   = 0.0_wp
+        par%win_above = .FALSE.
+
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_t0")) &
+            call nml_read(filename,group,"win_t0",   par%win_t0, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_t1")) &
+            call nml_read(filename,group,"win_t1",   par%win_t1, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_taper")) &
+            call nml_read(filename,group,"win_taper",par%win_taper, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_fac")) &
+            call nml_read(filename,group,"win_fac",  par%win_fac, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_ref")) &
+            call nml_read(filename,group,"win_ref",  par%win_ref, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+        if (present(defaults_file) .or. nml_has_param(filename,group,"win_above")) &
+            call nml_read(filename,group,"win_above",par%win_above, &
+                                defaults_file=defaults_file,defaults_group=defaults_group)
+
+        if (par%win_taper .lt. 0.0_dp) then
+            write(*,*) "tsgen:: Error: win_taper must be >= 0 [yr]: ", par%win_taper
+            stop
+        end if
+
+        if (par%win_t1 .gt. par%win_t0) then
+            write(*,"(a,a)")         "tsgen:: window modifier: ", trim(group)
+            write(*,"(a,2g14.5,a,g14.5)") "    win_t0, win_t1 = ", par%win_t0, par%win_t1, &
+                                          ", win_taper = ", par%win_taper
+            write(*,"(a,2g14.5,a,l2)")    "    win_fac, win_ref = ", par%win_fac, par%win_ref, &
+                                          ", win_above = ", par%win_above
+        end if
+
+        return
+
+    end subroutine read_window_par
+
+    elemental function apply_window(par,time,f) result(fw)
+        ! Window modifier of the value f at time t (replaces the snapclim rule
+        ! "f = f*f_hol for f > 1 and -12 ka < t < -1 ka"):
+        !
+        !   fw = f + w(t)*(win_fac - 1)*(f - win_ref)
+        !
+        ! i.e. fw = win_ref + win_fac*(f - win_ref) at full effect (w = 1); with
+        ! win_above, only where f > win_ref. The weight is
+        !
+        !   w(t) = min(1, (t - win_t0)/win_taper, (win_t1 - t)/win_taper)
+        !
+        ! for win_t0 < t < win_t1 (w = 1 there for win_taper = 0), and 0 outside:
+        ! linear ramps of width win_taper inside both edges. Inactive (fw = f)
+        ! when win_t1 <= win_t0.
+
+        type(tsgen_par_class), intent(IN) :: par
+        real(dp),              intent(IN) :: time
+        real(wp),              intent(IN) :: f
+        real(wp) :: fw
+
+        real(dp) :: w
+
+        fw = f
+
+        if (par%win_t1 .le. par%win_t0) return
+        if (time .le. par%win_t0 .or. time .ge. par%win_t1) return
+        if (par%win_above .and. f .le. par%win_ref) return
+
+        w = 1.0_dp
+        if (par%win_taper .gt. 0.0_dp) &
+            w = min(1.0_dp, (time - par%win_t0)/par%win_taper, (par%win_t1 - time)/par%win_taper)
+
+        fw = f + real(w,wp)*(par%win_fac - 1.0_wp)*(f - par%win_ref)
+
+        return
+
+    end function apply_window
 
     subroutine tsgen_par_defaults(par)
         ! Neutral values for the ramp/feedback parameters, used by methods (e.g.
