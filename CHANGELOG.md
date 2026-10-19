@@ -5,6 +5,16 @@ All notable changes to fesm-utils are documented here.
 ## [Unreleased]
 
 ### Added
+- **tsgen**: window modifier of the value, every method (replaces snapclim's `f_hol`):
+  `f' = f + w(t)*(win_fac - 1)*(f - win_ref)` for `win_t0 < t < win_t1`, only where
+  `f > win_ref` with `win_above`; `w` ramps linearly over `win_taper` inside both edges.
+  Applied before the noise to `f_now` (`f_mean_now` unchanged) and in `tsgen_tabulate`.
+  Inactive by default (`win_t1 <= win_t0`). With `defaults_file` the `win_*` keys must
+  be in the template group; without it they are optional.
+- **tsgen**: the restart holds the random number generator state (`rng_seed`,
+  `random_seed(get=)`) when the object draws noise; `tsgen_restart_read` restores it, so
+  the noise after a restart is the noise without one. A file without the state, or with
+  one of another size (compiler), keeps the current state with a message.
 - **nml**: `nml_has_group(filename, group)`: does the file hold the group (block or flat
   lines); for looking a group up in a list of files.
 - **tsgen**: `tsgen_init(..., defaults_file, defaults_group)`: keys not set in the par group fall
