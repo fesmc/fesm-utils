@@ -7,7 +7,7 @@ subtitle: "FesmData topography products"
 
 `topodata` reads a topography product of
 [FesmData](https://github.com/fesmc/FesmData) (Topo v2),
-`$FESMDATA/products/<Domain>/<GRID>/<GRID>_TOPO-<product>.nc`, as it is in the file.
+`$FESMDATA/<Domain>/<GRID>/<GRID>_TOPO-<product>.nc`, as it is in the file.
 It holds no model state: updates of the geometry belong to the caller (e.g.
 htopo). Only the listed variables are loaded; the others stay unallocated
 (one field of Antarctica at 1 km is about 180 MB).
