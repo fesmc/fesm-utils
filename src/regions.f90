@@ -5,7 +5,7 @@ module regions
     ! A layer is a 2D integer field with a table of names of its codes.
     ! Layers come from any file (regions_load_layer; namelist keys layers,
     ! path_<layer>, ...), from the program (regions_add_layer), or from the
-    ! files of FesmData v2 ($FESMDATA/products/<Domain>/<GRID>/):
+    ! files of FesmData v2 ($FESMDATA/<Domain>/<GRID>/):
     !   <GRID>_REGIONS.nc       layers region (hierarchical, from region_1..3)
     !                           and zone (regions_load_fesmdata)
     !   <GRID>_BASINS-<set>.nc  layers <set> (basin), <set>.group (basin_group)
