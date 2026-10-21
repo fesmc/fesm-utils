@@ -311,6 +311,10 @@ module ncio
 
     character(len=3), parameter :: GRID_MAPPING_NAME_DEFAULT = "crs" 
 
+    ! Lossless switch: when true, nc_write ignores prec_abs/prec_rel (no
+    ! rounding, no precision_* attributes), e.g. for bit-for-bit comparisons
+    logical :: nc_lossless = .false.
+
     type ncvar
         character (len=NC_STRLEN) :: name, long_name, standard_name, units
         character (len=NC_STRLEN) :: axis, calendar, grid_mapping
@@ -425,6 +429,7 @@ module ncio
     public :: nc_open, nc_close
     public :: nc_write, nc_write_attr, nc_size
     public :: nc_time_index
+    public :: nc_set_lossless
 
     public :: nc_dims, nc_ndims
     public :: nc_write_attr_std_dim
@@ -504,8 +509,10 @@ contains
         if ( present(standard_name) ) v%standard_name = trim(standard_name)
         if ( present(grid_mapping) )  v%grid_mapping  = trim(grid_mapping)
         if ( present(units) )         v%units         = trim(units)
-        if ( present(prec_abs) )      v%prec_abs      = prec_abs
-        if ( present(prec_rel) )      v%prec_rel      = prec_rel
+        if (.not. nc_lossless) then
+            if ( present(prec_abs) )  v%prec_abs      = prec_abs
+            if ( present(prec_rel) )  v%prec_rel      = prec_rel
+        end if
 
         if (present(missing_value_int)) then
             v%missing_set = .TRUE.
@@ -715,6 +722,23 @@ contains
         return
 
     end subroutine nc4_write_internal
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose : Switch lossless writing on or off for all later nc_write
+    !           calls: when on, prec_abs and prec_rel are ignored (values
+    !           written exactly, no precision_* attributes).
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_set_lossless(lossless)
+
+        implicit none
+
+        logical, intent(IN) :: lossless
+
+        nc_lossless = lossless
+
+        return
+
+    end subroutine nc_set_lossless
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Purpose : Round the values of dat to the precision asked, so that
@@ -2378,7 +2402,8 @@ $:write_dim_1d(sfx, ftype, xtype)
     !! @param units NetCDF attribute of the units of the variable (optional)
     !! @param prec_abs, prec_rel precision of the values written (float/double, optional): each
     !!        is rounded so that its error is at most prec_abs (units of the field) or prec_rel
-    !!        times its magnitude, the larger of the two; both absent for lossless
+    !!        times its magnitude, the larger of the two; both absent for lossless (ignored
+    !!        after nc_set_lossless(.true.))
 #:for sfx, ftype, xtype in [('int','integer','NF90_INT'),('double','double precision','NF90_DOUBLE'),('float','real(4)','NF90_FLOAT')]
 #:for rname, r in [('pt',0),('1D',1),('2D',2),('3D',3),('4D',4),('5D',5),('6D',6)]
 $:write_num(sfx, ftype, xtype, rname, r)
