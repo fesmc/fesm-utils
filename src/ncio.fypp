@@ -15,12 +15,16 @@
 #! ---- numeric nc_write wrapper (int/double/float), rank r ----
 #:def write_num(sfx, ftype, xtype, rname, r)
     subroutine nc_write_${sfx}$_${rname}$(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value#{if sfx != 'int'}#,prec_abs,prec_rel#{endif}#)
 
         implicit none
 
         ${ftype}$#{if r > 0}#, contiguous#{endif}# :: dat${'' if r == 0 else '(' + ','.join([':']*r) + ')'}$
         ${ftype}$, optional :: missing_value
+#:if sfx != 'int'
+        ${ftype}$, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
+#:endif
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -32,11 +36,19 @@
         allocate(dat1D(size(dat)))
         call flatten_to_dble_${sfx}$(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 #:endif
+#:if sfx != 'int'
+
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+#:endif
 
         call nc4_write_internal(filename,name,${'dble([dat])' if r == 0 else 'dat1D'}$,"${xtype}$",${'shape([dat])' if r == 0 else 'shape(dat)'}$, &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_${sfx}$=missing_value)
+                                missing_value_${sfx}$=missing_value#{if sfx != 'int'}#,prec_abs=pabs,prec_rel=prel#{endif}#)
 
         return
 
@@ -308,6 +320,7 @@ module ncio
         integer :: n, dimid, varid, ndims_in
         double precision :: add_offset, scale_factor, missing_value, FillValue
         logical :: missing_set, FillValue_set
+        double precision :: prec_abs, prec_rel
         double precision, allocatable :: dim(:)
         logical :: coord
         logical :: has_no_dims
@@ -429,7 +442,8 @@ contains
     subroutine nc4_write_internal(filename,name,dat,xtype,size_in,&
                                   ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                   start,count,long_name,standard_name,grid_mapping,units, &
-                                  missing_value_int,missing_value_float,missing_value_double)
+                                  missing_value_int,missing_value_float,missing_value_double, &
+                                  prec_abs,prec_rel)
 
 
         implicit none
@@ -447,6 +461,7 @@ contains
         integer,           intent(IN), optional :: missing_value_int
         real(4),           intent(IN), optional :: missing_value_float
         double precision,  intent(IN), optional :: missing_value_double
+        double precision,  intent(IN), optional :: prec_abs, prec_rel
         
         ! Local variables
         type(ncvar) :: v
@@ -461,7 +476,7 @@ contains
         integer :: i, j, k, m, ndims, dimid
         logical :: var_has_no_dims
         logical :: var_exists
-        logical :: packing
+        logical :: packing, rounding
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -489,6 +504,8 @@ contains
         if ( present(standard_name) ) v%standard_name = trim(standard_name)
         if ( present(grid_mapping) )  v%grid_mapping  = trim(grid_mapping)
         if ( present(units) )         v%units         = trim(units)
+        if ( present(prec_abs) )      v%prec_abs      = prec_abs
+        if ( present(prec_rel) )      v%prec_rel      = prec_rel
 
         if (present(missing_value_int)) then
             v%missing_set = .TRUE.
@@ -646,13 +663,28 @@ contains
         packing = (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") &
                   .and. (v%scale_factor .ne. 1.d0 .or. v%add_offset .ne. 0.d0)
 
-        if (packing) then
+        ! Round the values to the precision asked (prec_abs, prec_rel), so that
+        ! they compress well; before packing, as the precision is in the units
+        ! of the field.
+        rounding = (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") &
+                  .and. (v%prec_abs .gt. 0.d0 .or. v%prec_rel .gt. 0.d0)
+
+        if (packing .or. rounding) then
             allocate(dat_to_write(size(dat)))
+            dat_to_write = dat
+        end if
+
+        if (rounding) then
+            call nc_bitround(dat_to_write, merge(23, 52, trim(v%xtype) .eq. "NF90_FLOAT"), &
+                             v%prec_abs, v%prec_rel, v%missing_set, v%missing_value)
+        end if
+
+        if (packing) then
             if (v%missing_set) then
-                dat_to_write = dat
-                where( dabs(dat-v%missing_value) .gt. NC_TOL ) dat_to_write = (dat-v%add_offset)/v%scale_factor
+                where( dabs(dat-v%missing_value) .gt. NC_TOL ) &
+                    dat_to_write = (dat_to_write-v%add_offset)/v%scale_factor
             else
-                dat_to_write = (dat-v%add_offset)/v%scale_factor
+                dat_to_write = (dat_to_write-v%add_offset)/v%scale_factor
             end if
         end if
 
@@ -668,10 +700,10 @@ contains
 
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
-        if (packing) then
-            call nc_check( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec, "nf90_put_var" )
+        if (packing .or. rounding) then
+            call nc_check_put( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec )
         else
-            call nc_check( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec, "nf90_put_var" )
+            call nc_check_put( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec )
         end if
 
         ! Close the file. This causes netCDF to flush all buffers and make
@@ -683,6 +715,64 @@ contains
         return
 
     end subroutine nc4_write_internal
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose : Round the values of dat to the precision asked, so that
+    !           they compress well (bit rounding: the mantissa bits not
+    !           needed are zeroed). The error of each value is at most
+    !           prec_abs (in the units of the field) or prec_rel times its
+    !           magnitude, the larger of the two (0 for none). The bits
+    !           kept are chosen for each value; kmax is the mantissa
+    !           length of the type on file (23 float, 52 double). NaN, Inf
+    !           and missing values are kept.
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_bitround(dat, kmax, prec_abs, prec_rel, missing_set, missing_value)
+
+        implicit none
+
+        double precision, intent(INOUT) :: dat(:)
+        integer,          intent(IN)    :: kmax
+        double precision, intent(IN)    :: prec_abs, prec_rel
+        logical,          intent(IN)    :: missing_set
+        double precision, intent(IN)    :: missing_value
+
+        ! Local variables
+        integer, parameter :: i8 = selected_int_kind(18)
+        integer    :: i, k, k_rel, k_abs0, shift
+        integer(i8) :: u
+
+        ! Rounding x in [2^e, 2^(e+1)) to k bits changes it by at most
+        ! 2^(e-k-1) <= 2^(-k-1) |x|, so k_rel bits keep the relative precision,
+        ! and e-1+ceiling(-log2(prec_abs)) bits the absolute one (exponent(x) = e+1).
+        k_rel = kmax
+        if (prec_rel .gt. 0.d0) k_rel = max(0, ceiling(-log(prec_rel)/log(2.d0) - 1.d0))
+        k_abs0 = 0
+        if (prec_abs .gt. 0.d0) k_abs0 = ceiling(-log(prec_abs)/log(2.d0)) - 2
+
+        do i = 1, size(dat)
+
+            if (.not. ieee_is_finite(dat(i)) .or. dat(i) .eq. 0.d0) cycle
+            if (missing_set) then
+                if (dabs(dat(i)-missing_value) .le. NC_TOL) cycle
+            end if
+
+            k = k_rel
+            if (prec_abs .gt. 0.d0) k = min(k_rel, max(0, exponent(dat(i)) + k_abs0))
+            if (k .ge. kmax) cycle
+
+            ! Round the magnitude to nearest, ties to even, at bit 52-k of the
+            ! double (the type on file has kmax <= 52 bits, so it stays exact)
+            shift = 52 - k
+            u = transfer(dabs(dat(i)), u)
+            u = u + (ishft(1_i8, shift-1) - 1_i8) + ibits(u, shift, 1)
+            u = iand(u, not(ishft(1_i8, shift) - 1_i8))
+            dat(i) = sign(transfer(u, 1.d0), dat(i))
+
+        end do
+
+        return
+
+    end subroutine nc_bitround
 
     ! ====================================================================
     ! flatten_to_dble: copy a contiguous array of any rank into a
@@ -744,6 +834,7 @@ contains
         character (len=NC_STRLEN) :: tmpstr
         integer, optional :: iostat
         integer :: i, status
+        integer :: dimids(NF90_MAX_VAR_DIMS), dim_len
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -804,6 +895,20 @@ contains
             v%count = 1
             do i = 1, min(ndims, size(size_in))
               v%count(i) = size_in(i)
+            end do
+
+            ! Without an explicit count the whole variable is read: each file
+            ! dimension covered by the array must have the array's length, else
+            ! only a block of the field (e.g. a corner of a larger grid) would be
+            ! read silently. Further file dimensions (e.g. time) are read at index 1.
+            call nc_check( nf90_inquire_variable(nc_id, v_id, dimids=dimids), ec, "nf90_inquire_variable" )
+            do i = 1, min(ndims, size(size_in))
+                call nc_check( nf90_inquire_dimension(nc_id, dimids(i), len=dim_len), ec, "nf90_inquire_dimension" )
+                if (dim_len /= size_in(i)) then
+                    write(errmsg,"(a,i0,a,i0,a,i0,a)") "dimension ", i, " of the variable has length ", dim_len, &
+                        " in the file, but ", size_in(i), " in the array being read (give start/count to read a part)."
+                    call nc_abort(op="nc_read", ec=ec, msg=trim(errmsg))
+                end if
             end do
         end if
         
@@ -939,6 +1044,8 @@ contains
         v%missing_value = -9999d0
         v%FillValue     = v%missing_value
         v%FillValue_set = .FALSE.
+        v%prec_abs      = 0.d0
+        v%prec_rel      = 0.d0
 
         v%xtype = "NF90_DOUBLE"
         v%coord = .FALSE.
@@ -1164,6 +1271,34 @@ contains
         return
 
     end subroutine nc_check
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose : Like nc_check for nf90_put_var of data, but a range error
+    !           (NF90_ERANGE: a value, e.g. Inf, is not representable in
+    !           the variable's type) only gives a warning. The library
+    !           has written all values at that point, so the file stays
+    !           complete and shows the offending values.
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_check_put(status, ec)
+
+        implicit none
+
+        integer,      intent(in)           :: status
+        type(nc_ctx), intent(in), optional :: ec
+
+        if (status == NF90_ERANGE) then
+            write(error_unit,*) "ncio:: warning: nf90_put_var: values not representable in the variable's type (e.g. Inf)"
+            if (present(ec)) then
+                if (len_trim(ec%file) > 0) write(error_unit,*) "    file:      "//trim(ec%file)
+                if (len_trim(ec%var)  > 0) write(error_unit,*) "    variable:  "//trim(ec%var)
+            end if
+        else if (status /= nf90_noerr) then
+            call nc_abort(op="nf90_put_var", ec=ec, status=status)
+        end if
+
+        return
+
+    end subroutine nc_check_put
 
     ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Purpose : Like nc_check, but treats a missing attribute as non-fatal.
@@ -1403,7 +1538,7 @@ contains
                 end select
 
                 ! Compress data variables when the file is in netCDF4 format
-                ! (opt-in via nc_create(...,netcdf4=.TRUE.)); no-op for classic files.
+                ! (the default of nc_create); no-op for classic files.
                 if (trim(v%xtype) .ne. "NF90_CHAR") then
                     stat = nf90_inquire(ncid, formatNum=ncformat)
                     if (stat .eq. noerr .and. &
@@ -1417,7 +1552,7 @@ contains
 
             if (trim(v%xtype) .ne. "NF90_CHAR") then
 
-                    if (v%scale_factor .ne. 1.d0 .and. v%add_offset .ne. 0.d0) then
+                    if (v%scale_factor .ne. 1.d0 .or. v%add_offset .ne. 0.d0) then
                         call nc_check( nf90_put_att(ncid, v%varid, "scale_factor", v%scale_factor), ec, "nf90_put_att" )
                         call nc_check( nf90_put_att(ncid, v%varid, "add_offset",   v%add_offset), ec, "nf90_put_att" )
                     end if
@@ -1443,6 +1578,12 @@ contains
                                 call nc_check( nf90_put_att(ncid, v%varid, "_FillValue", v%FillValue), ec, "nf90_put_att" )
                         end select
                     end if
+
+                    ! Precision the values were rounded to (see nc_bitround)
+                    if (v%prec_abs .gt. 0.d0) &
+                        call nc_check( nf90_put_att(ncid, v%varid, "precision_abs", v%prec_abs), ec, "nf90_put_att" )
+                    if (v%prec_rel .gt. 0.d0) &
+                        call nc_check( nf90_put_att(ncid, v%varid, "precision_rel", v%prec_rel), ec, "nf90_put_att" )
 
 
             end if
@@ -1856,10 +1997,9 @@ contains
         cmode = nf90_clobber
         if (.not. clobber) cmode = nf90_noclobber
 
-        ! Request the netCDF4/HDF5 format when asked, which enables per-variable
-        ! compression (deflate) in nc_write. ajr, 2015-09-17 had this commented out
-        ! because nf90_hdf5 was missing on some old netcdf installs; netcdf-c here
-        ! supports it. The flag is opt-in, so classic output is unchanged by default.
+        ! Request the netCDF4/HDF5 format, which enables per-variable compression
+        ! (deflate) in nc_write. ajr, 2015-09-17 had this commented out because
+        ! nf90_hdf5 was missing on some old netcdf installs; netcdf-c here supports it.
         if (nc4) cmode = ior(cmode, nf90_netcdf4)
 
         ! Get ncio version for writing
@@ -2236,6 +2376,9 @@ $:write_dim_1d(sfx, ftype, xtype)
     !! @param standard_name NetCDF attribute specifying the CF convention standard name of the variable (optional)
     !! @param grid_mapping name of the grid this variable is mapped on (optional)
     !! @param units NetCDF attribute of the units of the variable (optional)
+    !! @param prec_abs, prec_rel precision of the values written (float/double, optional): each
+    !!        is rounded so that its error is at most prec_abs (units of the field) or prec_rel
+    !!        times its magnitude, the larger of the two; both absent for lossless
 #:for sfx, ftype, xtype in [('int','integer','NF90_INT'),('double','double precision','NF90_DOUBLE'),('float','real(4)','NF90_FLOAT')]
 #:for rname, r in [('pt',0),('1D',1),('2D',2),('3D',3),('4D',4),('5D',5),('6D',6)]
 $:write_num(sfx, ftype, xtype, rname, r)

@@ -382,6 +382,14 @@ bench-coords : fesmutils-static
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
 		@echo " "
 
+# ncio precision (bit rounding in nc_write) test program
+test-ncio : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_precision.x $(testdir)/ncio/test_ncio_precision.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    ncio precision test program ready: $(bindir)/test_ncio_precision.x"
+		@echo " "
+
 # series (tabulated time-series reader) test program
 test-series : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_series.x $(testdir)/series/test_series.f90 \
@@ -545,6 +553,7 @@ usage:
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
+	@echo " make test-ncio        : compiles the ncio precision test program"
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
