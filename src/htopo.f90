@@ -261,7 +261,8 @@ contains
     end subroutine htopo_write_init
 
     subroutine htopo_write_step(htopo, filename, time)
-        ! Append the dynamic hi-res geometry at `time`.
+        ! Append the dynamic hi-res geometry at `time` (rounded to the precision
+        ! given per field, see nc_write prec_abs).
         type(htopo_class), intent(in) :: htopo
         character(len=*),  intent(in) :: filename
         real(dp),          intent(in) :: time
@@ -274,19 +275,19 @@ contains
 
         call nc_write(filename, "z_bed", htopo%z_bed, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Bedrock elevation")
+                      long_name="Bedrock elevation", prec_abs=1e-3_wp)
         call nc_write(filename, "H_ice", htopo%H_ice, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Ice thickness")
+                      long_name="Ice thickness", prec_abs=1e-3_wp)
         call nc_write(filename, "z_srf", htopo%z_srf, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Surface elevation")
+                      long_name="Surface elevation", prec_abs=1e-3_wp)
         call nc_write(filename, "f_grnd", htopo%f_grnd, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="1", &
-                      long_name="Grounded-ice fraction")
+                      long_name="Grounded-ice fraction", prec_abs=1e-4_wp)
         call nc_write(filename, "z_sl", htopo%z_sl, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Sea-surface height")
+                      long_name="Sea-surface height", prec_abs=1e-3_wp)
         call nc_close(ncid)
     end subroutine htopo_write_step
 
