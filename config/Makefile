@@ -191,7 +191,7 @@ $(objdir)/timeout.o: $(srcdir)/timeout.f90 $(objdir)/nml.o
 $(objdir)/timestepping.o: $(srcdir)/timestepping.f90 $(objdir)/nml.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/variable_io.o: $(srcdir)/variable_io.f90
+$(objdir)/variable_io.o: $(srcdir)/variable_io.f90 $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -390,6 +390,14 @@ test-ncio : fesmutils-static
 		@echo "    ncio precision test program ready: $(bindir)/test_ncio_precision.x"
 		@echo " "
 
+# variable_io (variable tables, var_io_write) test program
+test-var-io : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_var_io.x $(testdir)/ncio/test_var_io.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    variable_io test program ready: $(bindir)/test_var_io.x"
+		@echo " "
+
 # series (tabulated time-series reader) test program
 test-series : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_series.x $(testdir)/series/test_series.f90 \
@@ -554,6 +562,7 @@ usage:
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
 	@echo " make test-ncio        : compiles the ncio precision test program"
+	@echo " make test-var-io      : compiles the variable_io test program"
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
