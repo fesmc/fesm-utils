@@ -5,10 +5,13 @@ program test_ncio_precision
     !   * missing values, zeros, NaN and Inf are kept (NaN read with nf90,
     !     as nc_read replaces it by its missing value);
     !   * slices written with start/count are rounded each;
-    !   * the size of the files, rounded vs lossless.
+    !   * the size of the files, rounded vs lossless;
+    !   * nc_set_lossless: no rounding and no precision_* attributes when on;
+    !   * nc_write_t (ncio_transpose) passes prec_abs through.
     ! All files are written by the test itself, then removed.
 
     use ncio
+    use ncio_transpose
     use netcdf
     use, intrinsic :: ieee_arithmetic
 
@@ -40,6 +43,8 @@ program test_ncio_precision
     call test_double("rel 1e-6",  0.d0,  1d-6)
     call test_slices()
     call test_nonfinite()
+    call test_lossless_switch()
+    call test_transpose()
 
     write(*,"(a)") ""
     if (nfail .eq. 0) then
@@ -163,6 +168,59 @@ contains
         write(*,"(a,i0)") "  nan/inf kept, finite rounded:  bad = ", nbad
         if (nbad .gt. 0) nfail = nfail + 1
     end subroutine test_nonfinite
+
+    ! nc_set_lossless(.true.): prec_abs ignored, values bit-identical and no
+    ! precision_abs attribute; nc_set_lossless(.false.): rounded again
+    subroutine test_lossless_switch()
+        character(len=*), parameter :: fnm = "test_ncio_precision.nc"
+        double precision :: R(nx,ny)
+        integer :: nbad
+
+        call nc_set_lossless(.TRUE.)
+        call new_file(fnm)
+        call nc_write(fnm, "H", Hd, dim1="x", dim2="y", missing_value=mv, prec_abs=1d-2)
+        call nc_read(fnm, "H", R)
+        nbad = count(R .ne. Hd)
+        if (has_att(fnm, "H", "precision_abs")) nbad = nbad + 1
+        call delete_file(fnm)
+        write(*,"(a,i0)") "  lossless on:  identical, no precision_abs:  bad = ", nbad
+        if (nbad .gt. 0) nfail = nfail + 1
+
+        call nc_set_lossless(.FALSE.)
+        call new_file(fnm)
+        call nc_write(fnm, "H", Hd, dim1="x", dim2="y", missing_value=mv, prec_abs=1d-2)
+        call nc_read(fnm, "H", R)
+        nbad = 0
+        if (all(R .eq. Hd)) nbad = nbad + 1
+        if (.not. has_att(fnm, "H", "precision_abs")) nbad = nbad + 1
+        write(*,"(a,i0)") "  lossless off: rounded, precision_abs:      bad = ", nbad
+        if (nbad .gt. 0) nfail = nfail + 1
+        call check("double lossless off", Hd, R, 1d-2, 0.d0, fnm)
+        call delete_file(fnm)
+    end subroutine test_lossless_switch
+
+    ! nc_write_t writes [j,i] as [i,j], rounded to prec_abs
+    subroutine test_transpose()
+        character(len=*), parameter :: fnm = "test_ncio_precision.nc"
+        double precision :: R(nx,ny), T(ny,nx)
+
+        T = transpose(Hd)
+        call new_file(fnm)
+        call nc_write_t(fnm, "H", T, dim1="x", dim2="y", missing_value=mv, prec_abs=1d-2)
+        call nc_read(fnm, "H", R)
+        if (.not. has_att(fnm, "H", "precision_abs")) nfail = nfail + 1
+        call check("double transpose  ", Hd, R, 1d-2, 0.d0, fnm)
+        call delete_file(fnm)
+    end subroutine test_transpose
+
+    logical function has_att(fnm, vnm, anm)
+        character(len=*), intent(IN) :: fnm, vnm, anm
+        integer :: ncid, varid, stat
+        stat = nf90_open(fnm, nf90_nowrite, ncid)
+        stat = nf90_inq_varid(ncid, vnm, varid)
+        has_att = (nf90_inquire_attribute(ncid, varid, anm) .eq. nf90_noerr)
+        stat = nf90_close(ncid)
+    end function has_att
 
     ! Every value within max(pabs, prel*|x|) (exact if both 0); missing and
     ! zero kept
