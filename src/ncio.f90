@@ -64,6 +64,7 @@ module ncio
         integer :: n, dimid, varid, ndims_in
         double precision :: add_offset, scale_factor, missing_value, FillValue
         logical :: missing_set, FillValue_set
+        double precision :: prec_abs, prec_rel
         double precision, allocatable :: dim(:)
         logical :: coord
         logical :: has_no_dims
@@ -195,7 +196,8 @@ contains
     subroutine nc4_write_internal(filename,name,dat,xtype,size_in,&
                                   ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                   start,count,long_name,standard_name,grid_mapping,units, &
-                                  missing_value_int,missing_value_float,missing_value_double)
+                                  missing_value_int,missing_value_float,missing_value_double, &
+                                  prec_abs,prec_rel)
 
 
         implicit none
@@ -213,6 +215,7 @@ contains
         integer,           intent(IN), optional :: missing_value_int
         real(4),           intent(IN), optional :: missing_value_float
         double precision,  intent(IN), optional :: missing_value_double
+        double precision,  intent(IN), optional :: prec_abs, prec_rel
         
         ! Local variables
         type(ncvar) :: v
@@ -227,7 +230,7 @@ contains
         integer :: i, j, k, m, ndims, dimid
         logical :: var_has_no_dims
         logical :: var_exists
-        logical :: packing
+        logical :: packing, rounding
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -255,6 +258,8 @@ contains
         if ( present(standard_name) ) v%standard_name = trim(standard_name)
         if ( present(grid_mapping) )  v%grid_mapping  = trim(grid_mapping)
         if ( present(units) )         v%units         = trim(units)
+        if ( present(prec_abs) )      v%prec_abs      = prec_abs
+        if ( present(prec_rel) )      v%prec_rel      = prec_rel
 
         if (present(missing_value_int)) then
             v%missing_set = .TRUE.
@@ -412,13 +417,28 @@ contains
         packing = (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") &
                   .and. (v%scale_factor .ne. 1.d0 .or. v%add_offset .ne. 0.d0)
 
-        if (packing) then
+        ! Round the values to the precision asked (prec_abs, prec_rel), so that
+        ! they compress well; before packing, as the precision is in the units
+        ! of the field.
+        rounding = (trim(v%xtype) .eq. "NF90_FLOAT" .or. trim(v%xtype) .eq. "NF90_DOUBLE") &
+                  .and. (v%prec_abs .gt. 0.d0 .or. v%prec_rel .gt. 0.d0)
+
+        if (packing .or. rounding) then
             allocate(dat_to_write(size(dat)))
+            dat_to_write = dat
+        end if
+
+        if (rounding) then
+            call nc_bitround(dat_to_write, merge(23, 52, trim(v%xtype) .eq. "NF90_FLOAT"), &
+                             v%prec_abs, v%prec_rel, v%missing_set, v%missing_value)
+        end if
+
+        if (packing) then
             if (v%missing_set) then
-                dat_to_write = dat
-                where( dabs(dat-v%missing_value) .gt. NC_TOL ) dat_to_write = (dat-v%add_offset)/v%scale_factor
+                where( dabs(dat-v%missing_value) .gt. NC_TOL ) &
+                    dat_to_write = (dat_to_write-v%add_offset)/v%scale_factor
             else
-                dat_to_write = (dat-v%add_offset)/v%scale_factor
+                dat_to_write = (dat_to_write-v%add_offset)/v%scale_factor
             end if
         end if
 
@@ -434,7 +454,7 @@ contains
 
         ! Write the data to the netcdf file
         ! Note: NF90 converts dat to proper type (int, real, dble) and shape
-        if (packing) then
+        if (packing .or. rounding) then
             call nc_check_put( nf90_put_var(nc_id, v%varid, dat_to_write,v%start,v%count), ec )
         else
             call nc_check_put( nf90_put_var(nc_id, v%varid, dat,v%start,v%count), ec )
@@ -449,6 +469,64 @@ contains
         return
 
     end subroutine nc4_write_internal
+
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    ! Purpose : Round the values of dat to the precision asked, so that
+    !           they compress well (bit rounding: the mantissa bits not
+    !           needed are zeroed). The error of each value is at most
+    !           prec_abs (in the units of the field) or prec_rel times its
+    !           magnitude, the larger of the two (0 for none). The bits
+    !           kept are chosen for each value; kmax is the mantissa
+    !           length of the type on file (23 float, 52 double). NaN, Inf
+    !           and missing values are kept.
+    ! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    subroutine nc_bitround(dat, kmax, prec_abs, prec_rel, missing_set, missing_value)
+
+        implicit none
+
+        double precision, intent(INOUT) :: dat(:)
+        integer,          intent(IN)    :: kmax
+        double precision, intent(IN)    :: prec_abs, prec_rel
+        logical,          intent(IN)    :: missing_set
+        double precision, intent(IN)    :: missing_value
+
+        ! Local variables
+        integer, parameter :: i8 = selected_int_kind(18)
+        integer    :: i, k, k_rel, k_abs0, shift
+        integer(i8) :: u
+
+        ! Rounding x in [2^e, 2^(e+1)) to k bits changes it by at most
+        ! 2^(e-k-1) <= 2^(-k-1) |x|, so k_rel bits keep the relative precision,
+        ! and e-1+ceiling(-log2(prec_abs)) bits the absolute one (exponent(x) = e+1).
+        k_rel = kmax
+        if (prec_rel .gt. 0.d0) k_rel = max(0, ceiling(-log(prec_rel)/log(2.d0) - 1.d0))
+        k_abs0 = 0
+        if (prec_abs .gt. 0.d0) k_abs0 = ceiling(-log(prec_abs)/log(2.d0)) - 2
+
+        do i = 1, size(dat)
+
+            if (.not. ieee_is_finite(dat(i)) .or. dat(i) .eq. 0.d0) cycle
+            if (missing_set) then
+                if (dabs(dat(i)-missing_value) .le. NC_TOL) cycle
+            end if
+
+            k = k_rel
+            if (prec_abs .gt. 0.d0) k = min(k_rel, max(0, exponent(dat(i)) + k_abs0))
+            if (k .ge. kmax) cycle
+
+            ! Round the magnitude to nearest, ties to even, at bit 52-k of the
+            ! double (the type on file has kmax <= 52 bits, so it stays exact)
+            shift = 52 - k
+            u = transfer(dabs(dat(i)), u)
+            u = u + (ishft(1_i8, shift-1) - 1_i8) + ibits(u, shift, 1)
+            u = iand(u, not(ishft(1_i8, shift) - 1_i8))
+            dat(i) = sign(transfer(u, 1.d0), dat(i))
+
+        end do
+
+        return
+
+    end subroutine nc_bitround
 
     ! ====================================================================
     ! flatten_to_dble: copy a contiguous array of any rank into a
@@ -720,6 +798,8 @@ contains
         v%missing_value = -9999d0
         v%FillValue     = v%missing_value
         v%FillValue_set = .FALSE.
+        v%prec_abs      = 0.d0
+        v%prec_rel      = 0.d0
 
         v%xtype = "NF90_DOUBLE"
         v%coord = .FALSE.
@@ -1252,6 +1332,12 @@ contains
                                 call nc_check( nf90_put_att(ncid, v%varid, "_FillValue", v%FillValue), ec, "nf90_put_att" )
                         end select
                     end if
+
+                    ! Precision the values were rounded to (see nc_bitround)
+                    if (v%prec_abs .gt. 0.d0) &
+                        call nc_check( nf90_put_att(ncid, v%varid, "precision_abs", v%prec_abs), ec, "nf90_put_att" )
+                    if (v%prec_rel .gt. 0.d0) &
+                        call nc_check( nf90_put_att(ncid, v%varid, "precision_rel", v%prec_rel), ec, "nf90_put_att" )
 
 
             end if
@@ -2554,6 +2640,9 @@ contains
     !! @param standard_name NetCDF attribute specifying the CF convention standard name of the variable (optional)
     !! @param grid_mapping name of the grid this variable is mapped on (optional)
     !! @param units NetCDF attribute of the units of the variable (optional)
+    !! @param prec_abs, prec_rel precision of the values written (float/double, optional): each
+    !!        is rounded so that its error is at most prec_abs (units of the field) or prec_rel
+    !!        times its magnitude, the larger of the two; both absent for lossless
     subroutine nc_write_int_pt(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
                                   long_name,standard_name,grid_mapping,units,missing_value)
 
@@ -2733,34 +2822,44 @@ contains
     end subroutine nc_write_int_6D
 
     subroutine nc_write_double_pt(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision :: dat
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
         character (len=*), optional :: dims(:), dim1, dim2, dim3, dim4, dim5, dim6
         character (len=*), optional :: long_name, standard_name, grid_mapping, units
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dble([dat]),"NF90_DOUBLE",shape([dat]), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_pt
 
     subroutine nc_write_double_1D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2771,22 +2870,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_1D
 
     subroutine nc_write_double_2D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2797,22 +2904,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_2D
 
     subroutine nc_write_double_3D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:,:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2823,22 +2938,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_3D
 
     subroutine nc_write_double_4D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:,:,:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2849,22 +2972,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_4D
 
     subroutine nc_write_double_5D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:,:,:,:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2875,22 +3006,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_5D
 
     subroutine nc_write_double_6D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         double precision, contiguous :: dat(:,:,:,:,:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2901,44 +3040,60 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_double(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_DOUBLE",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_double=missing_value)
+                                missing_value_double=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_double_6D
 
     subroutine nc_write_float_pt(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4) :: dat
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
         character (len=*), optional :: dims(:), dim1, dim2, dim3, dim4, dim5, dim6
         character (len=*), optional :: long_name, standard_name, grid_mapping, units
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dble([dat]),"NF90_FLOAT",shape([dat]), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_pt
 
     subroutine nc_write_float_1D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2949,22 +3104,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_1D
 
     subroutine nc_write_float_2D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:,:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -2975,22 +3138,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_2D
 
     subroutine nc_write_float_3D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:,:,:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -3001,22 +3172,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_3D
 
     subroutine nc_write_float_4D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:,:,:,:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -3027,22 +3206,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_4D
 
     subroutine nc_write_float_5D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:,:,:,:,:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -3053,22 +3240,30 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
     end subroutine nc_write_float_5D
 
     subroutine nc_write_float_6D(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         implicit none
 
         real(4), contiguous :: dat(:,:,:,:,:,:)
         real(4), optional :: missing_value
+        real(4), optional :: prec_abs, prec_rel
+        double precision :: pabs, prel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -3079,10 +3274,16 @@ contains
         allocate(dat1D(size(dat)))
         call flatten_to_dble_float(size(dat), dat, dat1D)   ! contiguous flatten, no stack temporary
 
+        ! Precision of the written values, 0 for none (lossless)
+        pabs = 0.d0
+        prel = 0.d0
+        if (present(prec_abs)) pabs = prec_abs
+        if (present(prec_rel)) prel = prec_rel
+
         call nc4_write_internal(filename,name,dat1D,"NF90_FLOAT",shape(dat), &
                                 ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6, &
                                 start,count,long_name,standard_name,grid_mapping,units, &
-                                missing_value_float=missing_value)
+                                missing_value_float=missing_value,prec_abs=pabs,prec_rel=prel)
 
         return
 
