@@ -23,6 +23,8 @@ sht_config.h
 bench_tmp/
 logs/
 test_wm_*.nc
+test_zremap_out.nc
+docs/figures/zremap/zremap_grl.nc
 maps/
 maps_cache_test/
 maps_cdo_test/

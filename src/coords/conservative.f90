@@ -158,6 +158,7 @@ contains
         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source cell boundary in target plane
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
+        logical,  allocatable :: need(:)                    ! source cell is a candidate of some target
         type(link_buf), allocatable :: bufs(:)
 
         same_sys   = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian
@@ -175,7 +176,7 @@ contains
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
         xyc = grid2%cs%xy_conv
 
-        ! Express every source cell's corners in the TARGET plane (the planar clip
+        ! Express the source cell corners in the TARGET plane (the planar clip
         ! runs there in both modes). The candidate-search tree differs by mode:
         !   - same-system: planar tree over projected source centers.
         !   - cross-system (lat-lon -> projection): tree over source centers on the
@@ -202,46 +203,14 @@ contains
         do jc = 1, ny1
             do ic = 1, nx1
                 cs = (jc-1)*nx1 + ic
-                call cell_corners_grid(grid1, ic, jc, lx, ly)
                 if (same_sys) then
+                    call cell_corners_grid(grid1, ic, jc, lx, ly)
                     scornx(:,cs) = lx; scorny(:,cs) = ly
                     emb(1,cs) = grid1%x(ic,jc); emb(2,cs) = grid1%y(ic,jc)
                     d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
                            + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
                     maxsrcdiag = max(maxsrcdiag, d)
                 else
-                    ! lx,ly are the source cell corners in the SOURCE axis system:
-                    ! geographic lon/lat for a plain lat-lon source, or ROTATED
-                    ! lon/lat (rlon/rlat) for a rotated-pole source. Subsample each
-                    ! cell edge into NSUB segments IN THAT AXIS SYSTEM (so the
-                    ! straight edge is traced along the true cell boundary), recover
-                    ! geographic lon/lat when the source is projected (rotated pole),
-                    ! then project every sample into the target plane so the source
-                    ! polygon follows the curved parallels/meridians instead of
-                    ! chording across them. The chord error grows with source cell
-                    ! size and projection distortion; subsampling cuts it from ~30 m
-                    ! to <1 m vs cdo for a 1deg source. (A separate ~O(100 m)
-                    ! planar-vs-spherical residual remains within a few cells of the
-                    ! geographic pole.)
-                    src_xyc = grid1%cs%xy_conv
-                    k = 0
-                    do e = 1, 4
-                        en = mod(e,4) + 1
-                        do s = 0, NSUB-1
-                            tt   = real(s,dp)/real(NSUB,dp)
-                            plon = lx(e) + tt*(lx(en) - lx(e))
-                            plat = ly(e) + tt*(ly(en) - ly(e))
-                            if (grid1%cs%is_projection) then
-                                ! source axis is rotated/projected -> geographic
-                                call oblimap_projection_inverse(plon*src_xyc, plat*src_xyc, &
-                                                                glon, glat, grid1%cs%proj)
-                                plon = glon; plat = glat
-                            end if
-                            call oblimap_projection(plon, plat, px, py, grid2%cs%proj)
-                            k = k + 1
-                            scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
-                        end do
-                    end do
                     ! candidate search uses the undistorted unit-sphere center
                     call lonlat_to_xyz(grid1%lon(ic,jc), grid1%lat(ic,jc), cx, cy, cz)
                     emb(1,cs) = cx; emb(2,cs) = cy; emb(3,cs) = cz
@@ -264,6 +233,66 @@ contains
             tgtdeg = (max(grid2%G%dx, grid2%G%dy)*xyc/grid2%cs%planet%a) &
                      / degrees_to_radians
             rad    = chord(srcdeg + 1.5_dp*tgtdeg)
+        end if
+
+        if (do_project) then
+            ! Project only the source cells that are a candidate of some target
+            ! cell. Far from the target the projection is ill-defined, not just
+            ! distorted: stereographic sends the antipode of its center to
+            ! infinity (a pole corner of a global source divides by zero). The
+            ! candidate sets come from the sphere tree alone, so marking them
+            ! first leaves the weights unchanged.
+            allocate(need(n1), cidx(n1), cd2(n1))
+            need = .false.
+            do j = 1, ny2
+                do i = 1, nx2
+                    call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
+                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
+                    need(cidx(1:nf)) = .true.
+                end do
+            end do
+            deallocate(cidx, cd2)
+
+            ! lx,ly are the source cell corners in the SOURCE axis system:
+            ! geographic lon/lat for a plain lat-lon source, or ROTATED
+            ! lon/lat (rlon/rlat) for a rotated-pole source. Subsample each
+            ! cell edge into NSUB segments IN THAT AXIS SYSTEM (so the
+            ! straight edge is traced along the true cell boundary), recover
+            ! geographic lon/lat when the source is projected (rotated pole),
+            ! then project every sample into the target plane so the source
+            ! polygon follows the curved parallels/meridians instead of
+            ! chording across them. The chord error grows with source cell
+            ! size and projection distortion; subsampling cuts it from ~30 m
+            ! to <1 m vs cdo for a 1deg source. (A separate ~O(100 m)
+            ! planar-vs-spherical residual remains within a few cells of the
+            ! geographic pole.)
+            src_xyc = grid1%cs%xy_conv
+            do jc = 1, ny1
+                do ic = 1, nx1
+                    cs = (jc-1)*nx1 + ic
+                    if (.not. need(cs)) cycle
+                    call cell_corners_grid(grid1, ic, jc, lx, ly)
+                    k = 0
+                    do e = 1, 4
+                        en = mod(e,4) + 1
+                        do s = 0, NSUB-1
+                            tt   = real(s,dp)/real(NSUB,dp)
+                            plon = lx(e) + tt*(lx(en) - lx(e))
+                            plat = ly(e) + tt*(ly(en) - ly(e))
+                            if (grid1%cs%is_projection) then
+                                ! source axis is rotated/projected -> geographic
+                                call oblimap_projection_inverse(plon*src_xyc, plat*src_xyc, &
+                                                                glon, glat, grid1%cs%proj)
+                                plon = glon; plat = glat
+                            end if
+                            call oblimap_projection(plon, plat, px, py, grid2%cs%proj)
+                            k = k + 1
+                            scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
+                        end do
+                    end do
+                end do
+            end do
+            deallocate(need)
         end if
 
         nthreads = 1

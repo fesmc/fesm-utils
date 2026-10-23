@@ -1,0 +1,24 @@
+! zremap demo: present-day Greenland SMB (MAR v3.11, 1961-1990) remapped to the
+! surfaces of the ICE-6G_C deglaciation (reference topography + ICE-6G_C
+! anomaly of each time slice).
+! Run from the fesm-utils folder, next to ice_data.
+
+&demo
+    file_smb  = "../ice_data/Greenland/GRL-16KM/GRL-16KM_MARv3.11-ERA_annmean_1961-1990.nc"
+    file_topo = "../ice_data/Greenland/GRL-16KM/GRL-16KM_TOPO-ICE-6G_C.nc"
+    file_out  = "docs/figures/zremap/zremap_grl.nc"
+    f_ice_min = 50.0                    ! [%] ice fraction of an ice point
+    dx        = 16e3                    ! [m] grid spacing
+/
+
+&zremap
+    sigma   = 100e3                     ! [m]
+    z_min   = 0.0                       ! [m]
+    z_max   = 4000.0                    ! [m]
+    dz      = 100.0                     ! [m]
+    sigma_z = 200.0                     ! [m]   smoothing along z
+    w_full  = 0.25                      ! [1]
+    stride  = 1
+    dfdz_lo = 2.0                       ! [mm w.e. a-1 m-1] ablation-zone gradient
+    dfdz_hi = 0.0                       ! [mm w.e. a-1 m-1] flat in the accumulation zone
+/

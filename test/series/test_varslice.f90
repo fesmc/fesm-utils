@@ -11,6 +11,7 @@ program test_varslice
     ! so every slice/aggregate has a hand-checkable expected value.
 
     use precision
+    use constants, only : mv
     use ncio,     only : nc_create, nc_write_dim, nc_write
     use varslice, only : varslice_class, varslice_init_arg, varslice_init_nml, &
                          varslice_update, varslice_end
@@ -39,42 +40,42 @@ program test_varslice
     ! Single-file cases (also exercises fix #1: init via varslice_init_arg)
     ! ========================================================================
     call varslice_init_arg(vs, "test_vs_single.nc", "temp", "u", "u", &
-                           with_time=.TRUE., time_par=[1.0_wp,10.0_wp,1.0_wp,0.0_wp])
+                           with_time=.TRUE., time_par=[1.0_dp,10.0_dp,1.0_dp,0.0_dp])
 
     ! exact @ time=5  -> [5,105,205]
-    call varslice_update(vs, time=[5.0_wp], method="exact")
+    call varslice_update(vs, time=[5.0_dp], method="exact")
     exp1 = val_col(5.0_wp, nx)
     call check_shape("exact shape", vs, nx, 1, nfail)
     call check_col("exact @5", vs%var(:,1,1,1), exp1, nfail)
 
     ! range @ [3,5] -> 3 time slices (t=3,4,5)
-    call varslice_update(vs, time=[3.0_wp,5.0_wp], method="range")
+    call varslice_update(vs, time=[3.0_dp,5.0_dp], method="range")
     call check_shape("range shape", vs, nx, 3, nfail)
     call check_col("range col t=3", vs%var(:,1,1,1), val_col(3.0_wp,nx), nfail)
     call check_col("range col t=4", vs%var(:,2,1,1), val_col(4.0_wp,nx), nfail)
     call check_col("range col t=5", vs%var(:,3,1,1), val_col(5.0_wp,nx), nfail)
 
     ! range_mean @ [1,10] -> mean over t=1..10 (per point): time-mean = 5.5
-    call varslice_update(vs, time=[1.0_wp,10.0_wp], method="range_mean", rep=1)
+    call varslice_update(vs, time=[1.0_dp,10.0_dp], method="range_mean", rep=1)
     call check_shape("range_mean shape", vs, nx, 1, nfail)
     call check_col("range_mean @[1,10]", vs%var(:,1,1,1), val_col(5.5_wp,nx), nfail)
 
     ! range_sum @ [1,10] -> sum over t=1..10 (per point).  FIX #2:
     ! previously get_indices had no "range_sum" case, so this returned missing.
     ! point i: sum_{t=1..10}(t) + 10*(i-1)*100 = 55 + 1000*(i-1)
-    call varslice_update(vs, time=[1.0_wp,10.0_wp], method="range_sum", rep=1)
+    call varslice_update(vs, time=[1.0_dp,10.0_dp], method="range_sum", rep=1)
     call check_shape("range_sum shape", vs, nx, 1, nfail)
     call check_col("range_sum @[1,10]", vs%var(:,1,1,1), &
                    [55.0_wp, 1055.0_wp, 2055.0_wp], nfail)
 
     ! interp @ 4.5 -> halfway between t=4 and t=5 -> [4.5,104.5,204.5]
-    call varslice_update(vs, time=[4.5_wp], method="interp")
+    call varslice_update(vs, time=[4.5_dp], method="interp")
     call check_shape("interp shape", vs, nx, 1, nfail)
     call check_col("interp @4.5", vs%var(:,1,1,1), val_col(4.5_wp,nx), nfail)
 
     ! accessors v1/v2/v3: natural-rank copies of the stored slices. Reload a
     ! range (interp above overwrote it) whose var is (nx,3,1,1).
-    call varslice_update(vs, time=[3.0_wp,5.0_wp], method="range")
+    call varslice_update(vs, time=[3.0_dp,5.0_dp], method="range")
     call check_col("v1(2) == range col t=4", vs%v1(2), val_col(4.0_wp,nx), nfail)
     call check_col("v1() default k=1",       vs%v1(),  val_col(3.0_wp,nx), nfail)
     f2 = vs%v2()                       ! var(:,:,1,1) -> (nx,3)
@@ -88,14 +89,14 @@ program test_varslice
     ! Multi-file case (fix #4: glob + get_matching_files + nc_read_multifile)
     ! ========================================================================
     call varslice_init_arg(vs, "test_vs_multi_*.nc", "temp", "u", "u", &
-                           with_time=.TRUE., time_par=[1.0_wp,10.0_wp,1.0_wp,0.0_wp])
+                           with_time=.TRUE., time_par=[1.0_dp,10.0_dp,1.0_dp,0.0_dp])
 
     ! exact @ 7 -> value from the SECOND file, proving the files were stitched
-    call varslice_update(vs, time=[7.0_wp], method="exact")
+    call varslice_update(vs, time=[7.0_dp], method="exact")
     call check_col("multifile exact @7", vs%var(:,1,1,1), val_col(7.0_wp,nx), nfail)
 
     ! range @ [4,7] -> spans both files: t=4,5 (file1) and 6,7 (file2)
-    call varslice_update(vs, time=[4.0_wp,7.0_wp], method="range")
+    call varslice_update(vs, time=[4.0_dp,7.0_dp], method="range")
     call check_shape("multifile range shape", vs, nx, 4, nfail)
     call check_col("multifile range t=4", vs%var(:,1,1,1), val_col(4.0_wp,nx), nfail)
     call check_col("multifile range t=6", vs%var(:,3,1,1), val_col(6.0_wp,nx), nfail)
@@ -107,14 +108,14 @@ program test_varslice
     ! Long time axis (fix #3: work arrays sized to n, not fixed at 10000)
     ! ========================================================================
     call varslice_init_arg(vs, "test_vs_big.nc", "temp", "u", "u", &
-                           with_time=.TRUE., time_par=[1.0_wp,12000.0_wp,1.0_wp,0.0_wp])
+                           with_time=.TRUE., time_par=[1.0_dp,12000.0_dp,1.0_dp,0.0_dp])
 
     ! exact @ 9000 (index 9000 > 10000-th only in count, but n=12000 array) -> 9000
-    call varslice_update(vs, time=[9000.0_wp], method="exact")
+    call varslice_update(vs, time=[9000.0_dp], method="exact")
     call check_col("big exact @9000", vs%var(:,1,1,1), [9000.0_wp], nfail)
 
     ! range_mean over the whole 12000-long axis -> time-mean = 6000.5
-    call varslice_update(vs, time=[1.0_wp,12000.0_wp], method="range_mean", rep=1)
+    call varslice_update(vs, time=[1.0_dp,12000.0_dp], method="range_mean", rep=1)
     call check_col("big range_mean", vs%var(:,1,1,1), [6000.5_wp], nfail)
 
     call varslice_end(vs)
@@ -129,7 +130,7 @@ program test_varslice
     call check_true("nml with_time=T", vs%par%with_time, nfail)
     call check_scalar("nml unit_scale",  vs%par%unit_scale,  2.0_wp, nfail)
     call check_scalar("nml unit_offset", vs%par%unit_offset, 5.0_wp, nfail)
-    call varslice_update(vs, time=[5.0_wp], method="exact")
+    call varslice_update(vs, time=[5.0_dp], method="exact")
     ! temp(i,5)=5+(i-1)*100, then scaling 2*x+5
     call check_col("nml exact @5 scaled", vs%var(:,1,1,1), &
                    [15.0_wp, 215.0_wp, 415.0_wp], nfail)
@@ -144,10 +145,32 @@ program test_varslice
                       real(vs%par%time_par(2),wp), 2022.0_wp, nfail)
     call varslice_end(vs)
 
+    ! ========================================================================
+    ! Missing values: fill = "const" / "nearest"; static data is read once
+    ! ========================================================================
+    call make_file_holes("test_vs_holes.nc", 3.0_wp)       ! 3 outside a hole of missing values
+
+    call varslice_init_nml(vs, "test_vs.nml", "vtest_fill_const", verbose=.FALSE.)
+    call varslice_update(vs)
+    call check_scalar("fill const: hole", vs%var(10,10,1,1), 0.0_wp, nfail)
+    call check_scalar("fill const: valid", vs%var(1,1,1,1), 3.0_wp, nfail)
+    call varslice_end(vs)
+
+    call varslice_init_nml(vs, "test_vs.nml", "vtest_fill_nearest", verbose=.FALSE.)
+    call varslice_update(vs)
+    call check_true("fill nearest: no missing", all(vs%var .ne. mv), nfail)
+    call check_scalar("fill nearest: hole", vs%var(10,10,1,1), 3.0_wp, nfail)
+
+    ! static data is read once: a changed file does not change the slice
+    call make_file_holes("test_vs_holes.nc", 7.0_wp)
+    call varslice_update(vs)
+    call check_scalar("static read once", vs%var(1,1,1,1), 3.0_wp, nfail)
+    call varslice_end(vs)
+
     ! --- cleanup synthetic files --------------------------------------------
     call execute_command_line("rm -f test_vs_single.nc test_vs_multi_01.nc "// &
                               "test_vs_multi_02.nc test_vs_big.nc test_vs_nml.nc "// &
-                              "test_vs_static.nc test_vs.nml")
+                              "test_vs_static.nc test_vs_holes.nc test_vs.nml")
 
     ! --- report -------------------------------------------------------------
     write(*,*)
@@ -223,6 +246,26 @@ contains
         deallocate(x, y, var)
     end subroutine make_file2d
 
+    subroutine make_file_holes(filename, val)
+        ! Write a static 20x20 field temp(x,y) = val, missing (mv) in the
+        ! block 8:14 x 8:14
+        character(len=*), intent(in) :: filename
+        real(wp),         intent(in) :: val
+        integer, parameter :: n = 20
+        integer  :: i
+        real(dp) :: x(n)
+        real(wp) :: var(n,n)
+        do i = 1, n
+            x(i) = real(i-1,dp)
+        end do
+        var = val
+        var(8:14,8:14) = mv
+        call nc_create(filename)
+        call nc_write_dim(filename, "x", x=x)
+        call nc_write_dim(filename, "y", x=x)
+        call nc_write(filename, "temp", var, dim1="x", dim2="y")
+    end subroutine make_file_holes
+
     subroutine write_nml(fname)
         ! Emit a namelist in the condensed format for two groups:
         ! a time-active variable and a static (period-documenting) field.
@@ -243,6 +286,25 @@ contains
         write(u,'(a)') '    units    = "m" "m"'
         write(u,'(a)') '    scaling  = 1.0 0.0'
         write(u,'(a)') '    time     = 0.0, 1979.0, 2022.0'
+        write(u,'(a)') "/"
+        write(u,'(a)') ""
+        write(u,'(a)') "&vtest_fill_const"
+        write(u,'(a)') '    filename   = "test_vs_holes.nc"'
+        write(u,'(a)') '    name       = "temp"'
+        write(u,'(a)') '    units      = "m" "m"'
+        write(u,'(a)') '    scaling    = 1.0 0.0'
+        write(u,'(a)') '    time       = 0.0, 0.0, 0.0'
+        write(u,'(a)') '    fill       = "const"'
+        write(u,'(a)') '    fill_value = 0.0'
+        write(u,'(a)') "/"
+        write(u,'(a)') ""
+        write(u,'(a)') "&vtest_fill_nearest"
+        write(u,'(a)') '    filename   = "test_vs_holes.nc"'
+        write(u,'(a)') '    name       = "temp"'
+        write(u,'(a)') '    units      = "m" "m"'
+        write(u,'(a)') '    scaling    = 1.0 0.0'
+        write(u,'(a)') '    time       = 0.0, 0.0, 0.0'
+        write(u,'(a)') '    fill       = "nearest"'
         write(u,'(a)') "/"
         close(u)
     end subroutine write_nml

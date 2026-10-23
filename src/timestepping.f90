@@ -11,26 +11,26 @@ module timestepping
 
 
 
-    real(wp), parameter :: time_tol = 1e-6 
+    real(dp), parameter :: time_tol = 1e-6_dp
     logical,  parameter :: verbose  = .TRUE. 
 
     type tstep_class
         character(len=56) :: units      ! Time units
         character(len=56) :: method     ! method of timekeeping
-        real(wp) :: time_init
-        real(wp) :: time_end
+        real(dp) :: time_init
+        real(dp) :: time_end
         logical  :: use_const_cal
         logical  :: use_const_rel
-        real(wp) :: time
-        real(wp) :: time_elapsed
-        real(wp) :: time_cal 
-        real(wp) :: time_rel
-        real(wp) :: time_const_rel
-        real(wp) :: time_const_cal
+        real(dp) :: time
+        real(dp) :: time_elapsed
+        real(dp) :: time_cal 
+        real(dp) :: time_rel
+        real(dp) :: time_const_rel
+        real(dp) :: time_const_cal
         integer  :: n
 
         ! Internal values
-        real(wp) :: time_ref
+        real(dp) :: time_ref
         real(dp) :: comp_elapsed
         real(dp) :: comp_cal
         real(dp) :: comp_rel
@@ -64,16 +64,16 @@ contains
         type(tstep_class), intent(INOUT) :: ts
         character(len=*),  intent(IN)    :: filename
         character(len=*),  intent(IN)    :: group
-        real(wp),          intent(OUT)   :: dtt
-        real(wp),          intent(IN), optional :: time_ref
+        real(dp),          intent(OUT)   :: dtt
+        real(dp),          intent(IN), optional :: time_ref
         logical,           intent(IN), optional :: cal
 
         ! Local variables
         character(len=56) :: tstep_method
-        real(wp) :: tstep_const, time_init, time_end, tref
+        real(dp) :: tstep_const, time_init, time_end, tref
         logical  :: is_cal
 
-        tref = 1950.0_wp
+        tref = 1950.0_dp
         if (present(time_ref)) tref = time_ref
         is_cal = .FALSE.
         if (present(cal)) is_cal = cal
@@ -86,7 +86,7 @@ contains
 
         if (is_cal) then
             call tstep_init_args(ts,time_init,time_end,method=tstep_method,units="year", &
-                                    time_ref=tref,const_rel=0.0_wp,const_cal=tstep_const)
+                                    time_ref=tref,const_rel=0.0_dp,const_cal=tstep_const)
         else
             call tstep_init_args(ts,time_init,time_end,method=tstep_method,units="year", &
                                     time_ref=tref,const_rel=tstep_const)
@@ -104,16 +104,16 @@ contains
         implicit none
 
         type(tstep_class), intent(INOUT) :: ts
-        real(wp),          intent(IN)    :: time_init
-        real(wp),          intent(IN)    :: time_end
+        real(dp),          intent(IN)    :: time_init
+        real(dp),          intent(IN)    :: time_end
         character(len=*),  intent(IN)    :: method
         character(len=*),  intent(IN)    :: units
-        real(wp),          intent(IN), optional :: time_ref
-        real(wp),          intent(IN), optional :: const_cal
-        real(wp),          intent(IN), optional :: const_rel
+        real(dp),          intent(IN), optional :: time_ref
+        real(dp),          intent(IN), optional :: const_cal
+        real(dp),          intent(IN), optional :: const_rel
 
         ! Local variables
-        real(wp) :: time_years
+        real(dp) :: time_years
 
         ! Load parameters
         ts%method = trim(method)
@@ -231,7 +231,7 @@ contains
         implicit none
 
         type(tstep_class), intent(INOUT) :: ts
-        real(wp),          intent(IN)    :: dt 
+        real(dp),          intent(IN)    :: dt 
         logical,           intent(IN), optional :: verbose
 
         ! Local variables
@@ -316,10 +316,10 @@ contains
 
         implicit none
 
-        real(wp), intent(IN) :: time
-        real(wp) :: rtime
+        real(dp), intent(IN) :: time
+        real(dp) :: rtime
 
-        rtime = nint(time*1e2)*1e-2_wp
+        rtime = nint(time*1e2_dp)*1e-2_dp
 
         return
 
@@ -332,14 +332,14 @@ contains
 
         implicit none
 
-        real(wp), intent(inout) :: time  ! Accumulated total
+        real(dp), intent(inout) :: time  ! Accumulated total
         real(dp), intent(inout) :: comp  ! Compensation for rounding errors
-        real(wp), intent(in)    :: dt    ! Current increment
+        real(dp), intent(in)    :: dt    ! Current increment
         
         ! Local variables
         real(8) :: y, t
 
-        y = dble(dt) - comp    ! Compensate for lost low-order bits
+        y = dt - comp          ! Compensate for lost low-order bits
         t = time + y           ! Temporarily add the compensated value
         comp = (t - time) - y  ! Compute new compensation
         time = t               ! Update the accumulated total

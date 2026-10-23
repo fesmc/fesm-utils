@@ -118,13 +118,8 @@ contains
                 write(fnum,"(a,f12.3)") "scale_factor_at_projection_origin = ", 1.0d0
                 write(fnum,"(a,f12.3)") "false_easting = ",  0.0d0
                 write(fnum,"(a,f12.3)") "false_northing = ", 0.0d0
-                if (grid%cs%planet%is_sphere) then
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
-                else
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
-                end if
+                write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                write(fnum,"(a,f20.8)") "inverse_flattening = ", grid%cs%planet%inverse_flattening
 
             case("polar_stereographic")
                 ! latitude_of_projection_origin must be +/-90 for polar_stereographic
@@ -139,13 +134,8 @@ contains
                 write(fnum,"(a,f12.3)") "standard_parallel = ", grid%cs%proj%phi
                 write(fnum,"(a,f12.3)") "false_easting = ",  0.0d0
                 write(fnum,"(a,f12.3)") "false_northing = ", 0.0d0
-                if (grid%cs%planet%is_sphere) then
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
-                else
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
-                end if
+                write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                write(fnum,"(a,f20.8)") "inverse_flattening = ", grid%cs%planet%inverse_flattening
 
             case("transverse_mercator")
                 ! cdo does not know the CF transverse_mercator mapping; it takes
@@ -153,7 +143,7 @@ contains
                 if (grid%cs%planet%is_sphere) then
                     write(ellps,"(a,f0.3)") "+R=", grid%cs%planet%R
                 else
-                    write(ellps,"(a,f0.3,a,f0.9)") "+a=", grid%cs%planet%a, " +rf=", 1.d0/grid%cs%planet%f
+                    write(ellps,"(a,f0.3,a,f0.9)") "+a=", grid%cs%planet%a, " +rf=", grid%cs%planet%inverse_flattening
                 end if
                 write(fnum,"(a,f0.9,a,f0.9,a,f0.9,a,f0.6,a,f0.6,a)") &
                     'proj_params = "+proj=tmerc +lon_0=', grid%cs%proj%lambda, &
@@ -163,13 +153,8 @@ contains
 
             case("latitude_longitude","latlon","gaussian")
                 write(fnum,"(a,a)") "grid_mapping_name = ", "latitude_longitude"
-                if (grid%cs%planet%is_sphere) then
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 0.0d0
-                else
-                    write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
-                    write(fnum,"(a,f20.8)") "inverse_flattening = ", 1.d0/grid%cs%planet%f
-                end if
+                write(fnum,"(a,f18.3)") "semi_major_axis = ",    grid%cs%planet%a
+                write(fnum,"(a,f20.8)") "inverse_flattening = ", grid%cs%planet%inverse_flattening
 
             case DEFAULT
                 ! Do nothing

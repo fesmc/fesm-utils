@@ -23,11 +23,12 @@ families of forcing under one namelist-configured interface:
 use tsgen
 
 type(tsgen_class) :: ts
-real(wp) :: time, var, dvdt
+real(dp) :: time, dt
+real(wp) :: var, dvdt
 
 ! Read a namelist group and set the initial value. The group name is used
 ! verbatim (default "tsgen"); here we read &tsgen_climate.
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
+call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")
 
 do            ! model time loop
     ! var is the model response tsgen may react to (ignored by time-driven
@@ -44,21 +45,25 @@ end do
 
 The object carries both the mean forcing (`ts%f_mean_now`), the realized noise
 sample (`ts%eps`), and the reported rate of change (`ts%df_dt`). `ts%f_now =
-ts%f_mean_now + ts%eps`.
+ts%f_mean_now + ts%eps`, with the [window modifier](#window-modifier), when
+active, applied to the mean before the noise: `ts%f_now = W(t, ts%f_mean_now) +
+ts%eps`.
 
 ## Public API
 
 | Procedure | Purpose |
 |---|---|
-| `tsgen_init(ts, filename, time, [group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`), classify the method, allocate state, set the initial value at simulation time `time`. |
+| `tsgen_init(ts, filename, time, [group], [defaults_file], [defaults_group])` | Read the namelist group `group` (used verbatim, default `"tsgen"`); with `defaults_file`, keys not set in `group` are taken from the template group `defaults_group` (default `group`) of that file, which must declare every key read (`norm_t0`/`norm_t1` excepted; this includes the `win_*` keys, which are optional only without `defaults_file`). Then classify the method, allocate state, set the initial value at simulation time `time`. |
 | `tsgen_update(ts, time, var, [dv_dt])` | Advance to `time`; compute `ts%f_now` from the method, the response `var`, and (optionally) its rate `dv_dt`. |
-| `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
+| `tsgen_tabulate(ts, time(:), f(:), [df_dt(:)], [verbose])` | Sample the forcing without noise (window modifier included) over a supplied time axis (analytic and `series` methods only — feedback methods have no closed form). |
 | `tsgen_write(filename, ts, time(:), f(:), [df_dt(:)])` | Write a tabulated series to netCDF (`time`, `f`, optional `df_dt`). |
 | `tsgen_write_step(filename, ts, time, [label])` | Append a per-step 1-D diagnostic record (variables prefixed by the tsgen label, or `label` if given). |
-| `tsgen_restart_write(filename, ts, time)` / `tsgen_restart_read(ts, filename)` | Persist and restore controller state across a restart (`tsgen_restart_read` runs after `tsgen_init`). |
+| `tsgen_restart_write(filename, ts, time)` / `tsgen_restart_read(ts, filename)` | Persist and restore controller state across a restart (`tsgen_restart_read` runs after `tsgen_init`), and the random number generator state when the object draws noise (see [Noise](#noise)). |
 
 `tsgen_class` holds the configuration (`ts%par`), the loaded `series` (if any),
 history buffers for feedback/kill, and the runtime outputs listed above.
+Times and time intervals (the `time` arguments, `ts%time_init`, `ts%dt`, the
+`dt_*` parameters) are `real(dp)`; forcing values and rates are `wp`.
 
 ## Time-driven methods
 
@@ -107,6 +112,46 @@ variable, the per-time `sigma` from the file is used instead (falling back to
 
 ![Noise is layered on top of the mean forcing; `sigma` sets its spread.](../figures/tsgen_noise.png){#fig-noise width=90%}
 
+The noise comes from the intrinsic `random_number`. When the object draws noise,
+`tsgen_restart_write` saves the generator state (`random_seed(get=)`, variable
+`rng_seed` on dimension `rng`) and `tsgen_restart_read` restores it
+(`random_seed(put=)`), so a restarted run continues with the same noise as
+an uninterrupted one. The generator is process-wide (shared with any other
+user of `random_number`), and the state size depends on the compiler: a restart
+file without the state, or with a state of another size, keeps the current state
+(with a message).
+
+## Window modifier
+
+A modifier of the value within a time window, for every method, applied to the
+mean after the method (and the normalisation of a `series`) and before the
+noise:
+
+$$
+f' = f + w(t)\,(\mathrm{win\_fac} - 1)\,(f - \mathrm{win\_ref}),
+$$
+
+i.e. `f' = win_ref + win_fac*(f - win_ref)` at full effect. With
+`win_above = .TRUE.` it applies only where `f > win_ref`. The weight is
+`w = 1` for `win_t0 < t < win_t1` and 0 outside, with linear ramps of width
+`win_taper` inside both edges, `w = min(1, (t - win_t0)/win_taper, (win_t1 -
+t)/win_taper)`, so the modifier is continuous in time. `t` is the absolute
+simulation time. The window is inactive when `win_t1 <= win_t0` (the default).
+`ts%f_mean_now` stays the unmodified value (the state of feedback methods and
+the kill switch use it; `ts%df_dt` is its rate).
+
+For example, damping the part of a glacial index above 1 during the Holocene
+(the former snapclim `f_hol` rule):
+
+```fortran
+    win_t0    = -12e3     ! [yr]
+    win_t1    = -1e3      ! [yr]
+    win_taper = 0.0       ! [yr]
+    win_fac   = 0.5       ! f_hol
+    win_ref   = 1.0
+    win_above = .TRUE.
+```
+
 ## Response-driven (feedback) methods
 
 Feedback methods have no analytic form — they adjust the forcing *rate* from the
@@ -131,9 +176,27 @@ equilibrated (`|dv_dt_ave| < tol`) at the target bound; `ts%kill` is then set
 
 `method = "series"` reads a curve from file (ASCII or netCDF, auto-detected by
 extension) through the [series](series.qmd) module and interpolates it on the
-file's own absolute time axis. Only `method`, `sigma`, and the `series_*` keys
-are consulted. A multi-channel series (e.g. 12 monthly values) reports the
-channel mean in `ts%f_now`, with per-channel values in `ts%vec%f_now(:)`.
+file's own absolute time axis. Only `method`, `sigma`, the `series_*` keys and
+the optional `norm_t0`/`norm_t1` are consulted. A multi-channel series (e.g. 12
+monthly values) reports the channel mean in `ts%f_now`, with per-channel values
+in `ts%vec%f_now(:)`.
+
+**Normalisation.** With both `norm_t0` and `norm_t1` given, the series is
+rescaled at load so that it is an index, 0 at `norm_t0` and 1 at `norm_t1`:
+`f = (S - S0)/(S1 - S0)` (the standard deviation, if any, scaled by
+`1/|S1 - S0|`). A single time takes the value of the series there; two times
+take its mean over that window (exact for the linear interpolant). For example,
+a proxy as a glacial index, 0 at present and 1 at the LGM:
+
+```fortran
+&snap_idx_at
+    method      = "series"
+    sigma       = 0.0
+    series_file = "input/ngrip_d18o.dat"
+    norm_t0     = -2e3, 0.0       ! [yr] mean over 2-0 ka  -> 0
+    norm_t1     = -23e3, -19e3    ! [yr] mean over 23-19 ka -> 1
+/
+```
 
 ## Namelist configuration
 
@@ -161,6 +224,13 @@ default `"tsgen"`; here `&tsgen_climate`). Only the keys relevant to the chosen
 
     df_dt_max = 0.01          ! max/constant forcing rate [f/yr]
     tol       = 1.0e-4        ! feedback convergence tolerance on |dv_dt_ave|
+
+    win_t0    = 0.0           ! window modifier: start [yr]
+    win_t1    = 0.0           ! window modifier: end [yr] (inactive if <= win_t0)
+    win_taper = 0.0           ! linear ramps at both window edges [yr]
+    win_fac   = 1.0           ! factor on f - win_ref inside the window
+    win_ref   = 0.0           ! reference value
+    win_above = .FALSE.       ! modify only where f > win_ref
 /
 ```
 
@@ -173,6 +243,8 @@ For a tabulated series, replace the ramp/feedback keys with the file location:
     series_file      = "input/co2.nc"   ! .nc/.nc4/.cdf -> netCDF, else ASCII
     series_var       = "co2"            ! (netCDF only) value variable
     series_time_name = "time"           ! (netCDF only) time coordinate
+    norm_t0          = 0.0              ! (optional) time or window [yr] -> 0
+    norm_t1          = -21e3            ! (optional) time or window [yr] -> 1
 /
 ```
 
@@ -188,14 +260,15 @@ For validation or offline output, sample an analytic/`series` forcing over a
 time axis and write it to netCDF:
 
 ```fortran
-real(wp) :: time(2001), f(2001), dfdt(2001)
+real(dp) :: time(2001)
+real(wp) :: f(2001), dfdt(2001)
 integer  :: i
 
 do i = 1, size(time)
-    time(i) = real(i-1, wp)      ! 0 .. 2000 yr
+    time(i) = real(i-1, dp)      ! 0 .. 2000 yr
 end do
 
-call tsgen_init(ts, "forcing.nml", time=0.0_wp, group="tsgen_climate")
+call tsgen_init(ts, "forcing.nml", time=0.0_dp, group="tsgen_climate")
 call tsgen_tabulate(ts, time, f, df_dt=dfdt, verbose=.TRUE.)
 call tsgen_write("forcing_out.nc", ts, time, f, dfdt)
 ```

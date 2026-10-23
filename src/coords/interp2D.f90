@@ -50,7 +50,7 @@ module interp2D
 
     private
     public :: interp_bilinear, interp_nearest, interp_nearest_fast
-    public :: fill_weighted, fill_nearest, fill_mean
+    public :: fill_weighted, fill_nearest, fill_nearest_levels, fill_mean
     public :: fill_poisson 
     public :: filter_poisson
     public :: diffuse, limit_gradient 
@@ -625,17 +625,18 @@ contains
 !             stop 
         end if 
 
-        ! Fill in boundaries too 
-        do i = 1+nr, 1, -1
+        ! Fill in boundaries too (strips clamped to the array, which may be
+        ! narrower than the stencil: nx or ny < nr+2)
+        do i = min(1+nr,nx-1), 1, -1
             where(z(i,:) .eq. missing_value .and. mask_apply(i,:)) z(i,:) = z(i+1,:)
         end do 
-        do i = nx-nr, nx
+        do i = max(nx-nr,2), nx
             where(z(i,:) .eq. missing_value .and. mask_apply(i,:)) z(i,:) = z(i-1,:)
         end do 
-        do j = 1+nr, 1, -1
+        do j = min(1+nr,ny-1), 1, -1
             where(z(:,j) .eq. missing_value .and. mask_apply(:,j)) z(:,j) = z(:,j+1)
         end do 
-        do j = ny-nr, ny
+        do j = max(ny-nr,2), ny
             where(z(:,j) .eq. missing_value .and. mask_apply(:,j)) z(:,j) = z(:,j-1)
         end do 
 
@@ -649,6 +650,35 @@ contains
 
         return
     end subroutine fill_nearest_dble
+
+    subroutine fill_nearest_levels(z,missing_value)
+        ! Fill the missing values of a field on levels z(nx,ny,nz) (e.g. an
+        ! ocean field by depth): each level from its nearest valid cells
+        ! (fill_nearest), and cells still missing (a level without data) from
+        ! the level above. Stops if the first level has no data.
+
+        implicit none
+
+        real(sp), intent(INOUT) :: z(:,:,:)
+        real(sp), intent(IN)    :: missing_value
+
+        integer :: k
+
+        do k = 1, size(z,3)
+            if (any(z(:,:,k) .ne. missing_value)) call fill_nearest(z(:,:,k),missing_value)
+            if (k .gt. 1) then
+                where (z(:,:,k) .eq. missing_value) z(:,:,k) = z(:,:,k-1)
+            end if
+        end do
+
+        if (any(z .eq. missing_value)) then
+            write(*,*) "fill_nearest_levels:: Error: the first level has no data."
+            stop 1
+        end if
+
+        return
+
+    end subroutine fill_nearest_levels
 
     subroutine fill_bilinear_dble(x,y,z,missing_value,fill_value,cont)
         ! Fill the missing values of an array with a bilinear interpolation
@@ -981,17 +1011,18 @@ contains
             stop 
         end if 
 
-        ! Fill in boundaries too 
-        do i = 1+nr, 1, -1
+        ! Fill in boundaries too (strips clamped to the array, which may be
+        ! narrower than the stencil: nx or ny < nr+2)
+        do i = min(1+nr,nx-1), 1, -1
             where(z(i,:) .eq. missing_value) z(i,:) = z(i+1,:)
         end do 
-        do i = nx-nr, nx
+        do i = max(nx-nr,2), nx
             where(z(i,:) .eq. missing_value) z(i,:) = z(i-1,:)
         end do 
-        do j = 1+nr, 1, -1
+        do j = min(1+nr,ny-1), 1, -1
             where(z(:,j) .eq. missing_value) z(:,j) = z(:,j+1)
         end do 
-        do j = ny-nr, ny
+        do j = max(ny-nr,2), ny
             where(z(:,j) .eq. missing_value) z(:,j) = z(:,j-1)
         end do 
 

@@ -93,7 +93,7 @@ contains
     end subroutine nc_read_double_3D_t
 
     subroutine nc_write_double_2D_t(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
         ! Write [j,i] to [i,j]
         
         implicit none 
@@ -101,6 +101,7 @@ contains
         ! Arguments
         double precision :: dat(:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -125,14 +126,14 @@ contains
 
         ! Write the data like normal 
         call nc_write(filename,name,dat_t,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         return 
 
     end subroutine nc_write_double_2D_t
 
     subroutine nc_write_double_3D_t(filename,name,dat,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
         ! Write [k,j,i] to [i,j,k]
 
         implicit none 
@@ -140,6 +141,7 @@ contains
         ! Arguments
         double precision :: dat(:,:,:)
         double precision, optional :: missing_value
+        double precision, optional :: prec_abs, prec_rel
 
         character (len=*) :: filename, name
         integer, optional :: start(:), count(:),ncid
@@ -168,7 +170,7 @@ contains
 
         ! Write the data like normal [i,j,k]
         call nc_write(filename,name,dat_t,ncid,dims,dim1,dim2,dim3,dim4,dim5,dim6,start,count, &
-                                  long_name,standard_name,grid_mapping,units,missing_value)
+                                  long_name,standard_name,grid_mapping,units,missing_value,prec_abs,prec_rel)
 
         return 
 
