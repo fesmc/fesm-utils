@@ -2,7 +2,7 @@
 
 All notable changes to fesm-utils are documented here.
 
-## [Unreleased]
+## [v1.4] - 2026-10-23
 
 ### Added
 - **tsgen**: window modifier of the value, every method (replaces snapclim's `f_hol`):
