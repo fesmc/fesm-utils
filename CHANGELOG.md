@@ -29,6 +29,8 @@ All notable changes to fesm-utils are documented here.
   holds a group (par file first, then the library list; stops listing every file, or
   `stat = 1`); replaces yelmox `var_defs_find`. `nml_validate(..., nbad)` returns the
   number of unknown keys.
+- **coupler**: `coupler_method(cpl, src, dst [, method, norm])`, the method `remap` would
+  use (`"auto"` resolved) without building a map.
 - **fesm_units**: `units_conv(from, to, scale, offset [, rho_ice, sec_year, stat])`, the
   factor and offset between two units on `units_canonical`: mass flux (kg m-2 or mm w.e.
   per s/d/yr, m w.e., m ice with `rho_ice`), degC/K, mW m-2/W m-2, km/m, velocity per

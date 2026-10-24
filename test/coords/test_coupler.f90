@@ -10,7 +10,8 @@ program test_coupler
     !   * mask2 / mask_pack / reset are passed through to map_field,
     !   * coupler_take_grid moves a grid in; a from_disk name re-registered
     !     with an agreeing grid is a no-op,
-    !   * method="auto" resolves to bilin when refining and con when coarsening.
+    !   * method="auto" resolves to bilin when refining and con when coarsening,
+    !   * coupler_method returns the resolved method without building a map.
 
     use coords
     use coupler
@@ -341,6 +342,33 @@ program test_coupler
             write(*,*) "method=auto ok (refine: bilin, coarsen: con)"
         end if
         call execute_command_line("rm -rf "//afldr)
+    end block
+
+    ! --- Test 12: coupler_method resolves without building a map ---------------------
+    block
+        type(coupler_class) :: cm
+        character(len=*), parameter :: mfldr = "maps_coupler_method_test"
+        character(len=32) :: m1, m2, m3, m4, m5
+
+        call execute_command_line("rm -rf "//mfldr)
+        call coupler_init(cm, map_fldr=mfldr)
+        call coupler_add_grid(cm, "coupler-coarse", gs)
+        call coupler_add_grid(cm, "coupler-fine",   gt)
+        m1 = coupler_method(cm, "coupler-coarse", "coupler-fine", "auto")              ! refining
+        m2 = coupler_method(cm, "coupler-fine", "coupler-coarse", "auto")              ! coarsening
+        m3 = coupler_method(cm, "coupler-coarse", "coupler-fine", "auto", norm="sum")  ! amounts
+        m4 = coupler_method(cm, "coupler-coarse", "coupler-fine")                      ! default
+        m5 = coupler_method(cm, "coupler-coarse", "coupler-fine", "nn")                ! as given
+        if (trim(m1) /= "bilin" .or. trim(m2) /= "con" .or. trim(m3) /= "con" .or. &
+            trim(m4) /= "con" .or. trim(m5) /= "nn" .or. cm%nmaps /= 0) then
+            write(*,*) "FAIL: coupler_method gave ", trim(m1), " / ", trim(m2), " / ", trim(m3), " / ", &
+                       trim(m4), " / ", trim(m5), ", nmaps =", cm%nmaps, &
+                       " (expected bilin / con / con / con / nn, nmaps = 0)"
+            fails = fails + 1
+        else
+            write(*,*) "coupler_method ok (auto: bilin / con, norm=sum: con, default: con, nn: nn; no map built)"
+        end if
+        call execute_command_line("rm -rf "//mfldr)
     end block
 
     call execute_command_line("rm -rf "//fldr)

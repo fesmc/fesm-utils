@@ -98,7 +98,7 @@ module coupler
     end interface
 
     public :: coupler_class, coupler_merge_t
-    public :: coupler_init, coupler_add_grid, coupler_take_grid, coupler_prime
+    public :: coupler_init, coupler_add_grid, coupler_take_grid, coupler_prime, coupler_method
     public :: coupler_set_area, coupler_integral
     public :: coupler_merge_begin, coupler_merge_add, coupler_merge_end
     public :: coupler_split, coupler_owner_reduce
@@ -191,6 +191,21 @@ contains
         if (trim(src) == trim(dst)) return
         im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method), gen)
     end subroutine coupler_prime
+
+    function coupler_method(cpl, src, dst, method, norm) result(resolved)
+        ! The map method remap(cpl, ..., src, ..., dst, method=method, norm=norm)
+        ! would use, without building or applying a map: `method` as given
+        ! (default "con"), "auto" resolved as in remap (see resolve_method).
+        ! Lets a host log the resolved method. An unregistered grid is read
+        ! from grid_<name>.txt as in remap. remap with src == dst copies and
+        ! uses no map whatever this returns.
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: src, dst
+        character(len=*), intent(in), optional :: method, norm
+        character(len=32) :: resolved
+
+        resolved = resolve_method(cpl, src, dst, method, norm)
+    end function coupler_method
 
     subroutine coupler_set_area(cpl, name, area)
         ! Set the model cell area [m^2] of grid `name` (registered, or resolved

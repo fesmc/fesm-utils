@@ -327,6 +327,9 @@ call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
 - `remap` with `src == dst` copies the field (no map, no registration needed):
   `mask_pack`, `reset`, `fill_method` and `filt_*` still apply, `mask2` is
   `var /= missing_value`, and `stat="stdev"` gives 0.
+- `coupler_method(cpl, src, dst [, method, norm])` returns the method `remap`
+  would use for the same arguments (`"auto"` resolved) without building or
+  applying a map, e.g. to log it.
 - `coupler_prime(cpl, src, dst, method, gen)` eagerly builds a map up front
   (fail-fast at init rather than mid-timestep) and is the point at which a map's
   generator can be overridden via `gen=`. It is a no-op for `src == dst`.
