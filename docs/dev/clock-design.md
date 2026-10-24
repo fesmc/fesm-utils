@@ -10,6 +10,22 @@ overflow past 21 Myr), the 1e-6 tolerance of `timeout_check`, and the chunk rule
 "boundaries must be multiples of `dt_clim`, `dt_isos`, `tm_*`, counted from the
 start of each run" (yelmox `docs/run-chunks.md`).
 
+
+**Review outcome (2026-10-24, Alex).** Free-procedure style throughout, no
+type-bound procedures or `class(...)`: `clock_init` (generic: namelist /
+arguments), `clock_start`, `clock_advance`, `clock_finished`, `clock_time(clk)`,
+`clock_time_rel`, `clock_time_cal`, `clock_time_elapsed`, `clock_to_ticks`,
+`clock_to_years`, `clock_describe`, `clock_restart_write/read`,
+`clock_day_of_year` ...; `cadence_init(c, clk, ...)`, `cadence_due(c, clk)`,
+`cadence_mark`, `cadence_interval`; `schedule_init`, `schedule_due`,
+`schedule_times`. Q1: N = 36000. Q2: no defaults inside `fesm_clock`
+(`calendar` and `year` required; the kryos defaults file sets `365_day` and
+`tropical`). Q3: stop at init. Q4: continuation detected by bundle time ==
+`time_init`, logged. Q5: `calendar` takes the CF meaning in kryos par files;
+yelmox is not changed. §5 superseded: `tstep_class` and `timeout` stay
+untouched (no wrappers, no behaviour change for yelmox); kryos uses
+`fesm_clock` only; deprecation of the old two is a later, separate step.
+
 ## 1. Concepts
 
 **Tick.** Model time is `n` ticks, `integer(int64)`, with `N` ticks per year,

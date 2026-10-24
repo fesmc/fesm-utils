@@ -8,6 +8,18 @@ Preconditions: `fesm_log`, `fesm_fields` ([fields-design.md](fields-design.md):
 the varslice steps of §4. Times come from `fesm_clock`
 ([clock-design.md](clock-design.md)).
 
+
+**Review outcome (2026-10-24, Alex).** Free-procedure style throughout, no
+type-bound procedures or `class(...)`: `datasrc_init`, `datasrc_update`
+(generic: `t` / `t0,t1`), `datasrc_fill`, `datasrc_has`, `datasrc_describe`,
+`datasrc_get` (generic), `datasrc_end`; §3 is superseded accordingly, and the
+`fesm_fields` / `fesm_clock` calls follow their free-procedure names. Q1:
+`series` for 0-D. Q2: explicit binding only. Q3: stop. Q4: the run's
+`sec_year` when given. Q5: accessor (V4). Q6: V6 after phase 1. Q7:
+`hold`/`error` only. Q8, Q9: kryos backend concerns, not datasrc. Q10:
+decoding in varslice now. Q11: same-dataset slice; kryos `design.md`
+decision 4 amended to say so.
+
 ## 1. Scope
 
 `datasrc_t` serves a list of named fields from files into a `field_state_t`.

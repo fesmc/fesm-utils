@@ -17,6 +17,18 @@ Notation: map links `(j,k)`, source `j`, target `k`, baked weight `w_jk`
 (overlap area in the *map metric*, §1.1). `V_k` = links of `k` with `w_jk > 0`
 and `v_j /= missing_value`.
 
+
+**Review outcome (2026-10-24, Alex).** Q1: the default model area of a
+projected grid is the plane `dx·dy` (what Yelmo and FastIsostasy integrate),
+so merges and `bsl` conserve the volume the ice model conserves; the
+ellipsoidal (`grid%area`) integral is logged beside it as a diagnostic. Q3:
+prune fix accepted. Q2: no raw sum. Q4: accept unverified (logged). Q5:
+coords-only. Q6: explicit bounds only. Q7: accumulator. Q8: 1e-2, stop. Q9:
+add `method="auto"` to the coupler (extensive: `con` both ways; intensive:
+`bilin` when refining, `con` when coarsening, by median model area). Q10: ok.
+Q11: `dp`. Style: free procedures as already written (no type-bound
+procedures anywhere in fesm-utils).
+
 ## 1. Normalisation and coverage
 
 ### 1.1 Area metrics in use today

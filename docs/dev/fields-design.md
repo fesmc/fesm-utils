@@ -4,6 +4,16 @@ Status: proposal for review (2026-10-24), no code yet. Row 2 of the fesm-utils
 additions in `kryos/docs/design.md` §12; the exchange of §5 there. Precondition:
 `fesm_log` (errors and log lines).
 
+
+**Review outcome (2026-10-24, Alex).** Free-procedure style throughout, no
+type-bound procedures or `class(...)`: `fields_init(st, owner)`, `fields_add`,
+`fields_lock`, `fields_handle`, `fields_has`, `fields_put`, `fields_get`
+(generics over kind and rank), `fields_finalize_interval`, `fields_describe`,
+`fields_restart_write/read`, `fields_check_link`; §2 decision 3 and §9 Q4 are
+superseded. Q1: slow consumers of MEAN fields are supported now (§6; it is an
+acceleration method). Q2: own restart file `<instance>_fields.nc`. Q3: rank 1
+deferred to phase 3. Implementation follows this note otherwise.
+
 ## 1. Purpose and scope
 
 A generic container for fields that cross a component boundary: `dp` buffers
