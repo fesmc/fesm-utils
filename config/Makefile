@@ -65,7 +65,8 @@ $(objdir)/derivatives.o: $(srcdir)/derivatives.f90 $(objdir)/precision.o
 $(objdir)/distances.o: $(srcdir)/distances.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/grid_cdo.o: $(srcdir)/coords/grid_cdo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/coordinates.o
+$(objdir)/grid_cdo.o: $(srcdir)/coords/grid_cdo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/coordinates.o \
+								$(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/gaussian_filter.o: $(srcdir)/coords/gaussian_filter.f90
@@ -98,7 +99,8 @@ $(objdir)/projection_oblimap2.o: $(srcdir)/coords/projection_oblimap2.f90 $(objd
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/coordinates.o: $(srcdir)/coords/coordinates.f90 $(objdir)/precision.o $(objdir)/constants.o \
-								$(objdir)/projection_oblimap2.o $(objdir)/planet.o $(objdir)/ncio.o
+								$(objdir)/projection_oblimap2.o $(objdir)/planet.o $(objdir)/ncio.o \
+								$(objdir)/gaussian_latitudes.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
 $(objdir)/gaussian_latitudes.o: $(srcdir)/coords/gaussian_latitudes.f90 $(objdir)/precision.o $(objdir)/constants.o
@@ -372,6 +374,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_coupler_global.x $(testdir)/coords/test_coupler_global.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gauss_bounds.x $(testdir)/coords/test_gauss_bounds.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
@@ -546,7 +550,7 @@ CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_r
                test_lon180_wrap test_varslice_map test_ncio_interp test_parity \
                test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
                test_coupler test_grid_cf_read test_coupler_bitident test_grid_signature \
-               test_coupler_global
+               test_coupler_global test_gauss_bounds
 CHECK_DATA   = test_regions test_topodata test_htopo
 ICE_DATA     = ../ice_data/v2/NorthTest
 

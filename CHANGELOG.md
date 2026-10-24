@@ -40,6 +40,11 @@ All notable changes to fesm-utils are documented here.
   diagnostic), `coupler_merge_begin/add/end` (`coupler_merge_t`; extensive/intensive,
   owner weights, order independent, overlap check), `coupler_owner_reduce`,
   `coupler_split` (optionally as an anomaly against references).
+- **coords**: Gaussian grids with bounds from the Gauss weights: `grid_init_gaussian(grid,
+  name, nlon, nlat [, planet, lon180, x0])`; `grid_init(..., x_bnds=, y_bnds=)` (validated);
+  for explicit-bounds lat-lon/Gauss grids `grid%area` is the latitude-band area (= the
+  quadrature weight `R²Δλw_j` on a sphere). `grid_cdo` writes/reads such bounds as cdo
+  `xbounds`/`ybounds`. `make check` runs `test_gauss_bounds`.
 - **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
   gate for the coupler/`map_field` apply surface against a reference commit.
 
@@ -49,6 +54,10 @@ All notable changes to fesm-utils are documented here.
   links). Changes newly generated `con`/bilinear maps where slivers were dropped (in the
   bit-identity harness: the lat-lon <-> polar-stereographic `con` maps and a polar-
   stereographic -> lat-lon `bilin` map); existing cache files load unchanged.
+- **coords**: `conservative_spherical` drops repeated vertices of a cell polygon (a cell with
+  two corners at a pole). Changes newly generated projected -> lat-lon `con` maps whose
+  target polar row reaches +-90 (in the harness: a pole-covering polar-stereographic grid
+  onto 2 deg and 1.5 deg lon-lat grids).
 - **coupler**: no fixed capacity (`GRID_MAX`/`MAP_MAX` removed); grids and maps live in
   slot arrays that grow by moving their components, and maps are built from the
   registered grids without copying them. A grid read from `grid_<name>.txt` is read once.

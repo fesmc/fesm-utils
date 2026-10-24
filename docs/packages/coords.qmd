@@ -102,7 +102,23 @@ call map_field(map, "myfield", field_src, field_tgt, stat="mean")
 
 `grid_init` is generic and also accepts explicit axis vectors (`x=`, `y=`), an
 existing grid/points object, or a file (`grid_init(grid, filename, ...)` reads a
-`.nc` grid or a `/map/` namelist). Point sets are built the same way with
+`.nc` grid or a `/map/` namelist). Explicit cell bounds can be given with
+`x_bnds=` / `y_bnds=` (`0:n`, validated: strictly monotonic, each centre inside
+its cell; the other axis takes the default midpoint bounds). For a lat-lon or
+Gaussian grid with explicit bounds, `grid%area` is the latitude-band area
+(`R²·Δλ·(sin φ₂ - sin φ₁)` on a sphere, the authalic zone formula on an
+ellipsoid); grids with default bounds keep the 4-corner area.
+
+`grid_init_gaussian(grid, name, nlon, nlat [, planet, lon180, x0])` builds a
+global Gaussian grid (`mtype="gaussian"`) whose latitude bounds come from the
+Gauss weights, `sin φ_{j+1/2} = sin φ_{j-1/2} + w_j` from -1 to +1: the bands
+reach the poles, each node lies inside its band, and the cell area is the
+quadrature weight `R²·Δλ·w_j`. Use `planet="Spherical Earth"` for a spectral
+model (SHTns is spherical). A lat-lon → Gauss `con` map then integrates exactly
+in the quadrature: `Σ_k Δλ·w_j·v_k` equals the band-metric source integral, with
+no rescaling. `grid_cdo_write_desc_short` writes the bounds of such a grid as
+cdo `xbounds`/`ybounds`, and `grid_cdo_read_desc` reads them back (only from
+files with the fesm-utils header; existing descriptions read as before). Point sets are built the same way with
 `points_init(pts, name=, mtype=, units=, x=, y=, ...)`.
 
 `map_init` is overloaded for grid→grid, grid→points, points→grid,
@@ -166,13 +182,17 @@ change `frac2`. A `con` map without coverage data (a `cdo` map, or a cache file
 written before coverage was stored) stops with "regenerate <file>" when `norm`
 or `frac2` is requested. The 4 `int` specifics take none of these.
 
-Limitation of `conservative_spherical` (projected source → lat-lon/Gauss
-target): the target cell polygon is concave along its poleward parallel edge
-(subsampled great-circle chords), and the Sutherland-Hodgman clip loses a
-sliver there (about 0.2 % of the cell at 70°S for 1° cells), so `Σ_k φ_jk` is
-slightly below 1 even for a global target. Projected source cells that
-straddle the 0/360 meridian are mis-built (corner longitudes interpolated the
-long way round).
+Limitations of `conservative_spherical` (projected source → lat-lon/Gauss
+target), both pre-existing: (1) the target cell polygon is concave along its
+poleward parallel edge (subsampled great-circle chords), and the
+Sutherland-Hodgman clip loses a sliver there (about 0.2 % of the cell at 70°S
+for 1° cells), so `Σ_k φ_jk` is slightly below 1 even for a global target; (2)
+the source cell polygon is built by interpolating the 4 inverse-projected
+corners linearly in lon/lat, so a projected cell that straddles the 0/360
+meridian, or contains the pole, is mis-built (its edges go the long way round).
+A projected domain over a pole (Antarctica, Greenland) is affected along one
+meridian strip. Polygons with repeated vertices (a cell with two corners at a
+pole) are reduced to distinct vertices before the clip.
 
 ## Remapping kernels
 

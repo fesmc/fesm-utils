@@ -491,13 +491,13 @@ contains
 
     subroutine lon_edges(grid, xe)
         ! Longitude cell edges (0:nx) of a lat-lon / Gaussian grid for the
-        ! separable lat-lon path: the grid's x_bnds, except for a default-bounds
-        ! axis that is not ascending. A grid built from 0..360 centres with
-        ! lon180=.true. stores them remapped in place (0..179, -179..-0.7), so
-        ! the stored seam edge lands at ~0 instead of ~180; such an axis is
-        ! unwrapped to a monotonic sequence first and its midpoint edges taken.
-        ! (For an ascending axis unwrap_lon is the identity, so both branches
-        ! agree there.)
+        ! separable lat-lon path: the grid's x_bnds when the axis is ascending.
+        ! A grid built from 0..360 centres with lon180=.true. stores them
+        ! remapped in place (0..179, -179..-0.7): its explicit bounds (shifted
+        ! with the centres) are unwrapped to a monotonic sequence; its default
+        ! bounds hold a wrong seam edge (~0 instead of ~180), so the centres are
+        ! unwrapped first and their midpoint edges taken. (For an ascending
+        ! axis unwrap_lon is the identity, so all branches agree there.)
         type(grid_class), intent(in)  :: grid
         real(dp),         intent(out) :: xe(0:)
         real(dp), allocatable :: xc(:)
@@ -507,8 +507,10 @@ contains
         do i = 2, grid%G%nx
             if (grid%G%x(i) < grid%G%x(i-1)) ascending = .false.
         end do
-        if (grid%G%explicit_bnds .or. ascending) then
+        if (ascending) then
             xe = grid%G%x_bnds
+        else if (grid%G%explicit_bnds) then
+            call unwrap_lon(grid%G%x_bnds, xe)
         else
             allocate(xc(grid%G%nx))
             call unwrap_lon(grid%G%x, xc)
@@ -842,6 +844,11 @@ contains
         do k = 1, nv
             call lonlat_to_xyz(ll_lon(k), ll_lat(k), verts(1,k), verts(2,k), verts(3,k))
         end do
+        ! Drop repeated vertices (a polar cell has two corners at the pole, so
+        ! its polar edge collapses to one point): degenerate zero-length edges
+        ! break the great-circle clip and the orientation test below.
+        call drop_repeated(verts)
+        nv = size(verts, 2)
         ! orient so center is interior: check edge 1 normal vs center
         call lonlat_to_xyz(ctrlon, ctrlat, cxv, cyv, czv)
         n1v(1) = verts(2,1)*verts(3,2) - verts(3,1)*verts(2,2)
@@ -857,6 +864,36 @@ contains
             end block
         end if
     end subroutine build_sphere_poly
+
+    subroutine drop_repeated(verts)
+        ! Remove vertices that coincide with their predecessor (cyclically), to
+        ! 1e-13 on the unit sphere (points at a pole differ by ~1e-17 with the
+        ! longitude, as cos(90 deg) is not exactly 0 in floating point).
+        real(dp), allocatable, intent(inout) :: verts(:,:)
+        real(dp), parameter :: TOL = 1.0e-13_dp
+        real(dp), allocatable :: tmp(:,:)
+        logical,  allocatable :: keep(:)
+        integer :: k, n, m, kp
+        n = size(verts, 2)
+        allocate(keep(n))
+        keep = .true.
+        kp = 1                                   ! last kept vertex
+        do k = 2, n
+            if (maxval(abs(verts(:,k) - verts(:,kp))) < TOL) then
+                keep(k) = .false.
+            else
+                kp = k
+            end if
+        end do
+        if (kp > 1) then
+            if (maxval(abs(verts(:,kp) - verts(:,1))) < TOL) keep(kp) = .false.
+        end if
+        if (all(keep)) return
+        m = count(keep)
+        allocate(tmp(3, m))
+        tmp = reshape(pack(verts, spread(keep, 1, 3)), [3, m])
+        call move_alloc(tmp, verts)
+    end subroutine drop_repeated
 
     subroutine lonlat_to_xyz(lon, lat, x, y, z)
         real(dp), intent(in)  :: lon, lat
