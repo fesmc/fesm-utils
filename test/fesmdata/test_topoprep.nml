@@ -1,0 +1,37 @@
+! Namelist of test_topoprep (synthetic topography written by the test)
+
+&domain
+/
+&regions
+/
+
+! Defaults: no preparation
+&topo_off
+    path = "test_topoprep_step.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+/
+&topo_sd
+    path = "test_topoprep_step.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    z_bed_f_sd = -1.0
+/
+&topo_lakes
+    path = "test_topoprep_step.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    remove_lakes = .true.
+/
+&topo_hmin
+    path = "test_topoprep_step.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    H_ice_min = 10.0
+/
+&topo_grad
+    path = "test_topoprep_step.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    grad_lim_zb = 0.5
+/
+&topo_ramp
+    path = "test_topoprep_ramp.nc"
+    vars = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    grad_lim_zb = 0.5
+/

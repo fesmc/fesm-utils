@@ -19,9 +19,14 @@ module htopo
     !
     ! Namelist groups (a domain of a multi-domain setup passes its own):
     !   group          basins (the basin set of htopo_basins)
-    !   group_topo     topodata (path, vars, remap)
+    !   group_topo     topodata (path, vars, remap) and the preparation of the
+    !                  reference (z_bed_f_sd, remove_lakes, H_ice_min, grad_lim_zb)
     !   group_regions  regions (path_regions, path_basins, basin_sets, layers, masks, ...)
     ! {domain}/{grid_name} in the paths resolve to the domain and the hub grid.
+    !
+    ! The reference is prepared once, on the hub grid, so that the ice models
+    ! take it as given: gaps filled, then the steps selected by the keys of
+    ! group_topo, each off by default (htopo_prepare_topo).
 
     use precision
     use constants,      only : mv
@@ -33,7 +38,8 @@ module htopo
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
     use topodata,       only : topodata_class, topodata_init_nml
     use regions,        only : regions_class, regions_init_nml, regions_basin_ids, regions_write
-    use fesm_log,       only : fesm_error
+    use topoprep,       only : topoprep_remove_lakes, topoprep_limit_gradients
+    use fesm_log,       only : fesm_error, log_msg, LOG_INFO, to_str
 
     implicit none
     private
@@ -44,6 +50,11 @@ module htopo
         character(len=56)       :: basins           ! "<set>" or "<set>.group" of htopo_basins ("" = none)
         real(wp)                :: rho_ice          ! [kg m-3] ice density (from the domain's constants)
         real(wp)                :: rho_sw           ! [kg m-3] seawater density
+        ! Preparation of the reference topography (keys of group_topo; 0 / .false. = off)
+        real(wp)                :: z_bed_f_sd       ! [1] z_bed = z_bed + z_bed_f_sd*z_bed_sd
+        logical                 :: remove_lakes     ! remove englacial lakes (sea level 0)
+        real(wp)                :: H_ice_min        ! [m] ice thinner than this is removed
+        real(wp)                :: grad_lim_zb      ! [m m-1] limit on the bed gradient
     end type
 
     type htopo_class
@@ -87,7 +98,7 @@ contains
         mfldr = "maps"
         if (present(map_fldr)) mfldr = trim(map_fldr)
 
-        call htopo_par_load(htopo%par, filename, group, domain, grid_name)
+        call htopo_par_load(htopo%par, filename, group, group_topo, domain, grid_name)
 
         call phys_const_require(cnst, "htopo_init")
         call phys_const_get(cnst, "rho_ice", htopo%par%rho_ice)
@@ -117,6 +128,7 @@ contains
         where (htopo%ref%z_bed_sd == mv) htopo%ref%z_bed_sd = 0.0_wp
 
         call htopo_fill_missing(htopo)
+        call htopo_prepare_topo(htopo)
 
         ! Check par%basins against the loaded basin sets
         if (len_trim(htopo%par%basins) > 0) k = maxval(regions_basin_ids(htopo%reg, htopo%par%basins))
@@ -228,9 +240,58 @@ contains
 
     end subroutine htopo_fill_missing
 
-    subroutine htopo_par_load(par, filename, group, domain, grid_name)
+    subroutine htopo_prepare_topo(htopo)
+        ! Prepare the reference geometry (after the gaps are filled) as the ice
+        ! models would, in this order, each step only if its key is set:
+        !   z_bed_f_sd   the bed plus z_bed_f_sd times its roughness z_bed_sd;
+        !   remove_lakes englacial lakes removed with sea level 0;
+        !   H_ice_min    ice thinner than H_ice_min removed;
+        !   grad_lim_zb  the bed gradient limited by smoothing z_bed and H_ice.
+        ! The surface z_srf is not recomputed: the lakes and the gradients
+        ! refer to the surface of the data, and the ice models keep it.
+        type(htopo_class), intent(inout) :: htopo
+
+        integer :: n, n_iter
+        real(wp) :: dx
+
+        associate(par => htopo%par, z_bed => htopo%ref%z_bed, H_ice => htopo%ref%H_ice, &
+                  z_srf => htopo%ref%z_srf, z_bed_sd => htopo%ref%z_bed_sd)
+
+        if (par%z_bed_f_sd .ne. 0.0_wp) then
+            z_bed = z_bed + par%z_bed_f_sd*z_bed_sd
+            call log_msg(LOG_INFO, "htopo_init", "z_bed scaled by z_bed_sd: z_bed_f_sd = "//to_str(par%z_bed_f_sd))
+        end if
+
+        if (par%remove_lakes) then
+            call topoprep_remove_lakes(H_ice, z_bed, z_srf, 0.0_wp, par%rho_ice, par%rho_sw)
+            call log_msg(LOG_INFO, "htopo_init", "removed englacial lakes (sea level 0).")
+        end if
+
+        if (par%H_ice_min .gt. 0.0_wp) then
+            n = count(H_ice .lt. par%H_ice_min .and. H_ice .ne. 0.0_wp)
+            where (H_ice .lt. par%H_ice_min) H_ice = 0.0_wp
+            call log_msg(LOG_INFO, "htopo_init", "removed ice thinner than H_ice_min = "// &
+                         to_str(par%H_ice_min)//" m: "//to_str(n)//" cells.")
+        end if
+
+        if (par%grad_lim_zb .gt. 0.0_wp) then
+            if (trim(htopo%grid%cs%units) .eq. "degrees") then
+                call fesm_error("htopo_init", "grad_lim_zb needs a hub grid in meters or km.", &
+                                "grid = "//trim(htopo%par%grid_name))
+            end if
+            dx = real(htopo%grid%G%dx*htopo%grid%cs%xy_conv, wp)     ! [m]
+            call topoprep_limit_gradients(z_bed, H_ice, par%grad_lim_zb, dx, n_iter)
+            call log_msg(LOG_INFO, "htopo_init", "limited the bed gradient to grad_lim_zb = "// &
+                         to_str(par%grad_lim_zb)//" m/m: "//to_str(n_iter)//" smoothing passes.")
+        end if
+
+        end associate
+
+    end subroutine htopo_prepare_topo
+
+    subroutine htopo_par_load(par, filename, group, group_topo, domain, grid_name)
         type(htopo_par_class), intent(out) :: par
-        character(len=*),      intent(in)  :: filename, group
+        character(len=*),      intent(in)  :: filename, group, group_topo
         character(len=*),      intent(in)  :: domain, grid_name
 
         par%domain    = trim(domain)
@@ -240,6 +301,20 @@ contains
         par%basins = ""
         if (nml_has_param(filename, group, "basins")) &
             call nml_read(filename, group, "basins", par%basins)
+
+        ! Optional: the preparation of the reference topography (default none)
+        par%z_bed_f_sd = 0.0_wp
+        par%remove_lakes = .false.
+        par%H_ice_min = 0.0_wp
+        par%grad_lim_zb = 0.0_wp
+        if (nml_has_param(filename, group_topo, "z_bed_f_sd")) &
+            call nml_read(filename, group_topo, "z_bed_f_sd", par%z_bed_f_sd)
+        if (nml_has_param(filename, group_topo, "remove_lakes")) &
+            call nml_read(filename, group_topo, "remove_lakes", par%remove_lakes)
+        if (nml_has_param(filename, group_topo, "H_ice_min")) &
+            call nml_read(filename, group_topo, "H_ice_min", par%H_ice_min)
+        if (nml_has_param(filename, group_topo, "grad_lim_zb")) &
+            call nml_read(filename, group_topo, "grad_lim_zb", par%grad_lim_zb)
 
     end subroutine htopo_par_load
 

@@ -23,6 +23,27 @@ Gaps of the reference geometry (e.g. outside the coverage of the files) are
 filled at init: no ice, the bed from the nearest valid cell, the surface
 from flotation at sea level 0.
 
+The reference can then be prepared once, on the hub grid, so that the ice
+models take it as given. Each step is off by default (with all keys off the
+reference is as loaded), and they run in this order:
+
+1. `z_bed = z_bed + z_bed_f_sd*z_bed_sd`;
+2. `remove_lakes`: englacial lakes removed with sea level 0 (ice thickened
+   where grounded ice has a gap below the surface, thinned where its base is
+   below the bed);
+3. `H_ice_min`: ice thinner than this is removed;
+4. `grad_lim_zb`: the bed gradient limited by smoothing `z_bed` and `H_ice`
+   (Gaussian, sigma = 2 dx, where the gradient is exceeded; the hub grid
+   must be in meters or km).
+
+`z_srf` is not recomputed: the lakes and the gradient step refer to the
+surface of the data. The steps are those of Yelmo's present-day topography
+(`ydata_load`), as routines of `topoprep` (`topoprep_remove_lakes`,
+`topoprep_limit_gradients`) with the same operations in the same order, so
+that single-precision results agree when both are compiled without fused
+multiply-add contraction (`-ffp-contract=off`; with it, results differ in
+the last bit where the filter is applied).
+
 ## Public API
 
 | Procedure | Purpose |
@@ -45,6 +66,10 @@ Three groups; a domain of a multi-domain setup passes its own (e.g.
 &topo
     path  = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v6.nc"
     vars  = "z_bed" "z_srf" "H_ice" "z_bed_sd"
+    z_bed_f_sd   = 0.0   ! [1]   z_bed = z_bed + z_bed_f_sd*z_bed_sd (default 0: off)
+    remove_lakes = .false. ! remove englacial lakes, sea level 0 (default .false.)
+    H_ice_min    = 0.0   ! [m]   remove ice thinner than this (default 0: off)
+    grad_lim_zb  = 0.0   ! [m/m] limit on the bed gradient (default 0: off)
 /
 &regions
     path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"

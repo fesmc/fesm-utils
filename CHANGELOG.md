@@ -280,6 +280,11 @@ All notable changes to fesm-utils are documented here.
   group_regions, domain, grid_name, cnst)` (one set of groups per domain),
   `htopo_basins`. The physics masks (yelmox's `ice_codes`/`relax_codes`/
   `region_codes`) move to the modules, as selection expressions.
+  Optional preparation of the reference topography on the hub grid, from keys of the
+  topography group, each off by default: `z_bed_f_sd`, `remove_lakes`, `H_ice_min`,
+  `grad_lim_zb` (the steps of Yelmo's present-day topography, in that order).
+- **topoprep**: `topoprep_remove_lakes` and `topoprep_limit_gradients`, ported from Yelmo
+  (`remove_englacial_lakes`, `adjust_topography_gradients`) for the hub. `make check-topoprep`.
 - **fesmdata**: helpers shared by the readers of FesmData v2 and other files
   (flag tables, the grid of a file from `grid_<GRID>.txt`, `fesmdata_map_init`:
   how a field gets onto a target grid, reading with remapping, path

@@ -233,9 +233,13 @@ $(objdir)/topodata.o: $(srcdir)/topodata.f90 $(objdir)/precision.o $(objdir)/nml
 					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/topoprep.o: $(srcdir)/topoprep.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/fesm_log.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/htopo.o: $(srcdir)/htopo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
 					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/interp2D.o \
-					$(objdir)/phys_constants.o $(objdir)/topodata.o $(objdir)/regions.o $(objdir)/fesm_log.o
+					$(objdir)/phys_constants.o $(objdir)/topodata.o $(objdir)/regions.o $(objdir)/fesm_log.o \
+					$(objdir)/topoprep.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -301,6 +305,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/fesmdata.o \
 					$(objdir)/regions.o \
 					$(objdir)/topodata.o \
+					$(objdir)/topoprep.o \
 					$(objdir)/htopo.o \
 					$(objdir)/series.o \
 					$(objdir)/tsgen.o \
@@ -481,6 +486,14 @@ test-topodata : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    topodata test program ready: $(bindir)/test_topodata.x"
+		@echo " "
+
+# topoprep and the topography preparation of htopo (synthetic data, no files needed)
+test-topoprep : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_topoprep.x $(testdir)/fesmdata/test_topoprep.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    topoprep test program ready: $(bindir)/test_topoprep.x"
 		@echo " "
 
 # htopo (hi-res geometry hub) test program
@@ -701,12 +714,12 @@ check_abort = mkdir -p logs/check; nfail=0; \
 .PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
          check-var-io check-series check-varslice check-multitopo check-units \
          check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields \
-         check-datasrc check-nml check-nml-compat
+         check-datasrc check-nml check-nml-compat check-topoprep
 
 check : check-coords check-phys-constants check-root check-ncio check-var-io \
         check-series check-varslice check-multitopo check-units check-varslice-clim \
         check-tsgen check-zremap check-log check-clock check-fields check-datasrc \
-        check-nml
+        check-nml check-topoprep
 		@echo " "
 		@echo "    make check: all tests passed (data tests: make check-data)."
 		@echo " "
@@ -737,6 +750,8 @@ check-zremap : test-zremap
 		@$(call check_run,test_zremap)
 check-log : test-log
 		@$(call check_run,test_log)
+check-topoprep : test-topoprep
+		@$(call check_run,test_topoprep)
 check-clock : test-clock
 		@$(call check_run,$(CHECK_CLOCK))
 check-fields : test-fields
@@ -844,6 +859,7 @@ usage:
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
+	@echo " make test-topoprep   : compiles the topography preparation test program"
 	@echo " make test-units       : compiles the units test programs (fesmdata, fesm_units)"
 	@echo " make test-varslice-clim : compiles the varslice climatology test program"
 	@echo " make test-datasrc     : compiles the fesm_datasrc test programs (with its nml/varslice steps)"
