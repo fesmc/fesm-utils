@@ -49,7 +49,7 @@ and re-exported by `use coords`.
 |------|------|
 | `coord_system` | Coordinate-reference metadata (`mtype`, `units`, `planet`, `proj`, `xy_conv`, `is_cartesian`, `is_projection`, `is_lon180`). Defined once and embedded as `%cs` in every geometry type. |
 | `points_class` | An unstructured set of points: `npts`, 1D arrays `x, y, lon, lat, area`, and `%cs`. |
-| `grid_axis_class` | Regular axis description: `nx, ny, x0, dx, y0, dy` and the axis vectors `x(:), y(:)` (supports explicit non-uniform axes, e.g. Gaussian latitudes). |
+| `grid_axis_class` | Regular axis description: `nx, ny, x0, dx, y0, dy`, the axis vectors `x(:), y(:)` (supports explicit non-uniform axes, e.g. Gaussian latitudes) and the cell edges `x_bnds(0:nx), y_bnds(0:ny)`. The edges are filled at `grid_init` (default: adjacent midpoints, half-cell extrapolation at the ends, `axis_midpoint_bounds`; `explicit_bnds` records given bounds) and are the one source of cell edges for `grid_area` and the conservative generators. |
 | `grid_class` | A regular grid: `name`, axis block `%G` (`grid_axis_class`), 2D arrays `x, y, lon, lat, area`, and `%cs`. |
 | `map_class` | Public map wrapper: source/target names (`name1`, `name2`), target coordinate system `%cs`, target axes `%G`, fixed interpolation `method`, and the internal weight store `%wm`. |
 | `weight_map_t` | The single sparse source→target store (link-centric, SCRIP-style). Usually accessed only through `map_class`; see below. |
@@ -102,7 +102,23 @@ call map_field(map, "myfield", field_src, field_tgt, stat="mean")
 
 `grid_init` is generic and also accepts explicit axis vectors (`x=`, `y=`), an
 existing grid/points object, or a file (`grid_init(grid, filename, ...)` reads a
-`.nc` grid or a `/map/` namelist). Point sets are built the same way with
+`.nc` grid or a `/map/` namelist). Explicit cell bounds can be given with
+`x_bnds=` / `y_bnds=` (`0:n`, validated: strictly monotonic, each centre inside
+its cell; the other axis takes the default midpoint bounds). For a lat-lon or
+Gaussian grid with explicit bounds, `grid%area` is the latitude-band area
+(`R²·Δλ·(sin φ₂ - sin φ₁)` on a sphere, the authalic zone formula on an
+ellipsoid); grids with default bounds keep the 4-corner area.
+
+`grid_init_gaussian(grid, name, nlon, nlat [, planet, lon180, x0])` builds a
+global Gaussian grid (`mtype="gaussian"`) whose latitude bounds come from the
+Gauss weights, `sin φ_{j+1/2} = sin φ_{j-1/2} + w_j` from -1 to +1: the bands
+reach the poles, each node lies inside its band, and the cell area is the
+quadrature weight `R²·Δλ·w_j`. Use `planet="Spherical Earth"` for a spectral
+model (SHTns is spherical). A lat-lon → Gauss `con` map then integrates exactly
+in the quadrature: `Σ_k Δλ·w_j·v_k` equals the band-metric source integral, with
+no rescaling. `grid_cdo_write_desc_short` writes the bounds of such a grid as
+cdo `xbounds`/`ybounds`, and `grid_cdo_read_desc` reads them back (only from
+files with the fesm-utils header; existing descriptions read as before). Point sets are built the same way with
 `points_init(pts, name=, mtype=, units=, x=, y=, ...)`.
 
 `map_init` is overloaded for grid→grid, grid→points, points→grid,
@@ -122,7 +138,11 @@ arguments to the grid→grid form:
   `shepard`/`bilinear` (default `.true.`); the on-disk cache stays
   distance-format either way.
 - `weight_cutoff` — relative cutoff for pruning sliver links from baked
-  (`con`/bilinear) maps before caching (default `1e-4`; `0.0` keeps all links).
+  (`con`/bilinear) maps before caching: per target, links below
+  `weight_cutoff·max(w)` are dropped (default `1e-4`; `0.0` keeps all links).
+  The largest link of a target always survives; the coverage removed is kept
+  (see *Normalisation and coverage*).
+- `on_mismatch`, `hash_names` — cache identity, see *CDO interop and map caching*.
 
 `map_field` is generic over the field element type (`integer`, `sp`, `dp`) and
 over grid/points sources and targets. Beyond `stat` it accepts `method` (kernel
@@ -130,6 +150,53 @@ override for distance maps), `missing_value`, `radius`, `mask2`, `reset`,
 `mask_pack`, and optional fill/filter post-processing (`fill_method`,
 `filt_method`, `filt_par`). The `stat` argument selects the reduction over each
 target's links: `"mean"` (default), `"count"` (weighted mode), or `"stdev"`.
+The 8 real specifics also take `norm`, `frac2`, `area1` and `area2` (below).
+
+### Normalisation and coverage
+
+A conservative map made by the coords generator carries, besides its link
+weights `w_jk` (overlap area in the map metric of the generator), the full cell
+areas of source and target (`wfull_src`, `wfull_dst`) and the link sums before
+pruning (`wcov_src`, `wcov_dst`), all in that metric; they are written to the
+cache as `mp_wfull_*`, `mp_wcov_*`. With them, for target `k` and its valid
+links `V_k` (`w > 0`, source value not missing), and
+`φ_jk = q_j·w_jk/wfull_src_j` the fraction of source cell `j` lying in `k`
+(`q`, `r` restore what pruning removed):
+
+| Argument | Value at target `k` |
+|---|---|
+| `frac2` (`real(dp)`, target shape) | covered fraction `min(1, r_k·Σ_V w / wfull_dst_k)`; 0 where nothing valid is linked, outside `mask_pack`, or not mapped |
+| `norm="frac"` (default) | `Σ_V w v / Σ_V w`: the covered mean (unchanged path) |
+| `norm="dst"` | `r_k·Σ_V w v / wfull_dst_k` = `frac2·mean` (map metric) |
+| `norm="dst"`, `area1` + `area2` | `Σ_V φ_jk·area1_j·v_j / area2_k`, exact in the model metric |
+| `norm="sum"` | `Σ_V φ_jk·α_j·v_j`, `α = area1` if present, else 1 (amount per target) |
+
+`area1` (source shape) and `area2` (target shape) are the model cell areas
+(`real(dp)`). With `norm="dst"` and both areas, `Σ_k area2_k·v2_k =
+Σ_j area1_j·v_j·Σ_k φ_jk` for any choice of areas: for a target that covers
+the source, the integral is preserved. Rules: `norm /= "frac"` needs
+`stat="mean"` and a conservative map (else an error); `frac2` on a
+non-conservative map is `merge(1,0,mask2)`; `area1` without `area2` (or the
+reverse) with `norm="dst"` is an error; fill/filter post-processing does not
+change `frac2`. A `con` map without coverage data (a `cdo` map, or a cache file
+written before coverage was stored) stops with "regenerate <file>" when `norm`
+or `frac2` is requested. The 4 `int` specifics take none of these.
+
+Limitations of `conservative_spherical` (projected source → lat-lon/Gauss
+target), both pre-existing: (1) the target cell polygon is concave along its
+poleward parallel edge (subsampled great-circle chords), and the
+Sutherland-Hodgman clip loses a sliver there (about 0.2 % of the cell at 70°S
+for 1° cells), so `Σ_k φ_jk` is slightly below 1 even for a global target; (2)
+the source cell polygon is built by interpolating the 4 inverse-projected
+corners linearly in lon/lat, so a projected cell that straddles the 0/360
+meridian, or contains the pole, is mis-built (its edges go the long way round).
+A projected domain over a pole (Antarctica, Greenland) is affected along one
+meridian strip. Polygons with repeated vertices (a cell with two corners at a
+pole) are reduced to distinct vertices before the clip. Candidate pairs whose
+bounding spherical caps do not meet are not clipped (ANT-16KM → T64: 7.2 s →
+3.8 s serial); such pairs cannot overlap, so only clip noise of disjoint
+polygons (≤ 1e-10 of a cell) is no longer stored, which the default pruning
+removed anyway.
 
 ## Remapping kernels
 
@@ -175,6 +242,29 @@ two grid names, the folder and the method (`gen_map_filename`), and:
 2. otherwise the weights are generated (in-package for `gen="coords"`, or by an
    external `cdo gen<method>` call for `gen="cdo"`) and saved to the cache.
 
+Cache identity. Each new cache file (in-package or `cdo`) carries global
+attributes `coords_src_sig`, `coords_dst_sig` (grid signatures:
+`grid_signature_str(grid)`, the coordinate system, the axis sizes and the
+first/last/sum of the axes and bounds), `coords_method`, `coords_gen`,
+`coords_weight_cutoff` and `coords_format`. On load (`map_init` with a cached
+file), the file is checked against the grids:
+
+- signatures present and different (`grid_signature_match`, tolerance 1e-9 of a
+  cell, so a grid read back from `grid_<name>.txt` still matches):
+  `on_mismatch="error"` (default) stops and names both signatures and the file;
+  `on_mismatch="rebuild"` regenerates and overwrites the file (logged);
+- no signatures (a file written before signatures, or by another tool): loaded
+  as before, with a one-time "unverified" log line;
+- `n_src` / `n_dst` that do not match the grid sizes always stop.
+
+By default the file name stays `scrip-<method>_<src>_<dst>.nc`. With
+`map_init(..., hash_names=.true.)` (or `coupler_init(..., hash_names=.true.)`)
+it is `scrip-<method>_<src>-<h8>_<dst>-<h8>.nc`, where `h8 = grid_hash8(grid)`
+(FNV-1a over the signature at 6 significant digits), so two grids with one name
+can coexist in one folder. A legacy file of the same size but other axes is
+accepted unverified: clear the map folder (or rename the grid) when a grid
+definition changes at equal size.
+
 Because the cache is always a valid SCRIP remapping file, a `cdo`-generated map
 and an in-package `coords` map interoperate at the same filename. The file I/O
 primitives are public as `weight_map_write` / `weight_map_read` (module
@@ -197,6 +287,7 @@ type(grid_class)      :: gcoarse, gfine
 real(dp), allocatable :: fs(:,:), ft(:,:)
 
 call coupler_init(cpl, map_fldr="maps")          ! empty registry + cache
+                                                 ! [, gen, on_mismatch, hash_names]
 call coupler_add_grid(cpl, "coarse", gcoarse)    ! register grids by name
 call coupler_add_grid(cpl, "fine",   gfine)
 
@@ -205,19 +296,107 @@ call coupler_add_grid(cpl, "fine",   gfine)
 call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
 ```
 
-- `coupler_add_grid(cpl, name, grid)` registers a grid; unregistered names are
-  resolved on demand from `grid_<name>.txt` in the map folder.
-- `remap(cpl, var_src, src, var_dst, dst, method, stat)` finds-or-builds the map
+- `coupler_add_grid(cpl, name, grid)` registers a copy of a grid (once, at
+  init); `coupler_take_grid(cpl, name, grid)` moves an allocatable grid in
+  without a copy (for very large grids). Unregistered names are resolved on
+  demand from `grid_<name>.txt` in the map folder, read once into a "from
+  disk" slot and reused. Registering a name that is already a from-disk slot
+  is a no-op if the grids agree and an error otherwise.
+- `remap(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2,
+  reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)` finds-or-builds the map
   for `(src, dst, method)`, allocates `var_dst` to the target size, and applies
-  it. It is overloaded for `dp` / `sp` / `int` and 2D / 3D fields. `method` is
-  part of the cache key; `stat` is forwarded per call and is not.
+  it with `map_field`, to which the optional arguments are passed unchanged. It
+  is overloaded for `dp` / `sp` / `int` and 2D / 3D fields (the `int`
+  specifics take `missing_value, mask2, reset, mask_pack`; for 3D, `mask2` and
+  `frac2` are 3D and the map is applied per layer). With `reset=.false.`, `var_dst` must
+  already be allocated at the target shape. `method` is part of the cache key;
+  `stat` and the rest are forwarded per call and are not.
+- `method="auto"` resolves per call: `"con"` for `norm="dst"`/`"sum"`
+  (amounts are remapped conservatively both ways); otherwise `"bilin"` when the target is finer than
+  the source (smaller median model cell area, i.e. refining) and `"con"` when
+  it is coarser or equal. The model cell area is the plane `dx·dy` for a
+  projected grid and `grid%area·xy_conv²` otherwise.
+- `remap` with `src == dst` copies the field (no map, no registration needed):
+  `mask_pack`, `reset`, `fill_method` and `filt_*` still apply, `mask2` is
+  `var /= missing_value`, and `stat="stdev"` gives 0.
 - `coupler_prime(cpl, src, dst, method, gen)` eagerly builds a map up front
   (fail-fast at init rather than mid-timestep) and is the point at which a map's
-  generator can be overridden via `gen=`.
+  generator can be overridden via `gen=`. It is a no-op for `src == dst`.
 
-Each map is built once, stored once in fixed-capacity storage, and shared across
-all callers, so adding a map never reallocates or deep-copies the large weight
-arrays already built.
+### Global ↔ regional exchange
+
+Each registered grid carries a *model cell area* `[m²]`, the area its model
+integrates over: by default the plane `dx·dy` for a projected grid (what Yelmo
+and FastIsostasy integrate) and `grid%area·xy_conv²` otherwise.
+`coupler_set_area(cpl, name, area)` overrides it (e.g. the Gaussian quadrature
+`R²·Δλ·w_j` of a spectral model). `remap` with `norm="dst"` / `"sum"` passes the
+registered areas of both grids as `area1` / `area2`, so mass accounting and the
+integral below share one metric per grid (an identity remap with `norm="sum"`
+returns `v·area`).
+
+- `coupler_integral(cpl, name, var [, mask, missing_value, describe])` returns
+  `Σ area·var` (Neumaier-compensated) with the registered areas; with
+  `describe=.true.` it logs this integral next to the one over the ellipsoidal
+  cell areas (`grid%area`), as a diagnostic of the metric difference (several %
+  for a polar stereographic ice grid). For a regional → global `remap` with
+  `norm="dst"`, the global integral equals the covered part of the regional one
+  to rounding.
+- Merge of N regional fields and a background onto a global grid, in
+  accumulator form:
+
+  ```fortran
+  type(coupler_merge_t) :: acc
+  call coupler_merge_begin(acc, cpl, "T64" [, kind="extensive"|"intensive"])
+  call coupler_merge_add(acc, cpl, "ANT", h_ant [, owner=o_ant, missing_value=])
+  call coupler_merge_add(acc, cpl, "GRL", h_grl [, owner=o_grl])
+  call coupler_merge_end(acc, cpl, background, h_glob [, frac_tot=, overlap_tol=])
+  ```
+
+  Per domain `d` (valid cells `j`, owner weight `o_dj`, default 1) and target
+  cell `k`: coverage `F_dk = r_k Σ_j w_jk o_dj / wfull_k`; amount
+  `A_dk = Σ_j φ_jk o_dj area_j v_j / area_k` (extensive) or
+  `r_k Σ_j w_jk o_dj v_j / wfull_k` (intensive). With `F = Σ_d F_d`:
+  extensive `var = (1 - min(F,1))·bg + Σ_d A_d` (regional amounts are never
+  rescaled; only the background is capped), intensive
+  `var = (1 - min(F,1))·bg + Σ_d A_d / max(F,1)` (preserves a constant).
+  Domains are summed in the order of their names, so the result does not depend
+  on the order of `coupler_merge_add` calls; adding a domain twice is an error.
+  `max(F) > 1 + overlap_tol` (default `1e-2`) stops and names the overlapping
+  domains; a smaller excess is accepted and the double-counted amount logged.
+- `coupler_owner_reduce(cpl, src_hi, owner_hi, dst, owner)` removes from
+  `owner` (on `dst`) the part already owned by the higher-priority domain:
+  `owner := max(0, owner - covered fraction of owner_hi)`. Call it once at init,
+  in priority order, to make `Σ_d o_d = 1` where domains overlap.
+- `coupler_split(cpl, src, var_src, dst, var_dst [, method, ref_src, ref_dst,
+  missing_value, fill_method, mask2])`: global → regional. Without references
+  it is `remap` (default `method="bilin"`); with both,
+  `var_dst = ref_dst + remap(var_src - ref_src)`, where a missing anomaly counts
+  as 0 (the reference is kept). One reference without the other is an error.
+
+Each map is built once, stored once, and shared across all callers. Grids and
+maps live in allocatable slot arrays without a fixed capacity: when an array
+grows, each slot's grid / map is moved (`move_alloc`), never copied, and maps
+are built directly from the registered grids.
+
+## Bit-identity gate
+
+`test/coords/test_coupler_bitident.f90` runs a fixed call set of the coupler
+and `map_field` (con/bilin/nn; dp/sp/int; stat variants; `reset=.false.`,
+`mask_pack`, fill/filter; 3D; grid ↔ points; every conservative generator path)
+and writes each result, the grid geometry and the map weights to
+`bitident_out/<case>.bin`. `make check` runs it for its in-binary checks
+(`remap` = direct `map_field`). To compare against a reference commit:
+
+```bash
+test/coords/bitident.sh <ref-commit>               # gen + cached
+BITIDENT_MODES=cached test/coords/bitident.sh <ref> # across a change of new maps
+```
+
+The script builds the working-tree copy of the test at `<ref-commit>` (in a
+temporary git worktree, with the compiler block of the current root
+`Makefile`) and at the working tree, and compares every stream with `cmp`:
+`gen` (maps generated by each build) and `cached` (both load the cache files
+the reference generated).
 
 ## See also
 

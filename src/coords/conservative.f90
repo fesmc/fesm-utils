@@ -18,7 +18,7 @@ module conservative
 
     use precision,       only: dp
     use constants, only: degrees_to_radians
-    use coordinates,     only: grid_class, compare_coord
+    use coordinates,     only: grid_class, compare_coord, axis_midpoint_bounds
     use oblimap_projection_module, only: oblimap_projection, oblimap_projection_inverse
     use planet,          only: planet_area
     use kdtree
@@ -159,6 +159,7 @@ contains
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
         logical,  allocatable :: need(:)                    ! source cell is a candidate of some target
+        real(dp), allocatable :: wfull_src(:)               ! full source-cell area in the target plane
         type(link_buf), allocatable :: bufs(:)
 
         same_sys   = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian
@@ -193,7 +194,8 @@ contains
         else
             nsv = 4
         end if
-        allocate(scornx(nsv, n1), scorny(nsv, n1))
+        allocate(scornx(nsv, n1), scorny(nsv, n1), wfull_src(n1))
+        wfull_src = 0.0_dp
         if (same_sys) then
             allocate(emb(2, n1))
         else
@@ -206,6 +208,7 @@ contains
                 if (same_sys) then
                     call cell_corners_grid(grid1, ic, jc, lx, ly)
                     scornx(:,cs) = lx; scorny(:,cs) = ly
+                    wfull_src(cs) = polygon_area(lx, ly)
                     emb(1,cs) = grid1%x(ic,jc); emb(2,cs) = grid1%y(ic,jc)
                     d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
                            + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
@@ -290,6 +293,7 @@ contains
                             scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
                         end do
                     end do
+                    wfull_src(cs) = polygon_area(scornx(:,cs), scorny(:,cs))
                 end do
             end do
             deallocate(need)
@@ -333,8 +337,19 @@ contains
 
         call bufs_to_wm(wm, bufs, n1, n2)
 
+        ! Coverage payload: full cell areas in the target plane (the map metric)
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        wm%wfull_src = wfull_src
+        do j = 1, ny2
+            do i = 1, nx2
+                call cell_corners_grid(grid2, i, j, tcx, tcy)
+                wm%wfull_dst((j-1)*nx2 + i) = polygon_area(tcx, tcy)
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         call kdtree_free(tree)
-        deallocate(emb, scornx, scorny, bufs)
+        deallocate(emb, scornx, scorny, bufs, wfull_src)
     end subroutine conservative_planar
 
     subroutine conservative_spherical(wm, grid1, grid2)
@@ -356,7 +371,10 @@ contains
         real(dp), allocatable :: sv(:,:), cv(:,:), ov(:,:)
         real(dp) :: olon(64), olat(64)
         type(link_buf), allocatable :: bufs(:)
-        real(dp) :: cx, cy, cz
+        logical,  allocatable :: linked(:)
+        real(dp), allocatable :: srad(:)                   ! source cap radii [rad]
+        real(dp) :: cx, cy, cz, trad, ang
+        real(dp), parameter :: CAP_MARGIN = 1.0e-9_dp      ! [rad], ~6 mm
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
@@ -373,6 +391,20 @@ contains
             end do
         end do
         call kdtree_build(tree, emb)
+
+        ! Spherical-cap pre-reject: each cell polygon lies in the cap around its
+        ! centre whose radius reaches its farthest vertex (caps < 90 deg are
+        ! convex, so they contain the great-circle edges too). A candidate pair
+        ! whose caps do not meet cannot overlap and is not clipped; the weights
+        ! do not change (docs/dev/coupler-global-design.md, 7 i).
+        allocate(srad(n1))
+        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
+        do cs = 1, n1
+            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
+            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
+            srad(cs) = cap_radius(emb(:,cs), sv)
+        end do
+        !$omp end parallel do
 
         ! candidate radius (chord on unit sphere): source + target angular cell
         ! size, both in DEGREES. grid2 is the lat-lon/Gaussian target, so its dx/dy
@@ -396,7 +428,7 @@ contains
 
         !$omp parallel default(shared) &
         !$omp   private(i, j, c, cc, cs, ic, jc, nf, no, nv, tlon, tlat, cx, cy, cz, area, &
-        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid)
+        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid, trad, ang)
         tid = 0
         !$ tid = omp_get_thread_num()
         allocate(cidx(n1), cd2(n1))
@@ -407,9 +439,12 @@ contains
                 call cell_corners_lonlat(grid2, i, j, tlon, tlat)
                 call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
                 call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
+                trad = cap_radius([cx,cy,cz], cv)
                 call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
                 do cc = 1, nf
                     cs = cidx(cc)
+                    ang = acos(max(-1.0_dp, min(1.0_dp, emb(1,cs)*cx + emb(2,cs)*cy + emb(3,cs)*cz)))
+                    if (ang > srad(cs) + trad + CAP_MARGIN) cycle
                     ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
                     call build_sphere_poly(slon(:,cs), slat(:,cs), &
                                            grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
@@ -433,25 +468,87 @@ contains
 
         call bufs_to_wm(wm, bufs, n1, n2)
 
+        ! Coverage payload: full cell areas (planet_area of the same great-circle
+        ! polygons that are clipped; the map metric). Sources only where linked.
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2), linked(n1))
+        wm%wfull_src = 0.0_dp
+        linked = .false.
+        linked(wm%src(1:wm%n_links)) = .true.
+        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
+        do cs = 1, n1
+            if (.not. linked(cs)) cycle
+            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
+            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
+            wm%wfull_src(cs) = sphere_poly_area(sv, a, f)
+        end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) schedule(guided) collapse(2) private(i, j, tlon, tlat, cv)
+        do j = 1, ny2
+            do i = 1, nx2
+                call cell_corners_lonlat(grid2, i, j, tlon, tlat)
+                call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
+                wm%wfull_dst((j-1)*nx2 + i) = sphere_poly_area(cv, a, f)
+            end do
+        end do
+        !$omp end parallel do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         call kdtree_free(tree)
-        deallocate(emb, slon, slat, bufs)
+        deallocate(emb, slon, slat, bufs, linked, srad)
     end subroutine conservative_spherical
 
-    subroutine axis_edges(x, xe)
-        ! Cell edges (n+1 values, index 0:n) from n cell centers, using the same
-        ! adjacent-midpoint rule as cell_corners_grid so the separable/analytic
-        ! paths tile identically to the general polygon-clip path. Boundary edges
-        ! are extrapolated by half the end cell width. Requires n >= 2.
-        real(dp), intent(in)  :: x(:)
-        real(dp), intent(out) :: xe(0:)
-        integer :: n, i
-        n = size(x)
-        xe(0) = x(1) - 0.5_dp*(x(2) - x(1))
-        do i = 1, n-1
-            xe(i) = 0.5_dp*(x(i) + x(i+1))
+    real(dp) function cap_radius(ctr, verts) result(r)
+        ! Angular radius [rad] of the cap around unit vector ctr that holds
+        ! all polygon vertices.
+        real(dp), intent(in) :: ctr(3), verts(:,:)
+        real(dp) :: dmin
+        integer  :: k
+        dmin = 1.0_dp
+        do k = 1, size(verts, 2)
+            dmin = min(dmin, ctr(1)*verts(1,k) + ctr(2)*verts(2,k) + ctr(3)*verts(3,k))
         end do
-        xe(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
-    end subroutine axis_edges
+        r = acos(max(-1.0_dp, min(1.0_dp, dmin)))
+    end function cap_radius
+
+    real(dp) function sphere_poly_area(verts, a, f) result(area)
+        ! Area on the planet (a, f) of a polygon given as unit vectors.
+        real(dp), intent(in) :: verts(:,:), a, f
+        real(dp) :: plon(size(verts,2)), plat(size(verts,2))
+        integer  :: nv
+        do nv = 1, size(verts,2)
+            call xyz_to_lonlat(verts(1,nv), verts(2,nv), verts(3,nv), plon(nv), plat(nv))
+        end do
+        area = planet_area(a, f, plon, plat)
+    end function sphere_poly_area
+
+    subroutine lon_edges(grid, xe)
+        ! Longitude cell edges (0:nx) of a lat-lon / Gaussian grid for the
+        ! separable lat-lon path: the grid's x_bnds when the axis is ascending.
+        ! A grid built from 0..360 centres with lon180=.true. stores them
+        ! remapped in place (0..179, -179..-0.7): its explicit bounds (shifted
+        ! with the centres) are unwrapped to a monotonic sequence; its default
+        ! bounds hold a wrong seam edge (~0 instead of ~180), so the centres are
+        ! unwrapped first and their midpoint edges taken. (For an ascending
+        ! axis unwrap_lon is the identity, so all branches agree there.)
+        type(grid_class), intent(in)  :: grid
+        real(dp),         intent(out) :: xe(0:)
+        real(dp), allocatable :: xc(:)
+        integer :: i
+        logical :: ascending
+        ascending = .true.
+        do i = 2, grid%G%nx
+            if (grid%G%x(i) < grid%G%x(i-1)) ascending = .false.
+        end do
+        if (ascending) then
+            xe = grid%G%x_bnds
+        else if (grid%G%explicit_bnds) then
+            call unwrap_lon(grid%G%x_bnds, xe)
+        else
+            allocate(xc(grid%G%nx))
+            call unwrap_lon(grid%G%x, xc)
+            call axis_midpoint_bounds(xc, xe, grid%G%dx)
+        end if
+    end subroutine lon_edges
 
     subroutine unwrap_lon(xin, xout)
         ! Copy longitude centers to a monotonic ascending sequence, undoing the
@@ -517,7 +614,6 @@ contains
         real(dp) :: wlo, wla
         real(dp), allocatable :: sxe(:), sye(:), txe(:), tye(:)   ! 0:n edges
         real(dp), allocatable :: ssin(:), tsin(:)                 ! 0:ny sin(lat edge)
-        real(dp), allocatable :: sxc(:), txc(:)                   ! monotonic lon centers
         ! CSR of per-target-column lon overlaps and per-target-row lat overlaps
         integer,  allocatable :: lon_off(:), lat_off(:)
         integer,  allocatable :: lon_i1(:),  lat_j1(:)
@@ -527,18 +623,13 @@ contains
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
 
-        ! Unwrap the longitude centers to a monotonic sequence before taking edges:
-        ! a grid built from 0..360 centers with lon180=.true. stores them remapped
-        ! in place (0..179, -179..-0.7), so the seam cell's adjacent-midpoint edge
-        ! would land at ~0 instead of ~180. lon_overlap already handles the +-360
-        ! convention offset between source and target, so only monotonicity matters.
-        allocate(sxc(nx1), txc(nx2))
-        call unwrap_lon(grid1%G%x, sxc)
-        call unwrap_lon(grid2%G%x, txc)
-
+        ! Cell edges from the grids' bounds; longitude edges via lon_edges (which
+        ! unwraps a lon180-shifted axis, see there). lon_overlap handles the
+        ! +-360 convention offset between source and target, so only
+        ! monotonicity matters.
         allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
-        call axis_edges(sxc, sxe); call axis_edges(grid1%G%y, sye)
-        call axis_edges(txc, txe); call axis_edges(grid2%G%y, tye)
+        call lon_edges(grid1, sxe); sye = grid1%G%y_bnds
+        call lon_edges(grid2, txe); tye = grid2%G%y_bnds
 
         ! Clamp latitude edges to the poles (polar cells are half cells) and take
         ! the sine, in which latitude bands overlap linearly.
@@ -581,7 +672,22 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
-        deallocate(sxe, sye, txe, tye, ssin, tsin, sxc, txc, bufs)
+
+        ! Coverage payload: full cells in the same metric (deg * sin-band)
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        do j1 = 1, ny1
+            do i1 = 1, nx1
+                wm%wfull_src((j1-1)*nx1 + i1) = abs(sxe(i1) - sxe(i1-1))*abs(ssin(j1) - ssin(j1-1))
+            end do
+        end do
+        do j2 = 1, ny2
+            do i2 = 1, nx2
+                wm%wfull_dst((j2-1)*nx2 + i2) = abs(txe(i2) - txe(i2-1))*abs(tsin(j2) - tsin(j2-1))
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
+        deallocate(sxe, sye, txe, tye, ssin, tsin, bufs)
         deallocate(lon_off, lon_i1, lon_w, lat_off, lat_j1, lat_w)
     end subroutine conservative_latlon
 
@@ -671,8 +777,8 @@ contains
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
 
         allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
-        call axis_edges(grid1%G%x, sxe); call axis_edges(grid1%G%y, sye)
-        call axis_edges(grid2%G%x, txe); call axis_edges(grid2%G%y, tye)
+        sxe = grid1%G%x_bnds; sye = grid1%G%y_bnds
+        txe = grid2%G%x_bnds; tye = grid2%G%y_bnds
 
         call build_axis_overlap_lat(txe, sxe, nx2, nx1, x_off, x_i1, x_w)
         call build_axis_overlap_lat(tye, sye, ny2, ny1, y_off, y_j1, y_w)
@@ -700,6 +806,21 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
+
+        ! Coverage payload: full cell areas in the shared plane
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        do j1 = 1, ny1
+            do i1 = 1, nx1
+                wm%wfull_src((j1-1)*nx1 + i1) = abs(sxe(i1) - sxe(i1-1))*abs(sye(j1) - sye(j1-1))
+            end do
+        end do
+        do j2 = 1, ny2
+            do i2 = 1, nx2
+                wm%wfull_dst((j2-1)*nx2 + i2) = abs(txe(i2) - txe(i2-1))*abs(tye(j2) - tye(j2-1))
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         deallocate(sxe, sye, txe, tye, bufs)
         deallocate(x_off, x_i1, x_w, y_off, y_j1, y_w)
     end subroutine conservative_planar_reg
@@ -755,6 +876,11 @@ contains
         do k = 1, nv
             call lonlat_to_xyz(ll_lon(k), ll_lat(k), verts(1,k), verts(2,k), verts(3,k))
         end do
+        ! Drop repeated vertices (a polar cell has two corners at the pole, so
+        ! its polar edge collapses to one point): degenerate zero-length edges
+        ! break the great-circle clip and the orientation test below.
+        call drop_repeated(verts)
+        nv = size(verts, 2)
         ! orient so center is interior: check edge 1 normal vs center
         call lonlat_to_xyz(ctrlon, ctrlat, cxv, cyv, czv)
         n1v(1) = verts(2,1)*verts(3,2) - verts(3,1)*verts(2,2)
@@ -770,6 +896,36 @@ contains
             end block
         end if
     end subroutine build_sphere_poly
+
+    subroutine drop_repeated(verts)
+        ! Remove vertices that coincide with their predecessor (cyclically), to
+        ! 1e-13 on the unit sphere (points at a pole differ by ~1e-17 with the
+        ! longitude, as cos(90 deg) is not exactly 0 in floating point).
+        real(dp), allocatable, intent(inout) :: verts(:,:)
+        real(dp), parameter :: TOL = 1.0e-13_dp
+        real(dp), allocatable :: tmp(:,:)
+        logical,  allocatable :: keep(:)
+        integer :: k, n, m, kp
+        n = size(verts, 2)
+        allocate(keep(n))
+        keep = .true.
+        kp = 1                                   ! last kept vertex
+        do k = 2, n
+            if (maxval(abs(verts(:,k) - verts(:,kp))) < TOL) then
+                keep(k) = .false.
+            else
+                kp = k
+            end if
+        end do
+        if (kp > 1) then
+            if (maxval(abs(verts(:,kp) - verts(:,1))) < TOL) keep(kp) = .false.
+        end if
+        if (all(keep)) return
+        m = count(keep)
+        allocate(tmp(3, m))
+        tmp = reshape(pack(verts, spread(keep, 1, 3)), [3, m])
+        call move_alloc(tmp, verts)
+    end subroutine drop_repeated
 
     subroutine lonlat_to_xyz(lon, lat, x, y, z)
         real(dp), intent(in)  :: lon, lat
@@ -787,36 +943,15 @@ contains
     end subroutine xyz_to_lonlat
 
     subroutine cell_corners_grid(grid, i, j, cx, cy)
-        ! Four corners (CCW) of cell (i,j) in axis units, from adjacent-axis
-        ! midpoints (so uniform and non-uniform/Gaussian grids share one path).
+        ! Four corners (CCW) of cell (i,j) in axis units, from the grid's cell
+        ! edges (grid%G%x_bnds, grid%G%y_bnds).
         type(grid_class), intent(in)  :: grid
         integer,          intent(in)  :: i, j
         real(dp),         intent(out) :: cx(4), cy(4)
         real(dp) :: x1, x2, y1, y2
-        integer  :: nx, ny
-        nx = grid%G%nx; ny = grid%G%ny
 
-        if (i == 1) then
-            x1 = grid%G%x(i) - 0.5_dp*(grid%G%x(i+1)-grid%G%x(i))
-            x2 = 0.5_dp*(grid%G%x(i)+grid%G%x(i+1))
-        else if (i == nx) then
-            x1 = 0.5_dp*(grid%G%x(i)+grid%G%x(i-1))
-            x2 = grid%G%x(i) + 0.5_dp*(grid%G%x(i)-grid%G%x(i-1))
-        else
-            x1 = 0.5_dp*(grid%G%x(i)+grid%G%x(i-1))
-            x2 = 0.5_dp*(grid%G%x(i)+grid%G%x(i+1))
-        end if
-
-        if (j == 1) then
-            y1 = grid%G%y(j) - 0.5_dp*(grid%G%y(j+1)-grid%G%y(j))
-            y2 = 0.5_dp*(grid%G%y(j)+grid%G%y(j+1))
-        else if (j == ny) then
-            y1 = 0.5_dp*(grid%G%y(j)+grid%G%y(j-1))
-            y2 = grid%G%y(j) + 0.5_dp*(grid%G%y(j)-grid%G%y(j-1))
-        else
-            y1 = 0.5_dp*(grid%G%y(j)+grid%G%y(j-1))
-            y2 = 0.5_dp*(grid%G%y(j)+grid%G%y(j+1))
-        end if
+        x1 = grid%G%x_bnds(i-1); x2 = grid%G%x_bnds(i)
+        y1 = grid%G%y_bnds(j-1); y2 = grid%G%y_bnds(j)
 
         cx = [x1, x2, x2, x1]
         cy = [y1, y1, y2, y2]

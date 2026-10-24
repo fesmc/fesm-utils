@@ -19,6 +19,8 @@ module coordinates
     use oblimap_projection_module
     use planet
     use ncio
+    use gaussian_latitudes, only: gaussian_latitudes_calc
+    use fesm_log, only: fesm_error
 
 !     use gaussian_filter
 !     use interp2D
@@ -54,6 +56,15 @@ module coordinates
         integer :: nx, ny
         real(dp) :: x0, dx, y0, dy
         real(dp), allocatable, dimension(:) :: x, y
+        ! Cell edges in axis units, x_bnds(0:nx), y_bnds(0:ny): cell i spans
+        ! [x_bnds(i-1), x_bnds(i)]. Filled at grid_init and read by every
+        ! consumer of cell edges (grid_area, the conservative generators). The
+        ! default fill is the adjacent-midpoint rule with half-cell
+        ! extrapolation at the ends (axis_midpoint_bounds); explicit_bnds
+        ! records that bounds were given (grid_init x_bnds= / y_bnds=, e.g.
+        ! grid_init_gaussian); the other axis then takes the default fill.
+        real(dp), allocatable, dimension(:) :: x_bnds, y_bnds
+        logical :: explicit_bnds = .false.
     end type
 
     type grid_class
@@ -97,6 +108,7 @@ module coordinates
     public :: coord_system
     public :: points_class, points_init, points_allocate, points_write, points_print
     public :: grid_axis_class, grid_class, grid_init, grid_allocate, grid_write, grid_print
+    public :: axis_midpoint_bounds, grid_init_gaussian
     public :: grid_to_points, points_to_grid
     public :: compare_coord
     public :: pts_which_nearest 
@@ -133,7 +145,8 @@ contains
     end subroutine axis_init
 
     subroutine grid_area(grid)
-        ! Calculate the area of the cell each grid point represents
+        ! Calculate the area of the cell each grid point represents, from the
+        ! cell edges grid%G%x_bnds / grid%G%y_bnds.
 
         implicit none 
 
@@ -141,32 +154,31 @@ contains
         real(dp) :: x1, x2, y1, y2 
         real(dp) :: vertx(4), verty(4), vertlon(4), vertlat(4)
         integer  :: i, j, q 
+
+        if (grid%G%explicit_bnds .and. is_latlon_mtype(grid%cs%mtype)) then
+            ! Explicit bounds of a lat-lon / Gaussian grid: the latitude-band
+            ! area (on a sphere R^2*dlon*(sin(lat2) - sin(lat1)), i.e. the Gauss
+            ! quadrature weight for Gauss bounds; on an ellipsoid the authalic
+            ! zone formula). Grids with default bounds keep the 4-corner area.
+            do j = 1, grid%G%ny
+                do i = 1, grid%G%nx
+                    grid%area(i,j) = band_area(grid%cs%planet%a, grid%cs%planet%f, &
+                                               grid%G%x_bnds(i-1), grid%G%x_bnds(i), &
+                                               grid%G%y_bnds(j-1), grid%G%y_bnds(j))
+                end do
+            end do
+            if (.not. grid%cs%xy_conv .eq. 0.d0) grid%area = grid%area / (grid%cs%xy_conv*grid%cs%xy_conv)
+            return
+        end if
         
         do j = 1, grid%G%ny 
             do i = 1, grid%G%nx 
 
-                ! Get vertices of cell around current grid point
-                if (i .eq. 1) then 
-                    x1 =  grid%G%x(i) - (grid%G%x(i+1)-grid%G%x(i)) / 2.0_dp
-                    x2 = (grid%G%x(i) + grid%G%x(i+1)) / 2.0_dp
-                else if (i .eq. grid%G%nx) then 
-                    x1 = (grid%G%x(i) + grid%G%x(i-1)) / 2.0_dp
-                    x2 =  grid%G%x(i) + (grid%G%x(i)-grid%G%x(i-1)) / 2.0_dp
-                else
-                    x1 = (grid%G%x(i) + grid%G%x(i-1)) / 2.0_dp
-                    x2 = (grid%G%x(i) + grid%G%x(i+1)) / 2.0_dp
-                end if 
-
-                if (j .eq. 1) then 
-                    y1 =  grid%G%y(j) - (grid%G%y(j+1)-grid%G%y(j)) / 2.0_dp
-                    y2 = (grid%G%y(j) + grid%G%y(j+1)) / 2.0_dp
-                else if (j .eq. grid%G%ny) then 
-                    y1 = (grid%G%y(j) + grid%G%y(j-1)) / 2.0_dp
-                    y2 =  grid%G%y(j) + (grid%G%y(j)-grid%G%y(j-1)) / 2.0_dp
-                else
-                    y1 = (grid%G%y(j) + grid%G%y(j-1)) / 2.0_dp
-                    y2 = (grid%G%y(j) + grid%G%y(j+1)) / 2.0_dp
-                end if 
+                ! Vertices of the cell around the current grid point
+                x1 = grid%G%x_bnds(i-1)
+                x2 = grid%G%x_bnds(i)
+                y1 = grid%G%y_bnds(j-1)
+                y2 = grid%G%y_bnds(j)
 
                 ! Convert grid points to meters as necessary
                 vertx = [x1,x1,x2,x2] * grid%cs%xy_conv 
@@ -180,8 +192,6 @@ contains
                     ! Calculate projected area 
 
                     do q = 1, 4
-!                         call inverse_oblique_sg_projection(vertx(q),verty(q), &
-!                                                            vertlon(q),vertlat(q),grid%cs%proj)
                         call oblimap_projection_inverse(vertx(q),verty(q), &
                                                         vertlon(q),vertlat(q),grid%cs%proj)
                     end do 
@@ -204,6 +214,139 @@ contains
         return
 
     end subroutine grid_area
+
+    logical function is_latlon_mtype(mtype)
+        character(len=*), intent(in) :: mtype
+        is_latlon_mtype = trim(mtype) == "latlon" .or. trim(mtype) == "latitude_longitude" .or. &
+                          trim(mtype) == "gaussian"
+    end function is_latlon_mtype
+
+    real(dp) function band_area(a, f, lon1, lon2, lat1, lat2) result(area)
+        ! Area [m^2] of the lon-lat cell [lon1,lon2] x [lat1,lat2] (degrees) on
+        ! the ellipsoid (a, f): (dlon/2) b^2 (g(lat2) - g(lat1)), with
+        ! g = sin/(1 - e^2 sin^2) + atanh(e sin)/e (authalic zone); on a
+        ! sphere (f = 0) R^2 dlon (sin(lat2) - sin(lat1)).
+        real(dp), intent(in) :: a, f, lon1, lon2, lat1, lat2
+        real(dp) :: dlon, e2, e, b, s1, s2, p1, p2
+        dlon = abs(lon2 - lon1)*degrees_to_radians
+        p1 = max(-90.0_dp, min(90.0_dp, lat1))*degrees_to_radians
+        p2 = max(-90.0_dp, min(90.0_dp, lat2))*degrees_to_radians
+        s1 = sin(p1); s2 = sin(p2)
+        e2 = f*(2.0_dp - f)
+        if (e2 < 1.0e-12_dp) then
+            ! sin(p2) - sin(p1) in the cancellation-free form
+            area = a*a*dlon*abs(2.0_dp*cos(0.5_dp*(p1 + p2))*sin(0.5_dp*(p2 - p1)))
+        else
+            e = sqrt(e2); b = a*(1.0_dp - f)
+            area = 0.5_dp*dlon*b*b*abs(zone(s2) - zone(s1))
+        end if
+    contains
+        real(dp) function zone(sphi)
+            real(dp), intent(in) :: sphi
+            zone = sphi/(1.0_dp - e2*sphi*sphi) + atanh(e*sphi)/e
+        end function zone
+    end function band_area
+
+    subroutine axis_bounds_check(name, axis, x, xb)
+        ! Explicit bounds: strictly monotonic, each centre inside its cell.
+        character(len=*), intent(in) :: name, axis
+        real(dp),         intent(in) :: x(:), xb(0:)
+        integer :: i, n
+        real(dp) :: sgn
+        n = size(x)
+        if (size(xb) /= n + 1) &
+            call fesm_error("grid_init", "grid '"//trim(name)//"': "//axis//"_bnds must have n+1 values.", &
+                "n = "//to_str(n)//", size("//axis//"_bnds) = "//to_str(size(xb)))
+        sgn = sign(1.0_dp, xb(n) - xb(0))
+        do i = 1, n
+            if (sgn*(xb(i) - xb(i-1)) <= 0.0_dp) &
+                call fesm_error("grid_init", "grid '"//trim(name)//"': "//axis//"_bnds not strictly monotonic.", &
+                    "at cell "//to_str(i))
+            if (x(i) < min(xb(i-1), xb(i)) .or. x(i) > max(xb(i-1), xb(i))) &
+                call fesm_error("grid_init", "grid '"//trim(name)//"': centre "//axis//"("//to_str(i)// &
+                    ") outside its cell ["//axis//"_bnds("//to_str(i-1)//"), "//axis//"_bnds("//to_str(i)//")].")
+        end do
+    end subroutine axis_bounds_check
+
+    subroutine grid_init_gaussian(grid, name, nlon, nlat, planet, lon180, x0)
+        ! A global Gaussian grid with nlat Gauss-Legendre latitudes and nlon
+        ! equally spaced longitudes starting at x0 (default 0), with explicit
+        ! latitude bounds from the Gauss weights: sin(lat_{j+1/2}) =
+        ! sin(lat_{j-1/2}) + w_j, from -1 (last edge set to +1). The nodes
+        ! interlace with the cumulative weights, so each lies inside its band,
+        ! and the cell area is the band area R^2*dlon*w_j (the quadrature
+        ! weight). mtype "gaussian". Use planet="Spherical Earth" for a
+        ! spectral (SHTns) model.
+        type(grid_class),           intent(inout) :: grid
+        character(len=*),           intent(in)    :: name
+        integer,                    intent(in)    :: nlon, nlat
+        character(len=*), optional, intent(in)    :: planet
+        logical,          optional, intent(in)    :: lon180
+        real(dp),         optional, intent(in)    :: x0
+        real(dp) :: lat(nlat), wts(nlat), yb(0:nlat), lon0, dlon
+        real(dp) :: s, c, t
+        integer  :: j
+
+        call gaussian_latitudes_calc(nlat, lat, wts)
+        ! Cumulative sum from the south pole (Neumaier-compensated), mirrored
+        ! for the northern half (nodes and weights are symmetric), so both polar
+        ! bands are equally accurate and the equator edge (even nlat) is 0.
+        yb(0) = -90.0_dp
+        s = -1.0_dp; c = 0.0_dp
+        do j = 1, nlat/2
+            t = s + wts(j)
+            if (abs(s) >= abs(wts(j))) then
+                c = c + ((s - t) + wts(j))
+            else
+                c = c + ((wts(j) - t) + s)
+            end if
+            s = t
+            yb(j) = asin(max(-1.0_dp, min(1.0_dp, s + c)))/degrees_to_radians
+        end do
+        do j = 0, nlat/2
+            yb(nlat - j) = -yb(j)
+        end do
+        if (mod(nlat, 2) == 0) yb(nlat/2) = 0.0_dp
+        lon0 = 0.0_dp
+        if (present(x0)) lon0 = x0
+        dlon = 360.0_dp/real(nlon, dp)
+        call grid_init_from_opts(grid, name, mtype="gaussian", units="degrees", planet=planet, &
+                                 lon180=lon180, x0=lon0, dx=dlon, nx=nlon, y=lat, y_bnds=yb)
+    end subroutine grid_init_gaussian
+
+    subroutine axis_midpoint_bounds(x, xb, dx)
+        ! Default cell edges (n+1 values, index 0:n) from n cell centres: the
+        ! adjacent midpoints, with the end edges extrapolated by half the end
+        ! cell width. A single-centre axis takes +-dx/2 (dx: the axis spacing).
+        ! This is the one definition of default cell edges in coords.
+        real(dp), intent(in)  :: x(:)
+        real(dp), intent(out) :: xb(0:)
+        real(dp), intent(in)  :: dx
+        integer :: n, i
+        n = size(x)
+        if (n == 1) then
+            xb(0) = x(1) - 0.5_dp*dx
+            xb(1) = x(1) + 0.5_dp*dx
+            return
+        end if
+        xb(0) = x(1) - 0.5_dp*(x(2) - x(1))
+        do i = 1, n-1
+            xb(i) = 0.5_dp*(x(i) + x(i+1))
+        end do
+        xb(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
+    end subroutine axis_midpoint_bounds
+
+    subroutine grid_axis_default_bounds(G)
+        ! (Re)fill G%x_bnds, G%y_bnds with the default midpoint edges of the
+        ! current axes.
+        type(grid_axis_class), intent(inout) :: G
+        if (allocated(G%x_bnds)) deallocate(G%x_bnds)
+        if (allocated(G%y_bnds)) deallocate(G%y_bnds)
+        allocate(G%x_bnds(0:G%nx), G%y_bnds(0:G%ny))
+        call axis_midpoint_bounds(G%x, G%x_bnds, G%dx)
+        call axis_midpoint_bounds(G%y, G%y_bnds, G%dy)
+        G%explicit_bnds = .false.
+    end subroutine grid_axis_default_bounds
 
     subroutine grid_init_from_grid(grid,grid0,name,x,y,x0,dx,nx,y0,dy,ny)
         ! Initialize a new grid based on an old grid but
@@ -478,7 +621,10 @@ contains
     end subroutine grid_init_from_netcdf_file
 
     subroutine grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
-                                   x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0)
+                                   x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0, &
+                                   x_bnds,y_bnds)
+        ! x_bnds(0:nx), y_bnds(0:ny): optional explicit cell bounds (validated:
+        ! strictly monotonic, each centre inside its cell); see grid_axis_class.
 
         implicit none 
 
@@ -491,6 +637,7 @@ contains
         real(dp), optional :: x(:), y(:), x0, dx, y0, dy 
         real(dp), optional :: lambda, phi, alpha, x_e, y_n 
         real(dp), optional :: k0                 ! scale factor (transverse_mercator)
+        real(dp), optional :: x_bnds(:), y_bnds(:)
         real(dp) :: tmp1, tmp2
         integer :: i, j 
         real(dp), allocatable :: tmpvec1(:), tmpvec2(:) 
@@ -569,6 +716,19 @@ contains
                          k0=k0)
         call points_to_grid(pts,grid)
 
+        ! Cell edges of the axes as given (before any lon180 shift below):
+        ! default midpoints, replaced by explicit bounds where given
+        call grid_axis_default_bounds(grid%G)
+        if (present(x_bnds)) then
+            call axis_bounds_check(name, "x", grid%G%x, x_bnds)
+            grid%G%x_bnds = x_bnds
+        end if
+        if (present(y_bnds)) then
+            call axis_bounds_check(name, "y", grid%G%y, y_bnds)
+            grid%G%y_bnds = y_bnds
+        end if
+        grid%G%explicit_bnds = present(x_bnds) .or. present(y_bnds)
+
         ! Calculate grid cell areas 
         if (allocated(grid%area))   deallocate(grid%area)
         allocate(grid%area(grid%G%nx,grid%G%ny))
@@ -629,6 +789,21 @@ contains
                 ! axis goes from -180 to 180
 
         end if 
+
+        ! Default bounds: the stored edges are those of the stored axis.
+        ! grid%area above was computed on the axis as given (for 0..360 centres
+        ! with lon180, the unshifted monotonic axis), so its seam cell is
+        ! correct; the stored midpoint edge at the seam of a shifted axis is not
+        ! (conservative_latlon unwraps such an axis itself). Fixing the seam
+        ! edge is a separate, non-bit-identical change
+        ! (docs/dev/coupler-global-design.md, 3.1). Explicit bounds are shifted
+        ! with the centres instead (unwrappable at the seam).
+        if (grid%G%explicit_bnds) then
+            if (.not. grid%cs%is_cartesian .and. grid%cs%is_lon180) &
+                where (grid%G%x_bnds > 180.0_dp) grid%G%x_bnds = grid%G%x_bnds - 360.0_dp
+        else
+            call grid_axis_default_bounds(grid%G)
+        end if
 
         ! Finally check that the proj%alpha used is reasonable 
         if ( grid%cs%is_projection ) then 

@@ -8,10 +8,13 @@ module map_io
     ! change-method-for-free; the SCRIP core then holds shepard-baked weights so
     ! the file is still usable as a standard map. With scrip_only=.true. only the
     ! standard SCRIP core is written and a reload yields a frozen MAP_WEIGHT.
+    ! A map with the coverage payload (conservative, coords generator) also
+    ! writes mp_wfull_src, mp_wcov_src (src_grid_size) and mp_wfull_dst,
+    ! mp_wcov_dst (dst_grid_size); a file without them loads without coverage.
 
     use precision,   only: dp
     use weight_map,  only: weight_map_t, weight_map_alloc, weight_map_index, &
-                           MAP_DISTANCE, MAP_WEIGHT
+                           weight_map_coverage, MAP_DISTANCE, MAP_WEIGHT
     use ncio
 
     implicit none
@@ -65,6 +68,16 @@ contains
             call nc_write(filename, "mp_yn",       wm%yn,       dim1="num_links")
         end if
 
+        if (wm%kind == MAP_WEIGHT .and. .not. sonly .and. allocated(wm%wfull_src) .and. &
+            allocated(wm%wfull_dst) .and. allocated(wm%wcov_src) .and. allocated(wm%wcov_dst)) then
+            call nc_write_dim(filename, "src_grid_size", x=[(dble(i), i=1,wm%n_src)])
+            call nc_write_dim(filename, "dst_grid_size", x=[(dble(i), i=1,wm%n_dst)])
+            call nc_write(filename, "mp_wfull_src", wm%wfull_src, dim1="src_grid_size")
+            call nc_write(filename, "mp_wcov_src",  wm%wcov_src,  dim1="src_grid_size")
+            call nc_write(filename, "mp_wfull_dst", wm%wfull_dst, dim1="dst_grid_size")
+            call nc_write(filename, "mp_wcov_dst",  wm%wcov_dst,  dim1="dst_grid_size")
+        end if
+
         deallocate(wbake)
     end subroutine weight_map_write
 
@@ -98,6 +111,15 @@ contains
         end if
 
         call weight_map_index(wm)
+
+        if (kind == MAP_WEIGHT .and. nc_exists_var(filename, "mp_wfull_src")) then
+            allocate(wm%wfull_src(n_src), wm%wcov_src(n_src), wm%wfull_dst(n_dst), wm%wcov_dst(n_dst))
+            call nc_read(filename, "mp_wfull_src", wm%wfull_src)
+            call nc_read(filename, "mp_wcov_src",  wm%wcov_src)
+            call nc_read(filename, "mp_wfull_dst", wm%wfull_dst)
+            call nc_read(filename, "mp_wcov_dst",  wm%wcov_dst)
+            call weight_map_coverage(wm)
+        end if
     end subroutine weight_map_read
 
     subroutine bake_shepard(wm, wbake)

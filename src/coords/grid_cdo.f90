@@ -3,6 +3,7 @@ module grid_cdo
     use precision, only: dp, sp
     use constants, only: pi
     use coordinates, only: grid_class, grid_init
+    use fesm_log,    only: fesm_error
     implicit none
 
     private
@@ -105,6 +106,17 @@ contains
             write(fnum,"(a,f0.12)") "yinc     = ", grid%G%dy
         end if
 
+        if (grid%G%explicit_bnds) then
+            ! Explicit cell bounds as cdo xbounds/ybounds (lower, upper per
+            ! cell); longitudes unwrapped to the monotonic sequence of the
+            ! centres as given (grid_init re-applies lon180)
+            write(fnum,"(a)") "xbounds = "
+            write(fnum,"(100000f20.12)") bounds_pairs(lon_unwrapped(grid%G%x_bnds, grid%cs%is_lon180 &
+                                                       .and. .not. grid%cs%is_cartesian))
+            write(fnum,"(a)") "ybounds = "
+            write(fnum,"(100000f20.12)") bounds_pairs(grid%G%y_bnds)
+        end if
+
         write(fnum,"(a,a)") "grid_mapping = ","crs"
 
         ! Add grid attributes depending on grid_mapping type
@@ -193,7 +205,7 @@ contains
         ! Axis definition (cdo body)
         integer  :: nx, ny
         real(dp) :: x0, dx, y0, dy
-        real(dp), allocatable :: yvals(:)
+        real(dp), allocatable :: yvals(:), xbp(:), ybp(:), xb(:), yb(:)
         logical  :: is_gaussian
 
         ! Track which coordinate-system fields the fesm-utils '#' header set, so
@@ -294,22 +306,48 @@ contains
                     is_gaussian = .true.
                     allocate(yvals(ny))
                     read(fnum,*) yvals
+                case ("xbounds")
+                    ! explicit cell bounds: 2*nx values (lower, upper per cell).
+                    ! Read only from files with the fesm-utils header (written
+                    ! by grid_cdo_write_desc_short); bounds in cdo-native
+                    ! descriptions are ignored, as before.
+                    if (.not. has_mtype) cycle
+                    if (nx <= 0) then
+                        write(*,*) "grid_cdo_read_desc:: error: 'xbounds' before 'xsize' in "//trim(filename)
+                        stop
+                    end if
+                    allocate(xbp(2*nx))
+                    read(fnum,*) xbp
+                case ("ybounds")
+                    if (.not. has_mtype) cycle
+                    if (ny <= 0) then
+                        write(*,*) "grid_cdo_read_desc:: error: 'ybounds' before 'ysize' in "//trim(filename)
+                        stop
+                    end if
+                    allocate(ybp(2*ny))
+                    read(fnum,*) ybp
             end select
         end do
 
         close(fnum)
+
+        ! Explicit bounds (unallocated xb / yb are passed on as absent)
+        if (allocated(xbp)) xb = pairs_to_bounds(xbp, filename, "xbounds")
+        if (allocated(ybp)) yb = pairs_to_bounds(ybp, filename, "ybounds")
 
         ! Reconstruct the grid (axes + coordinate system) in one call
         if (is_gaussian) then
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
                            planet=planet, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y=yvals, &
-                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0)
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0, &
+                           x_bnds=xb, y_bnds=yb)
         else
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
                            planet=planet, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y0=y0, dy=dy, ny=ny, &
-                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0)
+                           lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0, &
+                           x_bnds=xb, y_bnds=yb)
         end if
 
         if (allocated(yvals)) deallocate(yvals)
@@ -317,6 +355,53 @@ contains
         return
 
     end subroutine grid_cdo_read_desc
+
+    function bounds_pairs(b) result(p)
+        ! Cell bounds b(0:n) as cdo pairs (lower, upper) per cell.
+        real(dp), intent(in) :: b(0:)
+        real(dp), allocatable :: p(:)
+        integer :: i, n
+        n = size(b) - 1
+        allocate(p(2*n))
+        do i = 1, n
+            p(2*i-1) = b(i-1)
+            p(2*i)   = b(i)
+        end do
+    end function bounds_pairs
+
+    function lon_unwrapped(b, unwrap) result(u)
+        ! Longitude bounds undoing the lon180 shift (adding 360 where the
+        ! sequence decreases), so they ascend like the centres as given.
+        real(dp), intent(in) :: b(0:)
+        logical,  intent(in) :: unwrap
+        real(dp), allocatable :: u(:)
+        integer :: i
+        allocate(u(0:size(b)-1))
+        u = b
+        if (.not. unwrap) return
+        do i = 1, size(b)-1
+            do while (u(i) < u(i-1)); u(i) = u(i) + 360.0_dp; end do
+        end do
+    end function lon_unwrapped
+
+    function pairs_to_bounds(p, filename, key) result(b)
+        ! cdo bound pairs (lower, upper per cell) -> contiguous bounds b(0:n).
+        real(dp),         intent(in) :: p(:)
+        character(len=*), intent(in) :: filename, key
+        real(dp), allocatable :: b(:)
+        integer :: i, n
+        n = size(p)/2
+        allocate(b(0:n))
+        b(0) = p(1)
+        do i = 1, n
+            if (i > 1) then
+                if (abs(p(2*i-1) - p(2*(i-1))) > 1.0e-9_dp*max(1.0_dp, abs(p(2*i-1)))) &
+                    call fesm_error("grid_cdo_read_desc", trim(key)//" in "//trim(filename)// &
+                        " are not contiguous (cell lower bound /= previous upper bound).")
+            end if
+            b(i) = p(2*i)
+        end do
+    end function pairs_to_bounds
 
     subroutine read_proj_tmerc(str, has_mtype, has_lambda, has_phi, has_k0, has_x_e, has_y_n, &
                                mtype, lambda, phi, k0, x_e, y_n)

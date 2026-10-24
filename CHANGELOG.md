@@ -72,6 +72,44 @@ All notable changes to fesm-utils are documented here.
   group, masked fields with validity. `make check-datasrc` (§9 tests, the worked
   examples, expected-abort programs).
 
+- **coords**: `grid_axis_class` carries the cell edges `x_bnds(0:nx)`, `y_bnds(0:ny)` and
+  `explicit_bnds`, filled at `grid_init`; `grid_area` and the conservative generators read
+  them (bit-identical to the previous midpoint edges). `axis_midpoint_bounds` is public.
+- **coupler**: `coupler_take_grid(cpl, name, grid)` moves a grid in without a copy;
+  `remap` passes `missing_value, mask2, reset, mask_pack, fill_method, filt_method,
+  filt_par` through to `map_field` (the `int` specifics: `missing_value, mask2, reset,
+  mask_pack`); `method="auto"` (`bilin` when refining, `con` when coarsening, by median
+  model cell area).
+- **coords**: `map_postprocess` (the fill/filter pass of `map_field`) is public.
+- **coords**: map cache identity. New cache files carry the grid signatures and the
+  method/generator/cutoff/format as global attributes (`coords_src_sig`, ...); `map_init`
+  checks them on load (`on_mismatch="error"` default, or `"rebuild"`), loads files
+  without signatures unverified (logged once), and always stops on a file whose sizes do
+  not match the grids. Opt-in `hash_names=.true.` (`map_init`, `coupler_init`) tags the
+  file names with `grid_hash8`. New module `grid_signature` (`grid_signature_str`,
+  `grid_signature_match`, `grid_hash8`). `make check` runs `test_grid_signature`.
+- **coords**: normalisation and coverage for conservative maps. The coords generator
+  stores the full cell areas and pre-prune link sums (`wfull_src/dst`, `wcov_src/dst` in
+  `weight_map_t`, `mp_wfull_*`/`mp_wcov_*` in the cache). `weight_map_apply` and the 8 real
+  `map_field` specifics take `norm` (`"frac"` default | `"dst"` | `"sum"`), `frac2`
+  (covered fraction, `real(dp)`), `area1`, `area2` (model cell areas). Default paths are
+  unchanged. `coupler::remap` (dp/sp) passes `norm` and `frac2` through; `method="auto"`
+  resolves to `con` for `norm /= "frac"`. `make check` runs `test_coupler_global`.
+- **coupler**: global <-> regional exchange. Registered grids carry a model cell area
+  (default plane `dx·dy` for projected grids, `grid%area·xy_conv²` otherwise;
+  `coupler_set_area`), supplied as `area1`/`area2` for `remap(..., norm="dst"|"sum")`.
+  `coupler_integral` (with `describe=.true.` it logs the ellipsoidal-area integral as a
+  diagnostic), `coupler_merge_begin/add/end` (`coupler_merge_t`; extensive/intensive,
+  owner weights, order independent, overlap check), `coupler_owner_reduce`,
+  `coupler_split` (optionally as an anomaly against references).
+- **coords**: Gaussian grids with bounds from the Gauss weights: `grid_init_gaussian(grid,
+  name, nlon, nlat [, planet, lon180, x0])`; `grid_init(..., x_bnds=, y_bnds=)` (validated);
+  for explicit-bounds lat-lon/Gauss grids `grid%area` is the latitude-band area (= the
+  quadrature weight `R²Δλw_j` on a sphere). `grid_cdo` writes/reads such bounds as cdo
+  `xbounds`/`ybounds`. `make check` runs `test_gauss_bounds`.
+- **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
+  gate for the coupler/`map_field` apply surface against a reference commit.
+
 ### Changed
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their
   blanks: `units = "kg m-2 yr-1" "mm d-1"` gives `kg m-2 yr-1`, `mm d-1` (before, every
@@ -83,6 +121,28 @@ All notable changes to fesm-utils are documented here.
   and `m w.e.` rates.
 - **fesmdata**: `units_key` now comes from `fesm_fields` and also drops `^`, so
   `kg m^-2 s^-1` is recognised (it was rejected before); other units are unchanged.
+- **coords**: `weight_map_prune` drops links below `cutoff·max(w)` of their target (was
+  `cutoff·Σw`, which drops every link of a target with more than `1/cutoff` near-equal
+  links). Changes newly generated `con`/bilinear maps where slivers were dropped (in the
+  bit-identity harness: the lat-lon <-> polar-stereographic `con` maps and a polar-
+  stereographic -> lat-lon `bilin` map); existing cache files load unchanged.
+- **coords**: `conservative_spherical` drops repeated vertices of a cell polygon (a cell with
+  two corners at a pole). Changes newly generated projected -> lat-lon `con` maps whose
+  target polar row reaches +-90 (in the harness: a pole-covering polar-stereographic grid
+  onto 2 deg and 1.5 deg lon-lat grids).
+- **coords**: `conservative_spherical` skips candidate pairs whose bounding spherical caps
+  do not meet (ANT-16KM -> T64 generation 7.2 s -> 3.8 s serial). Such pairs cannot
+  overlap; only clip-noise links of disjoint polygons (<= 1e-10 of a cell) disappear, so
+  pruned maps are unchanged except for targets whose only links were such noise (polar
+  cells next to mis-built seam source cells in the harness). `bench_conservative` has an
+  ANT-16KM -> T64 regime.
+- **coupler**: no fixed capacity (`GRID_MAX`/`MAP_MAX` removed); grids and maps live in
+  slot arrays that grow by moving their components, and maps are built from the
+  registered grids without copying them. A grid read from `grid_<name>.txt` is read once.
+- **coupler**: `remap` with `src == dst` is a copy (no map); `coupler_prime` with
+  `src == dst` is a no-op. Not bit-identical for a caller that remapped a grid onto itself
+  through the coupler (`(w·v)/w` can differ from `v` by 1 ulp); no downstream caller does
+  (yelmox short-circuits before the coupler).
 - **varslice, coupler, fesmdata, regions, topodata, htopo, zremap**: errors go through
   `fesm_error`; the private `*_error`/`to_str` helpers are removed. The frame header is now
   `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`

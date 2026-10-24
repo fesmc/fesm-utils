@@ -1,6 +1,6 @@
 # coupler: global <-> regional exchange — design note
 
-Status: proposal for review (2026-10-24). No code yet.
+Status: implemented through step 7 (branch phase0-coupler).
 
 Scope: make conservative exchange between N regional projected grids and one
 global grid (lon-lat or Gauss-Legendre, e.g. VILMA2 T64) correct and
