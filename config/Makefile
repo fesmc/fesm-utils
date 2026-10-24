@@ -360,6 +360,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_grid_cf_read.x $(testdir)/coords/test_grid_cf_read.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_coupler_bitident.x $(testdir)/coords/test_coupler_bitident.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
@@ -533,7 +535,7 @@ CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_r
                test_map_init_con test_map_cache test_map_cdo test_map_con_proj \
                test_lon180_wrap test_varslice_map test_ncio_interp test_parity \
                test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
-               test_coupler test_grid_cf_read
+               test_coupler test_grid_cf_read test_coupler_bitident
 CHECK_DATA   = test_regions test_topodata test_htopo
 ICE_DATA     = ../ice_data/v2/NorthTest
 

@@ -30,6 +30,9 @@ docs/figures/zremap/zremap_grl.nc
 maps/
 maps_cache_test/
 maps_cdo_test/
+bitident_maps/
+bitident_out/
+bitident_disk/
 
 # --- build artifacts ----------------------------------------------------------
 *.dSYM
