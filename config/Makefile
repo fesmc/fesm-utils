@@ -543,6 +543,17 @@ test-fields : fesmutils-static
 		@echo "    fesm_fields test programs ready: $(bindir)/test_fields_*.x, $(bindir)/fields_abort_*.x"
 		@echo " "
 
+# fesm_datasrc (field data sources) and its preparatory nml/varslice steps:
+# test programs $(CHECK_DATASRC) in test/datasrc/
+test-datasrc : fesmutils-static
+		for t in $(CHECK_DATASRC); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/datasrc/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		@echo " "
+		@echo "    fesm_datasrc test programs ready in $(bindir)/."
+		@echo " "
+
 # zremap documentation demo (Greenland SMB remapped to the LGM; needs ../ice_data)
 demo-zremap : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/demo_zremap_grl.x $(testdir)/zremap/demo_zremap_grl.f90 \
@@ -591,6 +602,7 @@ CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fie
                test_fields_mask test_fields_units test_fields_link test_fields_restart \
                test_fields_exchange
 CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
+CHECK_DATASRC = test_find_group
 ICE_DATA     = ../ice_data/v2/NorthTest
 
 # $(call check_run,<tests>): run each $(bindir)/<test>.x, log its output and
@@ -632,11 +644,12 @@ check_abort = mkdir -p logs/check; nfail=0; \
 
 .PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
          check-var-io check-series check-varslice check-multitopo check-units \
-         check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields
+         check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields \
+         check-datasrc
 
 check : check-coords check-phys-constants check-root check-ncio check-var-io \
         check-series check-varslice check-multitopo check-units check-varslice-clim \
-        check-tsgen check-zremap check-log check-clock check-fields
+        check-tsgen check-zremap check-log check-clock check-fields check-datasrc
 		@echo " "
 		@echo "    make check: all tests passed (data tests: make check-data)."
 		@echo " "
@@ -672,6 +685,8 @@ check-clock : test-clock
 check-fields : test-fields
 		@$(call check_run,$(CHECK_FIELDS)); rc_run=$$?; \
 		$(call check_abort,$(CHECK_FIELDS_ABORT)) && [ $$rc_run -eq 0 ]
+check-datasrc : test-datasrc
+		@$(call check_run,$(CHECK_DATASRC))
 
 # FesmData tests on the NorthTest grids; need ice_data checked out next to
 # fesm-utils (not available in CI).

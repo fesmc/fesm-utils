@@ -43,6 +43,7 @@ module nml
     public :: nml_validate
     public :: nml_has_param
     public :: nml_has_group
+    public :: nml_find_group
 
 contains
 
@@ -160,6 +161,54 @@ contains
         if (file_unit .eq. -1) close(io)
 
     end function nml_has_group
+
+    function nml_find_group(files, group, what, stat) result(filename)
+        ! The first file of `files` that holds `group` ("" entries are
+        ! skipped). Callers pass the par file first, then their library list
+        ! (e.g. [par_file, var_defs]), so the par file never names itself and
+        ! its groups override the library. Without a match, stops listing the
+        ! group and every file searched; with `stat` present, sets stat = 1 and
+        ! returns "" instead. `what` (optional) names the reader in the message,
+        ! e.g. "&snapshot_lgm tas".
+
+        implicit none
+
+        character(len=*), intent(IN) :: files(:), group
+        character(len=*), intent(IN),  optional :: what
+        integer,          intent(OUT), optional :: stat
+        character(len=len(files)) :: filename
+
+        integer :: i
+
+        if (present(stat)) stat = 0
+        filename = ""
+
+        do i = 1, size(files)
+            if (len_trim(files(i)) == 0) cycle
+            if (nml_has_group(trim(files(i)), trim(group))) then
+                filename = files(i)
+                return
+            end if
+        end do
+
+        write(io_unit_err,*) ""
+        if (present(what)) then
+            write(io_unit_err,*) "nml_find_group:: Error: group &"//trim(group)//" ("//trim(what)// &
+                                 ") is in none of the files:"
+        else
+            write(io_unit_err,*) "nml_find_group:: Error: group &"//trim(group)//" is in none of the files:"
+        end if
+        do i = 1, size(files)
+            if (len_trim(files(i)) > 0) write(io_unit_err,*) "    "//trim(files(i))
+        end do
+
+        if (present(stat)) then
+            stat = 1
+            return
+        end if
+        error stop 1
+
+    end function nml_find_group
 
     ! This is the basic nml reading subroutine.
     ! All interfaces use this to read the parameter, then it
@@ -630,14 +679,16 @@ contains
     ! Validate that every parameter set under group in filename is also
     ! declared (under defaults_group or, if not present, group) in
     ! defaults_file. Reports each unknown parameter; halts at the end if
-    ! halt_on_error (default .TRUE.) and any were found.
-    subroutine nml_validate(filename, defaults_file, group, defaults_group, halt_on_error)
+    ! halt_on_error (default .TRUE.) and any were found. nbad (optional)
+    ! returns the number of unknown parameters.
+    subroutine nml_validate(filename, defaults_file, group, defaults_group, halt_on_error, nbad)
 
         implicit none
 
         character(len=*), intent(IN) :: filename, defaults_file, group
         character(len=*), intent(IN), optional :: defaults_group
         logical,          intent(IN), optional :: halt_on_error
+        integer,          intent(OUT), optional :: nbad
 
         integer, parameter :: MAX_PARAMS = 2000
         character(len=128) :: names(MAX_PARAMS)
@@ -654,6 +705,7 @@ contains
 
         call nml_collect_group_params(filename, group, names, n_user)
 
+        if (present(nbad)) nbad = 0
         any_err = .false.
         do i = 1, n_user
             call nml_find_param(defaults_file, trim(def_group_actual), trim(names(i)), &
@@ -669,6 +721,7 @@ contains
                 end if
                 write(io_unit_err,*) "  unknown:      ", trim(names(i))
                 any_err = .true.
+                if (present(nbad)) nbad = nbad + 1
             end if
         end do
 

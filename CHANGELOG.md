@@ -25,6 +25,10 @@ All notable changes to fesm-utils are documented here.
   `dp`/`sp` and 0-D/2-D/3-D), `fields_finalize_interval`, `fields_check_link`,
   `fields_describe`, `fields_restart_write`/`_read`, and `units_key`, `units_canonical`,
   `units_equivalent`. `make check-fields` (with expected-abort programs, `check_abort`).
+- **nml**: `nml_find_group(files, group [, what, stat])`, the first file of a list that
+  holds a group (par file first, then the library list; stops listing every file, or
+  `stat = 1`); replaces yelmox `var_defs_find`. `nml_validate(..., nbad)` returns the
+  number of unknown keys.
 
 ### Changed
 - **fesmdata**: `units_key` now comes from `fesm_fields` and also drops `^`, so
