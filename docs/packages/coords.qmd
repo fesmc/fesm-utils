@@ -49,7 +49,7 @@ and re-exported by `use coords`.
 |------|------|
 | `coord_system` | Coordinate-reference metadata (`mtype`, `units`, `planet`, `proj`, `xy_conv`, `is_cartesian`, `is_projection`, `is_lon180`). Defined once and embedded as `%cs` in every geometry type. |
 | `points_class` | An unstructured set of points: `npts`, 1D arrays `x, y, lon, lat, area`, and `%cs`. |
-| `grid_axis_class` | Regular axis description: `nx, ny, x0, dx, y0, dy` and the axis vectors `x(:), y(:)` (supports explicit non-uniform axes, e.g. Gaussian latitudes). |
+| `grid_axis_class` | Regular axis description: `nx, ny, x0, dx, y0, dy`, the axis vectors `x(:), y(:)` (supports explicit non-uniform axes, e.g. Gaussian latitudes) and the cell edges `x_bnds(0:nx), y_bnds(0:ny)`. The edges are filled at `grid_init` (default: adjacent midpoints, half-cell extrapolation at the ends, `axis_midpoint_bounds`; `explicit_bnds` records given bounds) and are the one source of cell edges for `grid_area` and the conservative generators. |
 | `grid_class` | A regular grid: `name`, axis block `%G` (`grid_axis_class`), 2D arrays `x, y, lon, lat, area`, and `%cs`. |
 | `map_class` | Public map wrapper: source/target names (`name1`, `name2`), target coordinate system `%cs`, target axes `%G`, fixed interpolation `method`, and the internal weight store `%wm`. |
 | `weight_map_t` | The single sparse source→target store (link-centric, SCRIP-style). Usually accessed only through `map_class`; see below. |
@@ -205,19 +205,36 @@ call coupler_add_grid(cpl, "fine",   gfine)
 call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
 ```
 
-- `coupler_add_grid(cpl, name, grid)` registers a grid; unregistered names are
-  resolved on demand from `grid_<name>.txt` in the map folder.
-- `remap(cpl, var_src, src, var_dst, dst, method, stat)` finds-or-builds the map
+- `coupler_add_grid(cpl, name, grid)` registers a copy of a grid (once, at
+  init); `coupler_take_grid(cpl, name, grid)` moves an allocatable grid in
+  without a copy (for very large grids). Unregistered names are resolved on
+  demand from `grid_<name>.txt` in the map folder, read once into a "from
+  disk" slot and reused. Registering a name that is already a from-disk slot
+  is a no-op if the grids agree and an error otherwise.
+- `remap(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2,
+  reset, mask_pack, fill_method, filt_method, filt_par)` finds-or-builds the map
   for `(src, dst, method)`, allocates `var_dst` to the target size, and applies
-  it. It is overloaded for `dp` / `sp` / `int` and 2D / 3D fields. `method` is
-  part of the cache key; `stat` is forwarded per call and is not.
+  it with `map_field`, to which the optional arguments are passed unchanged. It
+  is overloaded for `dp` / `sp` / `int` and 2D / 3D fields (the `int`
+  specifics take `missing_value, mask2, reset, mask_pack`; for 3D, `mask2` is
+  3D and the map is applied per layer). With `reset=.false.`, `var_dst` must
+  already be allocated at the target shape. `method` is part of the cache key;
+  `stat` and the rest are forwarded per call and are not.
+- `method="auto"` resolves per call: `"bilin"` when the target is finer than
+  the source (smaller median model cell area, i.e. refining) and `"con"` when
+  it is coarser or equal. The model cell area is the plane `dx·dy` for a
+  projected grid and `grid%area·xy_conv²` otherwise.
+- `remap` with `src == dst` copies the field (no map, no registration needed):
+  `mask_pack`, `reset`, `fill_method` and `filt_*` still apply, `mask2` is
+  `var /= missing_value`, and `stat="stdev"` gives 0.
 - `coupler_prime(cpl, src, dst, method, gen)` eagerly builds a map up front
   (fail-fast at init rather than mid-timestep) and is the point at which a map's
-  generator can be overridden via `gen=`.
+  generator can be overridden via `gen=`. It is a no-op for `src == dst`.
 
-Each map is built once, stored once in fixed-capacity storage, and shared across
-all callers, so adding a map never reallocates or deep-copies the large weight
-arrays already built.
+Each map is built once, stored once, and shared across all callers. Grids and
+maps live in allocatable slot arrays without a fixed capacity: when an array
+grows, each slot's grid / map is moved (`move_alloc`), never copied, and maps
+are built directly from the registered grids.
 
 ## See also
 

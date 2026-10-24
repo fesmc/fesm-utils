@@ -62,6 +62,7 @@ module mapping
     end interface
 
     public :: map_class, map_init, map_field, map_read, map_init_conservative
+    public :: map_postprocess
 
 contains
 

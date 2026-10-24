@@ -10,7 +10,26 @@ All notable changes to fesm-utils are documented here.
   `fesm_error(proc, msg [, detail] [, stat])` (framed message on `error_unit`, then
   `error stop 1`, or `stat = 1` and return), and `to_str`. `make test-log`.
 
+- **coords**: `grid_axis_class` carries the cell edges `x_bnds(0:nx)`, `y_bnds(0:ny)` and
+  `explicit_bnds`, filled at `grid_init`; `grid_area` and the conservative generators read
+  them (bit-identical to the previous midpoint edges). `axis_midpoint_bounds` is public.
+- **coupler**: `coupler_take_grid(cpl, name, grid)` moves a grid in without a copy;
+  `remap` passes `missing_value, mask2, reset, mask_pack, fill_method, filt_method,
+  filt_par` through to `map_field` (the `int` specifics: `missing_value, mask2, reset,
+  mask_pack`); `method="auto"` (`bilin` when refining, `con` when coarsening, by median
+  model cell area).
+- **coords**: `map_postprocess` (the fill/filter pass of `map_field`) is public.
+- **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
+  gate for the coupler/`map_field` apply surface against a reference commit.
+
 ### Changed
+- **coupler**: no fixed capacity (`GRID_MAX`/`MAP_MAX` removed); grids and maps live in
+  slot arrays that grow by moving their components, and maps are built from the
+  registered grids without copying them. A grid read from `grid_<name>.txt` is read once.
+- **coupler**: `remap` with `src == dst` is a copy (no map); `coupler_prime` with
+  `src == dst` is a no-op. Not bit-identical for a caller that remapped a grid onto itself
+  through the coupler (`(w·v)/w` can differ from `v` by 1 ulp); no downstream caller does
+  (yelmox short-circuits before the coupler).
 - **varslice, coupler, fesmdata, regions, topodata, htopo, zremap**: errors go through
   `fesm_error`; the private `*_error`/`to_str` helpers are removed. The frame header is now
   `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`

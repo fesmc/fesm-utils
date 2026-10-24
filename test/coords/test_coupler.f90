@@ -4,7 +4,13 @@ program test_coupler
     !   * the map cache builds each (src,dst,method) edge once and reuses it,
     !   * method defaults to "con", and is part of the cache key,
     !   * remap sizes the destination array on demand (2D and 3D),
-    !   * coupler_prime pre-builds without adding duplicate maps.
+    !   * coupler_prime pre-builds without adding duplicate maps,
+    !   * the slot arrays grow past 16 grids / 64 maps (no fixed capacity),
+    !   * remap with src == dst copies (identity shortcut, no map),
+    !   * mask2 / mask_pack / reset are passed through to map_field,
+    !   * coupler_take_grid moves a grid in; a from_disk name re-registered
+    !     with an agreeing grid is a no-op,
+    !   * method="auto" resolves to bilin when refining and con when coarsening.
 
     use coords
     use coupler
@@ -169,6 +175,160 @@ program test_coupler
             end if
         end if
         call execute_command_line("rm -rf "//dfldr)
+    end block
+
+    ! --- Test 7: growth past 16 grids / 64 maps ---------------------------------
+    block
+        type(coupler_class) :: cg
+        type(grid_class)    :: gg
+        real(dp), allocatable :: a(:,:), b(:,:), b0(:,:)
+        character(len=32) :: nm(18)
+        integer :: n, m, cnt
+        character(len=*), parameter :: gfldr = "maps_coupler_grow_test"
+
+        call execute_command_line("rm -rf "//gfldr)
+        call coupler_init(cg, map_fldr=gfldr)
+        do n = 1, 18
+            write(nm(n), "(a,i0)") "grow-", n
+            call grid_init(gg, name=trim(nm(n)), mtype="cartesian", units="kilometers", &
+                           x0=0.0_dp, dx=100.0_dp/real(n,dp), nx=n+3, y0=0.0_dp, dy=100.0_dp/real(n,dp), ny=4)
+            call coupler_add_grid(cg, trim(nm(n)), gg)
+        end do
+        allocate(a(4,4)); a = 1.0_dp
+        a(2,3) = 5.0_dp
+        call remap(cg, a, trim(nm(1)), b0, trim(nm(2)), method="nn")
+        cnt = 0
+        outer: do n = 1, 18
+            do m = 1, 18
+                if (m == n) cycle
+                if (allocated(a)) deallocate(a)
+                allocate(a(n+3,4)); a = real(n,dp)
+                call remap(cg, a, trim(nm(n)), b, trim(nm(m)), method="nn")
+                cnt = cnt + 1
+                if (cnt >= 66) exit outer
+            end do
+        end do outer
+        if (cg%ngrids /= 18 .or. cg%nmaps /= 66) then
+            write(*,*) "FAIL: growth: ngrids, nmaps =", cg%ngrids, cg%nmaps, " expected 18, 66"
+            fails = fails + 1
+        end if
+        ! the first map is still valid after both slot arrays grew
+        deallocate(a); allocate(a(4,4)); a = 1.0_dp; a(2,3) = 5.0_dp
+        call remap(cg, a, trim(nm(1)), b, trim(nm(2)), method="nn")
+        if (any(b /= b0) .or. cg%nmaps /= 66) then
+            write(*,*) "FAIL: growth: first map changed or rebuilt"; fails = fails + 1
+        else
+            write(*,*) "growth: 18 grids, 66 maps ok"
+        end if
+        call execute_command_line("rm -rf "//gfldr)
+    end block
+
+    ! --- Test 8: identity shortcut -----------------------------------------------
+    block
+        real(dp), allocatable :: fid(:,:), fk(:,:)
+        logical,  allocatable :: m2(:,:), mp(:,:)
+        integer :: nm0
+
+        nm0 = cpl%nmaps
+        fs(3,4) = mv_dp
+        allocate(m2(11,11), mp(11,11))
+        call remap(cpl, fs, "coupler-coarse", fid, "coupler-coarse", method="con", mask2=m2)
+        if (any(fid /= fs) .or. any(m2 .neqv. (fs /= mv_dp)) .or. cpl%nmaps /= nm0) then
+            write(*,*) "FAIL: identity remap is not a copy (or built a map)"; fails = fails + 1
+        end if
+        ! unregistered name: no registration needed
+        call remap(cpl, fs, "not-registered", fid, "not-registered")
+        if (any(fid /= fs) .or. cpl%ngrids /= 2) then
+            write(*,*) "FAIL: identity remap on an unregistered name"; fails = fails + 1
+        end if
+        ! mask_pack + reset=.false. keep the destination outside the pack
+        mp = .true.; mp(1:5,:) = .false.
+        allocate(fk(11,11)); fk = -1.0_dp
+        call remap(cpl, fs, "coupler-coarse", fk, "coupler-coarse", mask_pack=mp, reset=.false.)
+        if (any(fk(1:5,:) /= -1.0_dp) .or. any(fk(6:,:) /= fs(6:,:))) then
+            write(*,*) "FAIL: identity remap with mask_pack/reset=.false."; fails = fails + 1
+        end if
+        call remap(cpl, fs, "coupler-coarse", fid, "coupler-coarse", stat="stdev")
+        if (any(fid /= merge(0.0_dp, mv_dp, fs /= mv_dp))) then
+            write(*,*) "FAIL: identity remap stat=stdev is not 0"; fails = fails + 1
+        end if
+        call coupler_prime(cpl, "coupler-fine", "coupler-fine")
+        if (cpl%nmaps /= nm0) then
+            write(*,*) "FAIL: coupler_prime(src == dst) built a map"; fails = fails + 1
+        end if
+        fs(3,4) = flin(gs%x(3,4), gs%y(3,4))
+        write(*,*) "identity shortcut ok"
+    end block
+
+    ! --- Test 9: mask2 / mask_pack pass-through ------------------------------------
+    block
+        type(map_class) :: mp_direct
+        real(dp), allocatable :: fr(:,:), fd(:,:)
+        logical,  allocatable :: m2r(:,:), m2d(:,:), mpk(:,:)
+        allocate(m2r(21,21), m2d(21,21), mpk(21,21), fd(21,21))
+        mpk = .true.; mpk(:,1:4) = .false.
+        fs(5,5) = mv_dp
+        call remap(cpl, fs, "coupler-coarse", fr, "coupler-fine", method="con", mask2=m2r, mask_pack=mpk)
+        call map_init(mp_direct, gs, gt, method="con", fldr=fldr)
+        call map_field(mp_direct, "x", fs, fd, mask2=m2d, mask_pack=mpk)
+        if (any(fr /= fd) .or. any(m2r .neqv. m2d) .or. count(m2r) == size(m2r)) then
+            write(*,*) "FAIL: mask2/mask_pack pass-through differs from map_field"; fails = fails + 1
+        else
+            write(*,*) "mask2 pass-through ok (", count(m2r), " of", size(m2r), " mapped)"
+        end if
+        fs(5,5) = flin(gs%x(5,5), gs%y(5,5))
+    end block
+
+    ! --- Test 10: coupler_take_grid; from_disk re-registration ---------------------
+    block
+        type(coupler_class) :: ct
+        type(grid_class), allocatable :: gtake
+        real(dp), allocatable :: ftk(:,:)
+        character(len=*), parameter :: tfldr = "maps_coupler_take_test"
+
+        call execute_command_line("rm -rf "//tfldr//" ; mkdir -p "//tfldr)
+        call coupler_init(ct, map_fldr=tfldr)
+        allocate(gtake, source=gt)
+        call coupler_take_grid(ct, "coupler-fine", gtake)
+        if (allocated(gtake)) then
+            write(*,*) "FAIL: coupler_take_grid left the grid allocated"; fails = fails + 1
+        end if
+        ! coarse grid resolved from disk, then registered with the same grid
+        call grid_cdo_write_desc_short(gs, tfldr)
+        call remap(ct, fs, "coupler-coarse", ftk, "coupler-fine", method="bilin")
+        call coupler_add_grid(ct, "coupler-coarse", gs)          ! agrees: no-op
+        if (ct%ngrids /= 2 .or. .not. ct%grids(2)%from_disk) then
+            write(*,*) "FAIL: take/disk registry state"; fails = fails + 1
+        end if
+        call remap(cpl, fs, "coupler-coarse", ft, "coupler-fine", method="bilin")
+        if (any(ftk /= ft)) then
+            write(*,*) "FAIL: remap through a taken / disk grid differs"; fails = fails + 1
+        else
+            write(*,*) "take_grid + from_disk ok"
+        end if
+        call execute_command_line("rm -rf "//tfldr)
+    end block
+
+    ! --- Test 11: method="auto" ------------------------------------------------------
+    block
+        type(coupler_class) :: ca
+        real(dp), allocatable :: fa(:,:), fb(:,:)
+        character(len=*), parameter :: afldr = "maps_coupler_auto_test"
+
+        call execute_command_line("rm -rf "//afldr)
+        call coupler_init(ca, map_fldr=afldr)
+        call coupler_add_grid(ca, "coupler-coarse", gs)
+        call coupler_add_grid(ca, "coupler-fine",   gt)
+        call remap(ca, fs, "coupler-coarse", fa, "coupler-fine", method="auto")     ! refining
+        call remap(ca, fa, "coupler-fine", fb, "coupler-coarse", method="auto")     ! coarsening
+        if (ca%nmaps /= 2 .or. trim(ca%maps(1)%method) /= "bilin" .or. trim(ca%maps(2)%method) /= "con") then
+            write(*,*) "FAIL: method=auto resolved to ", trim(ca%maps(1)%method), " / ", &
+                       trim(ca%maps(2)%method), " (expected bilin / con)"
+            fails = fails + 1
+        else
+            write(*,*) "method=auto ok (refine: bilin, coarsen: con)"
+        end if
+        call execute_command_line("rm -rf "//afldr)
     end block
 
     call execute_command_line("rm -rf "//fldr)
