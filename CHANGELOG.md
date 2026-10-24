@@ -49,6 +49,8 @@ All notable changes to fesm-utils are documented here.
   concatenated over multifile sets, strictly increasing (irregular axes allowed); `n_sub`
   inferred; `mode = auto` resolved from the file (CF `climatology` attribute: clim). New
   `par%time_units`, `par%calendar` (keys; `"clock"`: values as they stand), `par%time_name`.
+- **varslice**: `par%units_file`, the `units` attribute of the variable (`""` without);
+  stored only.
 
 ### Changed
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their

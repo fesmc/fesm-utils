@@ -67,6 +67,11 @@ module varslice
         character(len=32)   :: calendar   = ""
         character(len=56)   :: time_name  = ""
 
+        ! The units attribute of the variable in the (first) file; "" without
+        ! one. Metadata: varslice converts nothing (scaling does), a caller
+        ! such as fesm_datasrc checks it against the group's units.
+        character(len=128)  :: units_file = ""
+
         ! Internal parameters
         integer  :: ndim 
         real(dp) :: time_par(4) 
@@ -1483,6 +1488,11 @@ contains
         ! Get information from netcdf file - first file in case their are multiple sources 
         call nc_dims(filename_dims,vs%par%name,dim_names,vs%dim)
         vs%par%ndim = size(vs%dim,1)
+
+        ! Units of the variable in the file (metadata)
+        vs%par%units_file = ""
+        if (nc_exists_attr(filename_dims,vs%par%name,"units")) &
+            call nc_read_attr(filename_dims,vs%par%name,"units",vs%par%units_file)
 
         ! Determine total time dimension size and cache the per-file time
         ! lengths. nt_files is reused by nc_read_multifile so it need not

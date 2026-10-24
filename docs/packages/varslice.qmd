@@ -54,6 +54,7 @@ Static configuration for one variable, mostly loaded from the namelist.
 | `time_from_file` | `logical` | The time axis is read from the file (`time(1) < 0` or no `time` key) |
 | `time_units`, `calendar` | `character` | Override the attributes of the time coordinate (`""`: the attributes; `time_units = "clock"`: clock years as they stand) |
 | `time_name` | `character(len=56)` | Name of the time coordinate (the variable's last dimension) |
+| `units_file` | `character(len=128)` | The `units` attribute of the variable in the (first) file, `""` without one; metadata (a caller such as [fesm_datasrc](datasrc.qmd) checks it) |
 
 ### `varslice_class`
 
