@@ -51,6 +51,11 @@ All notable changes to fesm-utils are documented here.
   `par%time_units`, `par%calendar` (keys; `"clock"`: values as they stand), `par%time_name`.
 
 ### Changed
+- **nml**: string vectors split at blanks outside quotes, so quoted elements keep their
+  blanks: `units = "kg m-2 yr-1" "mm d-1"` gives `kg m-2 yr-1`, `mm d-1` (before, every
+  quote was removed first and the value split at each blank: `kg`, `m-2`). Unquoted and
+  single-string values are read as before. A comment after a group name
+  (`&ice_bg   ! data ice`) is allowed (it was read as part of the name).
 - **fesmdata**: `fesmdata_flux_conv` and `fesmdata_temp_ref` are calls to `units_conv`
   (identical factors, checked bit-for-bit); `fesmdata_flux_conv` also accepts `kg/m2/s`
   and `m w.e.` rates.

@@ -1387,47 +1387,56 @@ contains
     end function string_to_logical
 
     subroutine string_to_vector(string,value)
+        ! Split a value string into its elements: separated by blanks outside
+        ! quotes, so a quoted element keeps its blanks ("kg m-2 yr-1" "mm d-1"
+        ! is two elements); quotes and a trailing comma are then removed from
+        ! each element (remove_quotes_comma).
 
         implicit none 
 
         character(len=*), intent(IN) :: string 
         character(len=*) :: value(:)
         character(len=256) :: tmpvec(size(value))
-        character(len=256) :: tmpstr, fmt 
-        integer :: stat, n, q, q1, q2, j 
+        character(len=256) :: tmpstr
+        character(len=1)   :: quote
+        integer :: n, i, q, i0
 
         tmpstr = trim(adjustl(string))
-        n      = len_trim(tmpstr)+2
+        n      = len_trim(tmpstr)
 
         tmpvec(:) = "" 
 
-        q1 = 1 
-        do q = 1, size(tmpvec)
-            q2 = index(tmpstr(q1:n)," ") + q1
-            if (q2 .gt. q1 .and. q2 .le. n) then 
-                tmpvec(q) = tmpstr(q1:q2-1)
-                q1 = q2
+        q     = 0
+        i0    = 0
+        quote = " "
+        do i = 1, n
+            if (quote /= " ") then
+                ! Inside quotes: only the closing quote matters
+                if (tmpstr(i:i) == quote) quote = " "
+            else if (tmpstr(i:i) == " ") then
+                if (i0 > 0) call push(i0, i-1)
+                i0 = 0
+            else
+                if (i0 == 0) i0 = i
+                if (tmpstr(i:i) == '"' .or. tmpstr(i:i) == "'") quote = tmpstr(i:i)
+            end if
+        end do
+        if (i0 > 0) call push(i0, n)
 
-                ! Make sure gaps of more than one space are properly handled
-                do j = 1, 1000
-                    if (tmpstr(q1:q1) == " ") q1 = q1+1
-                    if (q1 .ge. n) exit 
-                end do 
-
-!                 ! Eliminate quotes
-!                 q2 = len_trim(tmpvec(q))
-!                 if (tmpvec(q)(1:1) == '"') tmpvec(q) = trim(adjustl(tmpvec(q)(2:q2)))
-!                 q2 = len_trim(tmpvec(q))
-!                 if (tmpvec(q)(q2:q2) == '"') tmpvec(q) = trim(tmpvec(q)(1:q2-1))
-                ! Remove quotes around string if they exist 
-                call remove_quotes_comma(tmpvec(q))
-            
-            end if 
-        end do 
-        
         value = tmpvec 
 
         return 
+
+    contains
+
+        subroutine push(a, b)
+            integer, intent(IN) :: a, b
+            if (q >= size(tmpvec)) return
+            q = q + 1
+            tmpvec(q) = tmpstr(a:b)
+            ! Remove quotes around string if they exist 
+            call remove_quotes_comma(tmpvec(q))
+        end subroutine push
 
     end subroutine string_to_vector
 
@@ -1463,9 +1472,15 @@ contains
             linetype = -1 
             comment = trim(line1)
 
-        else if (line1(1:1) == "&") then    ! Group name 
+        else if (line1(1:1) == "&") then    ! Group name, possibly followed by a comment
             linetype = 1 
-            q = len_trim(line1)
+            q = index(line1,"!")
+            if (q > 0) then
+                comment = trim(adjustl(line1(q:)))
+                q = len_trim(line1(1:q-1))
+            else
+                q = len_trim(line1)
+            end if
             name     = line1(2:q)
 
         else if (line1(1:1) == "/") then    ! End of group 
@@ -1494,14 +1509,37 @@ contains
                 value   = trim(adjustl(line1(q+1:q2)))
             end if 
 
-            ! Remove quotes around string, and final line comma, if they exist
-            call remove_quotes_comma(value)
+            ! Remove quotes around a single string, and final line comma, if
+            ! they exist. Several quoted elements keep their quotes, so that
+            ! string_to_vector splits them at blanks outside quotes only.
+            if (count_quoted(value) <= 1) call remove_quotes_comma(value)
 
         end if 
 
         return 
 
-    end subroutine parse_line 
+    end subroutine parse_line
+
+    integer function count_quoted(value)
+        ! Number of quoted strings in value ('...' or "...").
+
+        implicit none
+        character(len=*), intent(IN) :: value
+        character(len=1) :: quote
+        integer :: i
+
+        count_quoted = 0
+        quote = " "
+        do i = 1, len_trim(value)
+            if (quote /= " ") then
+                if (value(i:i) == quote) quote = " "
+            else if (value(i:i) == '"' .or. value(i:i) == "'") then
+                quote = value(i:i)
+                count_quoted = count_quoted + 1
+            end if
+        end do
+
+    end function count_quoted 
 
     subroutine remove_quotes_comma(string)
 

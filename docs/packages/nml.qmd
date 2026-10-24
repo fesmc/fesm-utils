@@ -152,6 +152,11 @@ comma-separated lists on the value side.
 /
 ```
 
+A vector of strings splits at blanks outside quotes, so quoted elements may hold
+blanks: `units = "kg m-2 yr-1" "mm d-1"` is the two elements `kg m-2 yr-1` and
+`mm d-1`. A single quoted string is read as it is. A group name may be followed
+by a comment (`&ice_bg   ! data ice on the globe`).
+
 The parser also accepts equivalent flat lines, e.g.
 `tsgen_sin.f_max = 10.0`, with one or several `group.param = value` assignments
 per line.
