@@ -58,6 +58,12 @@ All notable changes to fesm-utils are documented here.
   two corners at a pole). Changes newly generated projected -> lat-lon `con` maps whose
   target polar row reaches +-90 (in the harness: a pole-covering polar-stereographic grid
   onto 2 deg and 1.5 deg lon-lat grids).
+- **coords**: `conservative_spherical` skips candidate pairs whose bounding spherical caps
+  do not meet (ANT-16KM -> T64 generation 7.2 s -> 3.8 s serial). Such pairs cannot
+  overlap; only clip-noise links of disjoint polygons (<= 1e-10 of a cell) disappear, so
+  pruned maps are unchanged except for targets whose only links were such noise (polar
+  cells next to mis-built seam source cells in the harness). `bench_conservative` has an
+  ANT-16KM -> T64 regime.
 - **coupler**: no fixed capacity (`GRID_MAX`/`MAP_MAX` removed); grids and maps live in
   slot arrays that grow by moving their components, and maps are built from the
   registered grids without copying them. A grid read from `grid_<name>.txt` is read once.

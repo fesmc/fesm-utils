@@ -372,7 +372,9 @@ contains
         real(dp) :: olon(64), olat(64)
         type(link_buf), allocatable :: bufs(:)
         logical,  allocatable :: linked(:)
-        real(dp) :: cx, cy, cz
+        real(dp), allocatable :: srad(:)                   ! source cap radii [rad]
+        real(dp) :: cx, cy, cz, trad, ang
+        real(dp), parameter :: CAP_MARGIN = 1.0e-9_dp      ! [rad], ~6 mm
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
@@ -389,6 +391,20 @@ contains
             end do
         end do
         call kdtree_build(tree, emb)
+
+        ! Spherical-cap pre-reject: each cell polygon lies in the cap around its
+        ! centre whose radius reaches its farthest vertex (caps < 90 deg are
+        ! convex, so they contain the great-circle edges too). A candidate pair
+        ! whose caps do not meet cannot overlap and is not clipped; the weights
+        ! do not change (docs/dev/coupler-global-design.md, 7 i).
+        allocate(srad(n1))
+        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
+        do cs = 1, n1
+            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
+            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
+            srad(cs) = cap_radius(emb(:,cs), sv)
+        end do
+        !$omp end parallel do
 
         ! candidate radius (chord on unit sphere): source + target angular cell
         ! size, both in DEGREES. grid2 is the lat-lon/Gaussian target, so its dx/dy
@@ -412,7 +428,7 @@ contains
 
         !$omp parallel default(shared) &
         !$omp   private(i, j, c, cc, cs, ic, jc, nf, no, nv, tlon, tlat, cx, cy, cz, area, &
-        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid)
+        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid, trad, ang)
         tid = 0
         !$ tid = omp_get_thread_num()
         allocate(cidx(n1), cd2(n1))
@@ -423,9 +439,12 @@ contains
                 call cell_corners_lonlat(grid2, i, j, tlon, tlat)
                 call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
                 call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
+                trad = cap_radius([cx,cy,cz], cv)
                 call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
                 do cc = 1, nf
                     cs = cidx(cc)
+                    ang = acos(max(-1.0_dp, min(1.0_dp, emb(1,cs)*cx + emb(2,cs)*cy + emb(3,cs)*cz)))
+                    if (ang > srad(cs) + trad + CAP_MARGIN) cycle
                     ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
                     call build_sphere_poly(slon(:,cs), slat(:,cs), &
                                            grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
@@ -475,8 +494,21 @@ contains
         call weight_map_coverage(wm, set_cov=.true.)
 
         call kdtree_free(tree)
-        deallocate(emb, slon, slat, bufs, linked)
+        deallocate(emb, slon, slat, bufs, linked, srad)
     end subroutine conservative_spherical
+
+    real(dp) function cap_radius(ctr, verts) result(r)
+        ! Angular radius [rad] of the cap around unit vector ctr that holds
+        ! all polygon vertices.
+        real(dp), intent(in) :: ctr(3), verts(:,:)
+        real(dp) :: dmin
+        integer  :: k
+        dmin = 1.0_dp
+        do k = 1, size(verts, 2)
+            dmin = min(dmin, ctr(1)*verts(1,k) + ctr(2)*verts(2,k) + ctr(3)*verts(3,k))
+        end do
+        r = acos(max(-1.0_dp, min(1.0_dp, dmin)))
+    end function cap_radius
 
     real(dp) function sphere_poly_area(verts, a, f) result(area)
         ! Area on the planet (a, f) of a polygon given as unit vectors.

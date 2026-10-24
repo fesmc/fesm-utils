@@ -12,7 +12,9 @@ program bench_conservative
     !             max |coords - cdo| on a smooth field where both apply.
     !
     ! Regimes: cartesian->cartesian (planar, no cdo equivalent), latlon->stereo-
-    ! graphic (planar cross-system), latlon->latlon (spherical, NSUB great-circle).
+    ! graphic (planar cross-system), latlon->latlon (separable), polar-
+    ! stereographic Antarctica -> Gaussian T64 (spherical, NSUB great-circle;
+    ! the regional -> global coupling case).
     ! A short IDW section compares coords kdtree shepard vs `cdo gendis`.
 
     use coords
@@ -46,6 +48,8 @@ program bench_conservative
     call regime_latlon_to_latlon(1.5_dp)
     call regime_latlon_to_latlon(1.0_dp)
     call regime_latlon_to_latlon(0.75_dp)
+
+    call regime_proj_to_gauss(16.0_dp)
 
     write(*,"(a)") ""
     write(*,"(a)") "# IDW: coords kdtree shepard vs cdo gendis (latlon -> stereographic)"
@@ -286,6 +290,22 @@ contains
                        x0=0.0_dp, dx=dxdeg, nx=nx, y0=-90.0_dp, dy=dxdeg, ny=ny)
         call bench_row(trim(lab), trim(tag), gs, gt, use_cdo=.true., full_cover=.false.)
     end subroutine regime_latlon_to_latlon
+
+    subroutine regime_proj_to_gauss(dxkm)
+        ! ANT-<dx>KM polar stereographic -> Gaussian T64 (nlat 96, nlon 192)
+        real(dp), intent(in) :: dxkm
+        type(grid_class) :: gs, gt
+        integer :: n
+        character(len=64) :: lab, tag
+        write(lab,"(a,i0,a)") "ANT-", nint(dxkm), "KM->T64"
+        write(tag,"(a,i0)") "ant2t64_", nint(dxkm)
+        n = nint(6080.0_dp/dxkm) + 1
+        call grid_init(gs, name="ants", mtype="polar_stereographic", units="kilometers", planet="WGS84", &
+                       lon180=.false., x0=-3040.0_dp, dx=dxkm, nx=n, y0=-3040.0_dp, dy=dxkm, ny=n, &
+                       lambda=0.0_dp, phi=-71.0_dp)
+        call grid_init_gaussian(gt, "t64", nlon=192, nlat=96, planet="WGS84")
+        call bench_row(trim(lab), trim(tag), gs, gt, use_cdo=.true., full_cover=.false.)
+    end subroutine regime_proj_to_gauss
 
     subroutine regime_idw(dxkm)
         real(dp), intent(in) :: dxkm
