@@ -148,6 +148,16 @@ All notable changes to fesm-utils are documented here.
   `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`
   (were stdout); `coupler` stops with `error stop 1` (was `stop 1`).
 
+### Fixed
+- **coords**: `conservative_spherical` builds each source cell polygon by sampling its
+  edges in the source grid's plane (NSUB = 8 per edge) and inverse-projecting every
+  sample; it interpolated the 4 inverse-projected corners in lon/lat, so projected cells
+  across the 0/360 meridian or around the pole were mis-built (a garbage meridian strip in
+  every pole-covering ANT/GRL map). The loop is source-major (each source polygon built
+  once; links of every target in ascending source order for any thread count). Changes
+  newly generated projected -> lon-lat/Gauss `con` maps (in the bit-identity harness:
+  `bi-ps` onto `bi-ll2`, `bi-ls`, `bi-gauss`); existing cache files load unchanged.
+
 ## [v1.4] - 2026-10-23
 
 ### Added

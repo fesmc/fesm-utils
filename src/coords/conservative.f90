@@ -354,57 +354,50 @@ contains
 
     subroutine conservative_spherical(wm, grid1, grid2)
         ! Stage C: clip on the unit sphere for lat-lon / Gaussian targets. Cell
-        ! parallels (constant-latitude edges) are subsampled into NSUB great-
-        ! circle segments; overlap area is the geodesic polygon area.
+        ! polygons have NSUB great-circle segments per edge, sampled in each
+        ! grid's own axis plane (axis_cell_poly); the overlap area is the
+        ! geodesic polygon area on the target planet.
+        !
+        ! Source-major: each source polygon is built once (NSUB inverse
+        ! projections per edge), its candidate targets come from a k-d tree
+        ! over the target centres, and it is clipped against each candidate.
+        ! The static schedule gives each thread one contiguous range of sources,
+        ! so the links of every target are stored in ascending source order for
+        ! any thread count.
         type(weight_map_t), intent(inout) :: wm
         type(grid_class),   intent(in)    :: grid1, grid2
 
         type(kdtree_t) :: tree
-        integer  :: n1, n2, nx1, ny1, nx2, ny2
-        integer  :: i, j, ic, jc, c, cs, cc, nf, no, nv, nthreads, tid
-        real(dp) :: rad, area, a, f, srcdeg, tgtdeg
-        real(dp), allocatable :: emb(:,:)
-        real(dp), allocatable :: slon(:,:), slat(:,:)     ! source cell corners (lon/lat)
-        real(dp) :: tlon(4), tlat(4)
+        integer  :: n1, n2, nx1, nx2
+        integer  :: i, j, ic, jc, k, cs, cc, nf, no, nv, nthreads, tid
+        real(dp) :: rad, area, a, f, srcdeg, tgtdeg, srad, ang, ctr(3)
+        real(dp), allocatable :: emb(:,:), trad(:), wfull_src(:)
         integer,  allocatable :: cidx(:)
-        real(dp), allocatable :: cd2(:)
-        real(dp), allocatable :: sv(:,:), cv(:,:), ov(:,:)
-        real(dp) :: olon(64), olat(64)
+        real(dp), allocatable :: cd2(:), sv(:,:), cv(:,:), ov(:,:)
+        real(dp) :: olon(8*NSUB), olat(8*NSUB)   ! clip output: <= 4*NSUB + 4*NSUB vertices
         type(link_buf), allocatable :: bufs(:)
-        logical,  allocatable :: linked(:)
-        real(dp), allocatable :: srad(:)                   ! source cap radii [rad]
-        real(dp) :: cx, cy, cz, trad, ang
+        logical  :: linked
         real(dp), parameter :: CAP_MARGIN = 1.0e-9_dp      ! [rad], ~6 mm
 
-        nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
-        nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
+        nx1 = grid1%G%nx; n1 = nx1*grid1%G%ny
+        nx2 = grid2%G%nx; n2 = nx2*grid2%G%ny
         a = grid2%cs%planet%a; f = grid2%cs%planet%f
 
-        ! Source cell corners as lon/lat, plus 3D centers for the tree
-        allocate(slon(4,n1), slat(4,n1), emb(3,n1))
-        do jc = 1, ny1
-            do ic = 1, nx1
-                cs = (jc-1)*nx1 + ic
-                call cell_corners_lonlat(grid1, ic, jc, slon(:,cs), slat(:,cs))
-                call lonlat_to_xyz(grid1%lon(ic,jc), grid1%lat(ic,jc), cx, cy, cz)
-                emb(1,cs) = cx; emb(2,cs) = cy; emb(3,cs) = cz
-            end do
-        end do
-        call kdtree_build(tree, emb)
-
-        ! Spherical-cap pre-reject: each cell polygon lies in the cap around its
-        ! centre whose radius reaches its farthest vertex (caps < 90 deg are
-        ! convex, so they contain the great-circle edges too). A candidate pair
-        ! whose caps do not meet cannot overlap and is not clipped; the weights
-        ! do not change (docs/dev/coupler-global-design.md, 7 i).
-        allocate(srad(n1))
-        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
-        do cs = 1, n1
-            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
-            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
-            srad(cs) = cap_radius(emb(:,cs), sv)
+        ! Target centres for the tree, and the radius of the cap around each
+        ! centre that holds its polygon. Spherical-cap pre-reject: caps < 90 deg
+        ! are convex, so they contain the great-circle edges too; a candidate
+        ! pair whose caps do not meet cannot overlap and is not clipped
+        ! (docs/dev/coupler-global-design.md, 7 i).
+        allocate(emb(3,n2), trad(n2))
+        !$omp parallel do default(shared) schedule(guided) private(k, i, j, cv)
+        do k = 1, n2
+            i = mod(k-1, nx2) + 1; j = (k-1)/nx2 + 1
+            call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), emb(1,k), emb(2,k), emb(3,k))
+            call axis_cell_poly(grid2, i, j, cv)
+            trad(k) = cap_radius(emb(:,k), cv)
         end do
         !$omp end parallel do
+        call kdtree_build(tree, emb)
 
         ! candidate radius (chord on unit sphere): source + target angular cell
         ! size, both in DEGREES. grid2 is the lat-lon/Gaussian target, so its dx/dy
@@ -424,39 +417,42 @@ contains
 
         nthreads = 1
         !$ nthreads = omp_get_max_threads()
-        allocate(bufs(0:nthreads-1))
+        allocate(bufs(0:nthreads-1), wfull_src(n1))
+        wfull_src = 0.0_dp
 
         !$omp parallel default(shared) &
-        !$omp   private(i, j, c, cc, cs, ic, jc, nf, no, nv, tlon, tlat, cx, cy, cz, area, &
-        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid, trad, ang)
+        !$omp   private(cs, ic, jc, k, cc, nf, no, nv, ctr, srad, ang, area, linked, &
+        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid)
         tid = 0
         !$ tid = omp_get_thread_num()
-        allocate(cidx(n1), cd2(n1))
-        !$omp do schedule(guided) collapse(2)
-        do j = 1, ny2
-            do i = 1, nx2
-                c = (j-1)*nx2 + i
-                call cell_corners_lonlat(grid2, i, j, tlon, tlat)
-                call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
-                call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
-                trad = cap_radius([cx,cy,cz], cv)
-                call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
-                do cc = 1, nf
-                    cs = cidx(cc)
-                    ang = acos(max(-1.0_dp, min(1.0_dp, emb(1,cs)*cx + emb(2,cs)*cy + emb(3,cs)*cz)))
-                    if (ang > srad(cs) + trad + CAP_MARGIN) cycle
-                    ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
-                    call build_sphere_poly(slon(:,cs), slat(:,cs), &
-                                           grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
-                    call polygon_clip_sphere(sv, cv, ov, no)
-                    if (no >= 3 .and. no <= 64) then
-                        do nv = 1, no
-                            call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
-                        end do
-                        area = planet_area(a, f, olon(1:no), olat(1:no))
-                        if (area > 0.0_dp) call buf_push(bufs(tid), cs, c, area)
-                    end if
+        allocate(cidx(n2), cd2(n2))
+        !$omp do schedule(static)
+        do cs = 1, n1
+            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
+            call lonlat_to_xyz(grid1%lon(ic,jc), grid1%lat(ic,jc), ctr(1), ctr(2), ctr(3))
+            call kdtree_radius(tree, ctr, rad, cidx, cd2, nf)
+            if (nf == 0) cycle
+            call axis_cell_poly(grid1, ic, jc, sv)
+            srad = cap_radius(ctr, sv)
+            linked = .false.
+            do cc = 1, nf
+                k = cidx(cc)
+                ang = acos(max(-1.0_dp, min(1.0_dp, emb(1,k)*ctr(1) + emb(2,k)*ctr(2) + emb(3,k)*ctr(3))))
+                if (ang > srad + trad(k) + CAP_MARGIN) cycle
+                call axis_cell_poly(grid2, mod(k-1, nx2) + 1, (k-1)/nx2 + 1, cv)
+                call polygon_clip_sphere(sv, cv, ov, no)
+                if (no < 3 .or. no > size(olon)) cycle
+                do nv = 1, no
+                    call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
                 end do
+                area = planet_area(a, f, olon(1:no), olat(1:no))
+                if (.not. (area > 0.0_dp)) cycle
+                if (.not. linked) then
+                    ! full source-cell area (the map metric), computed once
+                    wfull_src(cs) = sphere_poly_area(sv, a, f)
+                    linked = .true.
+                end if
+                call buf_push(bufs(tid), cs, k, area)
             end do
         end do
         !$omp end do
@@ -469,32 +465,19 @@ contains
         call bufs_to_wm(wm, bufs, n1, n2)
 
         ! Coverage payload: full cell areas (planet_area of the same great-circle
-        ! polygons that are clipped; the map metric). Sources only where linked.
-        allocate(wm%wfull_src(n1), wm%wfull_dst(n2), linked(n1))
-        wm%wfull_src = 0.0_dp
-        linked = .false.
-        linked(wm%src(1:wm%n_links)) = .true.
-        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
-        do cs = 1, n1
-            if (.not. linked(cs)) cycle
-            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
-            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
-            wm%wfull_src(cs) = sphere_poly_area(sv, a, f)
-        end do
-        !$omp end parallel do
-        !$omp parallel do default(shared) schedule(guided) collapse(2) private(i, j, tlon, tlat, cv)
-        do j = 1, ny2
-            do i = 1, nx2
-                call cell_corners_lonlat(grid2, i, j, tlon, tlat)
-                call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
-                wm%wfull_dst((j-1)*nx2 + i) = sphere_poly_area(cv, a, f)
-            end do
+        ! polygons that are clipped; the map metric).
+        allocate(wm%wfull_dst(n2))
+        call move_alloc(wfull_src, wm%wfull_src)
+        !$omp parallel do default(shared) schedule(guided) private(k, cv)
+        do k = 1, n2
+            call axis_cell_poly(grid2, mod(k-1, nx2) + 1, (k-1)/nx2 + 1, cv)
+            wm%wfull_dst(k) = sphere_poly_area(cv, a, f)
         end do
         !$omp end parallel do
         call weight_map_coverage(wm, set_cov=.true.)
 
         call kdtree_free(tree)
-        deallocate(emb, slon, slat, bufs, linked, srad)
+        deallocate(emb, trad, bufs)
     end subroutine conservative_spherical
 
     real(dp) function cap_radius(ctr, verts) result(r)
@@ -831,71 +814,64 @@ contains
         c = 2.0_dp*sin(0.5_dp*deg*degrees_to_radians)
     end function chord
 
-    subroutine cell_corners_lonlat(grid, i, j, clon, clat)
-        ! Cell corners as lon/lat: from axis midpoints for lat-lon/Gaussian grids,
-        ! or by inverse-projecting the projected-axis corners for projected grids.
+    subroutine axis_cell_poly(grid, i, j, verts)
+        ! Cell (i,j) as a spherical polygon (3D unit vectors, great-circle edges).
+        ! Each of the 4 cell edges is subsampled into NSUB segments in the grid's
+        ! own axis plane (projection x-y, rotated lon-lat, or lon-lat), and every
+        ! sample is mapped to geographic lon/lat (inverse projection for a
+        ! projected grid). Sampling in the plane keeps a projected cell that
+        ! straddles the 0/360 meridian or contains a pole intact: its 4 corners
+        ! interpolated in lon/lat would run the long way round. Repeated vertices
+        ! are dropped and the polygon is oriented so the cell centre is interior.
         type(grid_class), intent(in)  :: grid
         integer,          intent(in)  :: i, j
-        real(dp),         intent(out) :: clon(4), clat(4)
-        real(dp) :: cx(4), cy(4), xyc, lo, la
-        integer  :: k
-        call cell_corners_grid(grid, i, j, cx, cy)
-        if (grid%cs%is_projection) then
-            xyc = grid%cs%xy_conv
-            do k = 1, 4
-                call oblimap_projection_inverse(cx(k)*xyc, cy(k)*xyc, lo, la, grid%cs%proj)
-                clon(k) = lo; clat(k) = la
-            end do
-        else
-            clon = cx; clat = cy     ! axis values are lon/lat
-        end if
-    end subroutine cell_corners_lonlat
-
-    subroutine build_sphere_poly(clon, clat, ctrlon, ctrlat, verts)
-        ! Build a spherical polygon (3D unit vectors) from 4 lon/lat corners,
-        ! subsampling each edge into NSUB great-circle segments, oriented so the
-        ! cell center is on the interior (+normal) side of every edge.
-        real(dp), intent(in)  :: clon(4), clat(4), ctrlon, ctrlat
         real(dp), allocatable, intent(out) :: verts(:,:)
-        real(dp) :: ll_lon(4*NSUB), ll_lat(4*NSUB)
-        real(dp) :: t, cxv, cyv, czv, n1v(3), ev(3)
-        integer  :: e, s, nv, k, en
-        ! walk the 4 edges, subsampling
+        real(dp) :: cx(4), cy(4), px, py, lo, la, t, xyc, ctr(3)
+        integer  :: e, en, s, nv
+        call cell_corners_grid(grid, i, j, cx, cy)
+        xyc = grid%cs%xy_conv
+        allocate(verts(3, 4*NSUB))
         nv = 0
         do e = 1, 4
             en = mod(e,4) + 1
             do s = 0, NSUB-1
-                t = real(s,dp)/real(NSUB,dp)
+                t  = real(s,dp)/real(NSUB,dp)
+                px = cx(e) + t*(cx(en) - cx(e))
+                py = cy(e) + t*(cy(en) - cy(e))
+                if (grid%cs%is_projection) then
+                    call oblimap_projection_inverse(px*xyc, py*xyc, lo, la, grid%cs%proj)
+                else
+                    lo = px; la = py               ! axis values are lon/lat
+                end if
                 nv = nv + 1
-                ll_lon(nv) = clon(e) + t*(clon(en) - clon(e))
-                ll_lat(nv) = clat(e) + t*(clat(en) - clat(e))
+                call lonlat_to_xyz(lo, la, verts(1,nv), verts(2,nv), verts(3,nv))
             end do
-        end do
-        if (allocated(verts)) deallocate(verts)
-        allocate(verts(3, nv))
-        do k = 1, nv
-            call lonlat_to_xyz(ll_lon(k), ll_lat(k), verts(1,k), verts(2,k), verts(3,k))
         end do
         ! Drop repeated vertices (a polar cell has two corners at the pole, so
         ! its polar edge collapses to one point): degenerate zero-length edges
         ! break the great-circle clip and the orientation test below.
         call drop_repeated(verts)
+        call lonlat_to_xyz(grid%lon(i,j), grid%lat(i,j), ctr(1), ctr(2), ctr(3))
+        call orient_toward(verts, ctr)        ! the cell centre is interior
+    end subroutine axis_cell_poly
+
+    subroutine orient_toward(verts, c)
+        ! Reverse the vertex order unless c (a vector pointing into the polygon)
+        ! lies on the interior (+normal) side of the first edge.
+        real(dp), intent(inout) :: verts(:,:)
+        real(dp), intent(in)    :: c(3)
+        real(dp) :: n1v(3), tmp(3)
+        integer  :: k, nv
         nv = size(verts, 2)
-        ! orient so center is interior: check edge 1 normal vs center
-        call lonlat_to_xyz(ctrlon, ctrlat, cxv, cyv, czv)
         n1v(1) = verts(2,1)*verts(3,2) - verts(3,1)*verts(2,2)
         n1v(2) = verts(3,1)*verts(1,2) - verts(1,1)*verts(3,2)
         n1v(3) = verts(1,1)*verts(2,2) - verts(2,1)*verts(1,2)
-        if (n1v(1)*cxv + n1v(2)*cyv + n1v(3)*czv < 0.0_dp) then
-            ! reverse
-            block
-                real(dp) :: tmp(3)
-                do k = 1, nv/2
-                    tmp = verts(:,k); verts(:,k) = verts(:,nv-k+1); verts(:,nv-k+1) = tmp
-                end do
-            end block
+        if (n1v(1)*c(1) + n1v(2)*c(2) + n1v(3)*c(3) < 0.0_dp) then
+            do k = 1, nv/2
+                tmp = verts(:,k); verts(:,k) = verts(:,nv-k+1); verts(:,nv-k+1) = tmp
+            end do
         end if
-    end subroutine build_sphere_poly
+    end subroutine orient_toward
 
     subroutine drop_repeated(verts)
         ! Remove vertices that coincide with their predecessor (cyclically), to
