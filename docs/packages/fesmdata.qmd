@@ -38,6 +38,9 @@ through a link `fesmdata/` in the run folder, with the cdo description of their 
 | `fesmdata_parse_path(path, domain, grid_name, [subs])` | Replace the placeholders of a path |
 | `flag_table_read`, `flag_codes`, `flag_name`, ... | Flag tables of categorical variables |
 
+`fesmdata_flux_conv` and `fesmdata_temp_ref` are calls to `units_conv` of
+[fesm_units](units.qmd).
+
 ## Usage example
 
 ```fortran

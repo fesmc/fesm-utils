@@ -29,8 +29,16 @@ All notable changes to fesm-utils are documented here.
   holds a group (par file first, then the library list; stops listing every file, or
   `stat = 1`); replaces yelmox `var_defs_find`. `nml_validate(..., nbad)` returns the
   number of unknown keys.
+- **fesm_units**: `units_conv(from, to, scale, offset [, rho_ice, sec_year, stat])`, the
+  factor and offset between two units on `units_canonical`: mass flux (kg m-2 or mm w.e.
+  per s/d/yr, m w.e., m ice with `rho_ice`), degC/K, mW m-2/W m-2, km/m, velocity per
+  s/d/yr, %/1, g kg-1/psu; the run's `sec_year` or 365.25 d. `make check-units`
+  (`test_fesm_units`).
 
 ### Changed
+- **fesmdata**: `fesmdata_flux_conv` and `fesmdata_temp_ref` are calls to `units_conv`
+  (identical factors, checked bit-for-bit); `fesmdata_flux_conv` also accepts `kg/m2/s`
+  and `m w.e.` rates.
 - **fesmdata**: `units_key` now comes from `fesm_fields` and also drops `^`, so
   `kg m^-2 s^-1` is recognised (it was rejected before); other units are unchanged.
 - **varslice, coupler, fesmdata, regions, topodata, htopo, zremap**: errors go through

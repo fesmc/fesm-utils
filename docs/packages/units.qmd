@@ -1,0 +1,85 @@
+---
+title: "fesm_units"
+subtitle: "Unit conversion factors"
+---
+
+## Overview
+
+`fesm_units` gives the factor and offset between two units,
+`x_to = scale*x_from + offset`. [fesm_fields](fields.qmd) recognises equal units
+spelled differently (`units_canonical`) but converts nothing; `fesm_units` adds
+the factors it leaves to adapters, in its own module so that model adapters can
+use it too. [fesm_datasrc](datasrc.qmd) converts every file field to the units
+declared in its state with it, and `fesmdata_flux_conv` / `fesmdata_temp_ref`
+are calls to it.
+
+The table is small and explicit (no udunits). Every row also inverts, and any
+two units of one class convert into each other:
+
+| Class | Units | Canonical | Factor / offset |
+|---|---|---|---|
+| mass flux | kg m-2 {s,d,yr}-1, mm [w.e.] {s,d,yr}-1 | kg m-2 yr-1 | × `sec_year`/{1, 86400, `sec_year`} |
+| | m w.e. yr-1 | | × 1000 |
+| | m i.e. yr-1, m ice yr-1 | | × `rho_ice` (absent: error) |
+| temperature | degC | K | + 273.15 |
+| heat flux | mW m-2 | W m-2 | × 1e-3 |
+| length | km | m | × 1000 |
+| velocity | m {s,d}-1 | m yr-1 | × `sec_year`/{1, 86400} |
+| dimensionless | % | 1 | × 0.01 |
+| salinity | g kg-1 | psu | 1 |
+
+Units are matched after `units_canonical` (lower case, no blanks, `*` or `^`,
+aliases resolved), so `"mm w.e. a-1"`, `"mm/d"`, `"kg m**-2 s**-1"` and
+`"degrees_Celsius"` are recognised. Rates are written `<q> <t>-1` or `<q>/<t>`,
+with `t` in `s | sec | second`, `d | day`, `yr | a | year`. Two units with the
+same canonical key give `scale = 1`, `offset = 0` exactly, also when the module
+does not know them, so a caller can skip the arithmetic (a bit-exact copy).
+
+`sec_year` is the run's year length when the caller passes it, else 365.25 d,
+the year FesmData products are built with.
+
+## Public API
+
+```fortran
+subroutine units_conv(from, to, scale, offset, rho_ice, sec_year, stat)
+    character(len=*), intent(in)  :: from, to
+    real(dp),         intent(out) :: scale, offset        ! x_to = scale*x_from + offset
+    real(dp),         intent(in),  optional :: rho_ice    ! [kg m-3], enables m i.e. yr-1
+    real(dp),         intent(in),  optional :: sec_year   ! [s], default 365.25 d
+    integer,          intent(out), optional :: stat       ! 1 instead of stopping
+```
+
+It stops through `fesm_error` when no conversion is known (unknown units, units
+of different quantities, ice equivalent without `rho_ice`); with `stat` present
+it sets `stat = 1` and returns `scale = 1`, `offset = 0`.
+
+## Example
+
+```fortran
+use fesm_units, only : units_conv
+
+real(dp) :: s, o
+
+call units_conv("mm d-1", "kg m-2 yr-1", s, o)                     ! s = 365.25, o = 0
+call units_conv("m ice yr-1", "kg m-2 yr-1", s, o, rho_ice=917.0_dp) ! s = 917
+call units_conv("degC", "K", s, o)                                 ! s = 1, o = 273.15
+smb = s*smb_file + o
+```
+
+A double round trip through `dp` is exact for `sp` data:
+`(x·1e-3)·1e3` rounds back to the `sp` value `x` (the error in `dp` is far
+below half an `sp` ulp), so a field read in mW m-2, held in W m-2 and handed
+to a model in mW m-2 is unchanged.
+
+## Tests
+
+`make check-units` runs `test/units/test_fesm_units.f90`: every row and its
+inverse, identity bit-exact, unknown units and `m ice yr-1` without `rho_ice`
+with `stat /= 0`, an `sp` round trip mW m-2 → W m-2 → mW m-2 over 2·10⁵
+values, and the factors of `fesmdata_flux_conv` / `fesmdata_temp_ref`
+bit-identical to their implementation before `fesm_units`.
+
+## See also
+
+- [fesm_fields](fields.qmd) — `units_key`, `units_canonical`, `units_equivalent`
+- [fesmdata](fesmdata.qmd) — `fesmdata_flux_conv`, `fesmdata_temp_ref`

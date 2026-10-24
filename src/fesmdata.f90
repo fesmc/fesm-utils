@@ -15,7 +15,7 @@ module fesmdata
     !     flux to other units, the reference temperature of a temperature
 
     use fesm_log, only : fesm_error
-    use fesm_fields, only : units_key
+    use fesm_units, only : units_conv
 
     use precision
     use constants,   only : mv
@@ -267,7 +267,8 @@ contains
         ! units attribute) to units_out: var_out = fac*var. The mass is
         ! kg m-2 or mm (water equivalent, the same), the time s, d or yr
         ! (1 yr = 365.25 d, as in FesmData), e.g. "kg m-2 yr-1", "mm d-1",
-        ! "mm w.e. a-1", "mm/d". Stops on missing or unknown units.
+        ! "mm w.e. a-1", "mm/d". Stops on missing or unknown units. The
+        ! factor is that of units_conv (fesm_units).
 
         implicit none
 
@@ -277,16 +278,30 @@ contains
         real(wp) :: fac
 
         character(len=256) :: units
+        real(dp) :: scale, offset, s2, o2
+        integer  :: stat, stat2
 
         units = var_units(fname, varname, "fesmdata_flux_conv")
-        fac   = flux_time(units_out, fname, varname) / flux_time(units, fname, varname)
+
+        ! A water flux on both sides (the canonical class of units_conv)
+        call units_conv(units, units_out, scale, offset, stat=stat)
+        call units_conv(units_out, "kg m-2 yr-1", s2, o2, stat=stat2)
+        if (stat .ne. 0 .or. stat2 .ne. 0) then
+            call fesm_error("fesmdata_flux_conv", "water-flux units not recognized.", &
+                "file      = "//trim(fname)//new_line("a")// &
+                "varname   = "//trim(varname)//new_line("a")// &
+                "units     = "//trim(units)//new_line("a")// &
+                "units_out = "//trim(units_out))
+        end if
+
+        fac = real(scale, wp)
 
     end function fesmdata_flux_conv
 
     function fesmdata_temp_ref(fname, varname) result(t_ref)
         ! Reference temperature of the units of a temperature variable (its
         ! units attribute), to add to get kelvin: 0 for K, 273.15 for degC.
-        ! Stops on missing or unknown units.
+        ! Stops on missing or unknown units. The offset of units_conv to K.
 
         implicit none
 
@@ -294,24 +309,21 @@ contains
         character(len=*), intent(IN) :: varname
         real(wp) :: t_ref
 
-        character(len=256) :: key
+        character(len=256) :: units
+        real(dp) :: scale, offset
+        integer  :: stat
 
-        key = units_key(var_units(fname, varname, "fesmdata_temp_ref"))
+        units = var_units(fname, varname, "fesmdata_temp_ref")
 
-        select case(trim(key))
-            case("k","kelvin","degk","degreesk")
-                t_ref = 0.0_wp
-            case("degc","degreesc","degreec","degrees_c","degree_c","deg_c","c","celsius", &
-                 "degreescelsius","degreecelsius","degrees_celsius","degree_celsius", &
-                 "degreescelcius","degreecelcius","degrees_celcius","degree_celcius")
-                ! (the misspelling celcius occurs in older files)
-                t_ref = 273.15_wp
-            case default
-                call fesm_error("fesmdata_temp_ref", "temperature units not recognized.", &
-                    "file    = "//trim(fname)//new_line("a")// &
-                    "varname = "//trim(varname)//new_line("a")// &
-                    "units   = "//trim(key))
-        end select
+        call units_conv(units, "K", scale, offset, stat=stat)
+        if (stat .ne. 0 .or. scale .ne. 1.0_dp) then
+            call fesm_error("fesmdata_temp_ref", "temperature units not recognized.", &
+                "file    = "//trim(fname)//new_line("a")// &
+                "varname = "//trim(varname)//new_line("a")// &
+                "units   = "//trim(units))
+        end if
+
+        t_ref = real(offset, wp)
 
     end function fesmdata_temp_ref
 
@@ -331,61 +343,6 @@ contains
         call nc_read_attr(fname, varname, "units", units)
 
     end function var_units
-
-    function flux_time(units, fname, varname) result(dt)
-        ! The time unit [s] of water-flux units (mass kg m-2 or mm w.e.).
-
-        implicit none
-
-        character(len=*), intent(IN) :: units, fname, varname
-        real(wp) :: dt
-
-        real(wp), parameter :: sec_day  = 86400.0_wp
-        real(wp), parameter :: sec_year = 365.25_wp*sec_day
-
-        character(len=256) :: key, tunit
-        integer :: q
-
-        key = units_key(units)
-
-        ! Mass part
-        if (index(key,"kgm-2") .eq. 1) then
-            key = key(6:)
-        else if (index(key,"mmw.e.") .eq. 1) then
-            key = key(7:)
-        else if (index(key,"mmwe") .eq. 1) then
-            key = key(5:)
-        else if (index(key,"mm") .eq. 1) then
-            key = key(3:)
-        else
-            key = ""
-        end if
-
-        ! Time part: "<t>-1" or "/<t>"
-        tunit = ""
-        q = len_trim(key)
-        if (q .gt. 2) then
-            if (key(q-1:q) .eq. "-1") tunit = key(1:q-2)
-        end if
-        if (len_trim(tunit) .eq. 0 .and. q .gt. 1) then
-            if (key(1:1) .eq. "/") tunit = key(2:q)
-        end if
-
-        select case(trim(tunit))
-            case("s","sec","second")
-                dt = 1.0_wp
-            case("d","day")
-                dt = sec_day
-            case("yr","a","year")
-                dt = sec_year
-            case default
-                call fesm_error("fesmdata_flux_conv", "water-flux units not recognized.", &
-                    "file    = "//trim(fname)//new_line("a")// &
-                    "varname = "//trim(varname)//new_line("a")// &
-                    "units   = "//trim(units))
-        end select
-
-    end function flux_time
 
     ! ===== Grid of a file =====================================================
 

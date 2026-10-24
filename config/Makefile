@@ -170,6 +170,10 @@ $(objdir)/fesm_fields.o: $(srcdir)/fesm_fields.f90 $(objdir)/precision.o $(objdi
 					$(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/fesm_units.o: $(srcdir)/fesm_units.f90 $(objdir)/precision.o $(objdir)/fesm_log.o \
+					$(objdir)/fesm_fields.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -211,7 +215,7 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/con
 
 $(objdir)/fesmdata.o: $(srcdir)/fesmdata.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
 					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o \
-					$(objdir)/fesm_log.o $(objdir)/fesm_fields.o
+					$(objdir)/fesm_log.o $(objdir)/fesm_units.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -269,6 +273,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/precision.o \
 					$(objdir)/fesm_log.o \
 					$(objdir)/fesm_fields.o \
+					$(objdir)/fesm_units.o \
 					$(objdir)/phys_constants.o \
 					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
@@ -464,12 +469,15 @@ test-htopo : fesmutils-static
 		@echo "    htopo test program ready: $(bindir)/test_htopo.x"
 		@echo " "
 
-# fesmdata units (water-flux factor, reference temperature) test program
+# units test programs: fesmdata units (water-flux factor, reference
+# temperature) and fesm_units (units_conv)
 test-units : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_units.x $(testdir)/fesmdata/test_units.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_fesm_units.x $(testdir)/units/test_fesm_units.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
-		@echo "    units test program ready: $(bindir)/test_units.x"
+		@echo "    units test programs ready: $(bindir)/test_units.x, $(bindir)/test_fesm_units.x"
 		@echo " "
 
 # varslice climatology (sub-annual cycle without years) test program
@@ -671,7 +679,7 @@ check-varslice : test-varslice
 check-multitopo : test-multitopo
 		@$(call check_run,test_multitopo)
 check-units : test-units
-		@$(call check_run,test_units)
+		@$(call check_run,test_units test_fesm_units)
 check-varslice-clim : test-varslice-clim
 		@$(call check_run,test_varslice_clim)
 check-tsgen : test-tsgen

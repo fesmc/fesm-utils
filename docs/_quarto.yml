@@ -59,6 +59,8 @@ website:
             href: packages/clock.qmd
           - text: "fesm_fields — exchange fields"
             href: packages/fields.qmd
+          - text: "fesm_units — unit conversion"
+            href: packages/units.qmd
       - text: "External libraries"
         menu:
           - text: "FFTW"
@@ -98,6 +100,7 @@ website:
           - packages/log.qmd
           - packages/clock.qmd
           - packages/fields.qmd
+          - packages/units.qmd
       - section: "External libraries"
         contents:
           - external/fftw.qmd
