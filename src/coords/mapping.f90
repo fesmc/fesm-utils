@@ -29,6 +29,9 @@ module mapping
     use map_io,          only: weight_map_write, weight_map_read
     use ncio,            only: nc_exists_var
     use grid_cdo,        only: grid_cdo_write_desc_short, grid_cdo_read_desc, call_system_cdo
+    use grid_signature,  only: grid_signature_str, grid_signature_match, grid_hash8
+    use ncio,            only: nc_exists_attr, nc_write_attr, nc_read_attr, nc_size_attr
+    use fesm_log,        only: fesm_error, log_msg, LOG_INFO, to_str
 
     implicit none
     private
@@ -79,7 +82,7 @@ contains
     end subroutine map_init_points_points
 
     subroutine map_init_grid_grid(map, grid1, grid2, max_neighbors, dist_max, method, gen, fldr, load, clean, &
-                                  precompute_weights, weight_cutoff)
+                                  precompute_weights, weight_cutoff, on_mismatch, hash_names)
         ! Build (or load) a grid -> grid map and cache it as a SCRIP(-superset)
         ! file under `fldr` (default "maps").
         !   method - interpolation kernel: "con" (conservative) or a distance
@@ -103,6 +106,16 @@ contains
         !            weight_map_prune). Default 1e-4 (0.01% of target weight);
         !            pass 0.0 to keep every link. No effect on distance maps or
         !            on maps loaded from an existing cache.
+        !   on_mismatch - what to do when a cache file carries grid signatures
+        !            that differ from grid1/grid2: "error" (default, stop and
+        !            name both signatures) or "rebuild" (regenerate and overwrite,
+        !            logged). A file without signatures (legacy / foreign) loads
+        !            as before, with a one-time "unverified" log line. A file
+        !            whose sizes do not match the grids always stops.
+        !   hash_names - if .true., the cache file is named
+        !            scrip-<method>_<src>-<h8>_<dst>-<h8>.nc (h8: grid_hash8),
+        !            so two grids with one name can share a map folder. Default
+        !            .false. (scrip-<method>_<src>_<dst>.nc).
         ! The loader auto-detects the file format, so a cdo-generated SCRIP file
         ! and an in-package (coords) cache interoperate at the same filename.
         type(map_class), intent(inout) :: map
@@ -116,11 +129,13 @@ contains
         logical,  optional, intent(in) :: clean
         logical,  optional, intent(in) :: precompute_weights
         real(dp), optional, intent(in) :: weight_cutoff
+        character(len=*), optional, intent(in) :: on_mismatch
+        logical,  optional, intent(in) :: hash_names
 
         type(points_class) :: pts1, pts2
-        character(len=32)  :: mtd, g
-        character(len=256) :: mfldr, filename
-        logical :: load_file, file_exists, precompute
+        character(len=32)  :: mtd, g, policy
+        character(len=256) :: mfldr, filename, key1, key2
+        logical :: load_file, file_exists, precompute, valid
         real(dp) :: wcut
         integer :: nmax
 
@@ -136,16 +151,33 @@ contains
         if (present(precompute_weights)) precompute = precompute_weights
         wcut = 1.0e-4_dp
         if (present(weight_cutoff)) wcut = weight_cutoff
+        policy = "error"
+        if (present(on_mismatch)) policy = trim(on_mismatch)
+        if (trim(policy) /= "error" .and. trim(policy) /= "rebuild") &
+            call fesm_error("map_init", "unknown on_mismatch '"//trim(policy)//"'.", &
+                            "expected 'error' or 'rebuild'.")
 
-        filename = gen_map_filename(grid1%name, grid2%name, mfldr, mtd)
+        ! File keys: the grid names, tagged with their hash for hash_names
+        key1 = grid1%name
+        key2 = grid2%name
+        if (present(hash_names)) then
+            if (hash_names) then
+                key1 = trim(grid1%name)//"-"//grid_hash8(grid1)
+                key2 = trim(grid2%name)//"-"//grid_hash8(grid2)
+            end if
+        end if
+        filename = gen_map_filename(key1, key2, mfldr, mtd)
         inquire(file=trim(filename), exist=file_exists)
 
+        valid = .false.
         if (load_file .and. file_exists) then
-            ! Load a cached map
+            ! Load a cached map (valid = .false.: signatures differ, rebuild)
             call map_set_target_from_grid(map, grid1, grid2)
             map%method = trim(mtd)
-            call map_load_wm(map, grid1, grid2, mtd, mfldr, filename)
-        else
+            call map_load_wm(map, grid1, grid2, mtd, mfldr, filename, key1, key2, policy, valid)
+        end if
+
+        if (.not. valid) then
             ! Otherwise generate the weights
             select case (trim(g))
                 case ("coords")
@@ -174,11 +206,11 @@ contains
                     ! the cache and in-memory map carry only significant links.
                     call weight_map_prune(map%wm, wcut)
                     ! Cache the freshly generated map
-                    call map_save_wm(map, mfldr, filename)
+                    call map_save_wm(map, grid1, grid2, mtd, wcut, mfldr, filename)
                 case ("cdo")
                     ! Generate the SCRIP map with an external cdo call (it writes
                     ! `filename` itself, so no separate save step is needed).
-                    call map_init_cdo(map, grid1, grid2, mtd, mfldr, filename, clean)
+                    call map_init_cdo(map, grid1, grid2, mtd, mfldr, filename, key1, key2, clean)
                 case default
                     write(*,*) "mapping:: map_init: unknown gen '"//trim(g)//"'"
                     write(*,*) "  expected 'coords' (in-package) or 'cdo' (external cdo call)."
@@ -194,7 +226,7 @@ contains
     end subroutine map_init_grid_grid
 
     subroutine map_init_grid_names(map, name1, name2, max_neighbors, dist_max, method, gen, fldr, load, clean, &
-                                   weight_cutoff)
+                                   weight_cutoff, on_mismatch, hash_names)
         ! Build (or load) a grid -> grid map from grid *names* alone. The source
         ! and target grid definitions are read from cdo description files
         ! (grid_<name>.txt) found in `fldr`, the grids are reconstructed
@@ -212,6 +244,8 @@ contains
         logical,  optional, intent(in)  :: load
         logical,  optional, intent(in)  :: clean
         real(dp), optional, intent(in)  :: weight_cutoff
+        character(len=*), optional, intent(in) :: on_mismatch
+        logical,  optional, intent(in)  :: hash_names
 
         type(grid_class)   :: grid1, grid2
         character(len=256) :: mfldr
@@ -225,7 +259,8 @@ contains
         call map_init_grid_grid(map, grid1, grid2, max_neighbors=max_neighbors, &
                                 dist_max=dist_max, method=method, gen=gen, &
                                 fldr=mfldr, load=load, clean=clean, &
-                                weight_cutoff=weight_cutoff)
+                                weight_cutoff=weight_cutoff, on_mismatch=on_mismatch, &
+                                hash_names=hash_names)
     end subroutine map_init_grid_names
 
     subroutine map_set_target_from_grid(map, grid1, grid2)
@@ -263,33 +298,137 @@ contains
         call conservative_weights(map%wm, grid1, grid2)
     end subroutine map_init_conservative
 
-    subroutine map_load_wm(map, grid1, grid2, method, fldr, filename)
+    subroutine map_load_wm(map, grid1, grid2, method, fldr, filename, key1, key2, on_mismatch, valid)
         ! Load a cached weight_map into map%wm, auto-detecting the file format:
-        ! an in-package cache (weight_map_write, carries a "meta" variable) vs a
-        ! standard/cdo SCRIP file (read via the mapping_scrip bridge).
+        ! an in-package cache (weight_map_write, carries a "meta" variable) vs
+        ! a standard/cdo SCRIP file (read via the mapping_scrip bridge; key1/key2
+        ! are the names in its file name). Before use, the file is checked
+        ! against the grids (docs/dev/coupler-global-design.md, 4):
+        !   1. grid signatures present and different -> on_mismatch "error"
+        !      (stop) or "rebuild" (valid = .false., the caller regenerates);
+        !   2. no signatures (legacy / foreign file) -> loaded unverified, logged
+        !      once per file;
+        !   3. n_src / n_dst must match the grids (always; stops otherwise).
         type(map_class),  intent(inout) :: map
         type(grid_class), intent(in)    :: grid1, grid2
-        character(len=*), intent(in)    :: method, fldr, filename
+        character(len=*), intent(in)    :: method, fldr, filename, key1, key2, on_mismatch
+        logical,          intent(out)   :: valid
         type(map_scrip_class) :: mps
+        character(len=:), allocatable :: sig1, sig2, fsig1, fsig2
+        character(len=128) :: why
+        logical :: has_sig
+
+        valid = .true.
+        has_sig = nc_exists_attr(trim(filename), "coords_src_sig") .and. &
+                  nc_exists_attr(trim(filename), "coords_dst_sig")
+        if (has_sig) then
+            sig1 = grid_signature_str(grid1)
+            sig2 = grid_signature_str(grid2)
+            fsig1 = read_attr_str(filename, "coords_src_sig")
+            fsig2 = read_attr_str(filename, "coords_dst_sig")
+            if (.not. grid_signature_match(fsig1, sig1, why)) then
+                call sig_mismatch("source", grid1%name, fsig1, sig1, why)
+                return
+            end if
+            if (.not. grid_signature_match(fsig2, sig2, why)) then
+                call sig_mismatch("target", grid2%name, fsig2, sig2, why)
+                return
+            end if
+        else
+            call log_unverified(filename)
+        end if
 
         if (nc_exists_var(trim(filename), "meta")) then
             call weight_map_read(map%wm, trim(filename))
         else
-            call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(fldr), trim(method))
+            call map_scrip_load(mps, trim(key1), trim(key2), trim(fldr), trim(method))
             call map_scrip_to_weight_map(mps, map%wm)
         end if
+
+        if (map%wm%n_src /= size(grid1%x) .or. map%wm%n_dst /= size(grid2%x)) &
+            call fesm_error("map_init", "map cache file does not match the grid sizes.", &
+                "file    = "//trim(filename)//new_line("a")// &
+                "n_src   = "//to_str(map%wm%n_src)//", source grid '"//trim(grid1%name)//"' has "// &
+                to_str(size(grid1%x))//" points"//new_line("a")// &
+                "n_dst   = "//to_str(map%wm%n_dst)//", target grid '"//trim(grid2%name)//"' has "// &
+                to_str(size(grid2%x))//" points"//new_line("a")// &
+                "Delete the file (or rename the grid) to regenerate it.")
+
+    contains
+
+        subroutine sig_mismatch(which, gname, fsig, gsig, why)
+            character(len=*), intent(in) :: which, gname, fsig, gsig, why
+            if (trim(on_mismatch) == "rebuild") then
+                call log_msg(LOG_INFO, "map_init", "rebuilding "//trim(filename)//": "//which// &
+                             " grid '"//trim(gname)//"' differs from the cached map ("//trim(why)//").")
+                valid = .false.
+            else
+                call fesm_error("map_init", "map cache file was built for another "//which// &
+                    " grid '"//trim(gname)//"' ("//trim(why)//").", &
+                    "file          = "//trim(filename)//new_line("a")// &
+                    "file grid     = "//fsig//new_line("a")// &
+                    "this grid     = "//gsig//new_line("a")// &
+                    "Delete the file, rename the grid, or use on_mismatch='rebuild' / hash_names=.true.")
+            end if
+        end subroutine sig_mismatch
+
     end subroutine map_load_wm
 
-    subroutine map_save_wm(map, fldr, filename)
-        ! Write map%wm to its cache file, creating the folder if needed. The
-        ! file is written under a per-process name and then renamed into place
-        ! (see cache_tmp_name / cache_commit).
+    subroutine log_unverified(filename)
+        ! One log line per legacy cache file (without grid signatures) per run.
+        character(len=*), intent(in) :: filename
+        character(len=512), allocatable, save :: seen(:)
+        character(len=512), allocatable :: tmp(:)
+        integer :: n
+        if (.not. allocated(seen)) allocate(seen(0))
+        if (any(seen == filename)) return
+        n = size(seen)
+        allocate(tmp(n+1)); tmp(1:n) = seen; tmp(n+1) = filename
+        call move_alloc(tmp, seen)
+        call log_msg(LOG_INFO, "map_init", "loading "//trim(filename)// &
+                     " unverified (no grid signatures; written before signatures or by another tool).")
+    end subroutine log_unverified
+
+    function read_attr_str(filename, name) result(val)
+        ! A global character attribute of a netcdf file, at its stored length.
+        character(len=*), intent(in) :: filename, name
+        character(len=:), allocatable :: val
+        character(len=4096) :: buf
+        integer :: n
+        n = nc_size_attr(trim(filename), name)
+        buf = ""
+        call nc_read_attr(trim(filename), name, buf)
+        val = buf(1:min(n, len(buf)))
+    end function read_attr_str
+
+    subroutine map_write_attrs(filename, grid1, grid2, method, gen, wcut, fmt)
+        ! Identify a cache file: grid signatures, method, generator, cutoff
+        ! and format (global attributes read back by map_load_wm).
+        character(len=*), intent(in) :: filename, method, gen, fmt
+        type(grid_class), intent(in) :: grid1, grid2
+        real(dp),         intent(in) :: wcut
+        call nc_write_attr(trim(filename), "coords_src_sig", grid_signature_str(grid1))
+        call nc_write_attr(trim(filename), "coords_dst_sig", grid_signature_str(grid2))
+        call nc_write_attr(trim(filename), "coords_method", trim(method))
+        call nc_write_attr(trim(filename), "coords_gen", trim(gen))
+        call nc_write_attr(trim(filename), "coords_weight_cutoff", wcut)
+        call nc_write_attr(trim(filename), "coords_format", trim(fmt))
+    end subroutine map_write_attrs
+
+    subroutine map_save_wm(map, grid1, grid2, method, wcut, fldr, filename)
+        ! Write map%wm to its cache file, creating the folder if needed, with
+        ! the identifying attributes (map_write_attrs). The file is written
+        ! under a per-process name and then renamed into place (see
+        ! cache_tmp_name / cache_commit).
         type(map_class),  intent(in) :: map
-        character(len=*), intent(in) :: fldr, filename
+        type(grid_class), intent(in) :: grid1, grid2
+        character(len=*), intent(in) :: method, fldr, filename
+        real(dp),         intent(in) :: wcut
         character(len=512) :: tmp
         call execute_command_line("mkdir -p '"//trim(fldr)//"'")
         tmp = cache_tmp_name(filename)
         call weight_map_write(map%wm, trim(tmp))
+        call map_write_attrs(tmp, grid1, grid2, method, "coords", wcut, "coords-wm-1")
         call cache_commit(tmp, filename)
     end subroutine map_save_wm
 
@@ -331,7 +470,7 @@ contains
         end if
     end subroutine cache_commit
 
-    subroutine map_init_cdo(map, grid1, grid2, method, fldr, filename, clean)
+    subroutine map_init_cdo(map, grid1, grid2, method, fldr, filename, key1, key2, clean)
         ! Generate a grid -> grid SCRIP map via an external cdo call and load it.
         ! This reproduces the climber-x flow: write short grid descriptions for
         ! both grids, write a source-grid NetCDF for cdo input, then
@@ -341,7 +480,7 @@ contains
         ! (see cache_tmp_name / cache_commit).
         type(map_class),  intent(inout) :: map
         type(grid_class), intent(in)    :: grid1, grid2
-        character(len=*), intent(in)    :: method, fldr, filename
+        character(len=*), intent(in)    :: method, fldr, filename, key1, key2
         logical, optional, intent(in)   :: clean
 
         type(map_scrip_class) :: mps
@@ -379,10 +518,11 @@ contains
         cmd = "cdo gen"//trim(method)//","//trim(desc2)//" -setgrid,"//trim(desc1)// &
               " "//trim(src_nc)//" "//trim(tmp)
         call call_system_cdo(cmd)
+        call map_write_attrs(tmp, grid1, grid2, method, "cdo", 0.0_dp, "scrip-cdo")
         call cache_commit(tmp, filename)
 
         ! Load the generated SCRIP map into the weight store
-        call map_scrip_load(mps, trim(grid1%name), trim(grid2%name), trim(fldr), trim(method))
+        call map_scrip_load(mps, trim(key1), trim(key2), trim(fldr), trim(method))
         call map_scrip_to_weight_map(mps, map%wm)
 
         ! Optionally remove the intermediate grid files

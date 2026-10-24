@@ -38,7 +38,7 @@ module coupler
     ! which is the point at which that map's weights are generated.
 
     use coords, only : dp, sp, mv_dp, grid_class, map_class, map_init, map_field, &
-                       map_postprocess, grid_cdo_read_desc, compare_coord
+                       map_postprocess, grid_cdo_read_desc, grid_signature_str, grid_signature_match
     use fesm_log, only : fesm_error, to_str
 
     implicit none
@@ -67,6 +67,8 @@ module coupler
         character(len=512) :: map_fldr = "maps"   ! disk cache dir for map_init
         character(len=32)  :: gen = "coords"       ! default map generator; override
                                                    ! per map via coupler_prime(gen=)
+        character(len=32)  :: on_mismatch = "error" ! cache file of other grids: error | rebuild
+        logical            :: hash_names = .false.  ! grid hashes in cache file names
     end type
 
     interface remap
@@ -89,13 +91,17 @@ module coupler
 
 contains
 
-    subroutine coupler_init(cpl, map_fldr, gen)
+    subroutine coupler_init(cpl, map_fldr, gen, on_mismatch, hash_names)
         ! Reset a coupler to an empty registry + cache. `gen` sets the coupler-wide
         ! default map generator ("coords" / "cdo"); it can be overridden per map at
-        ! prime time via coupler_prime(gen=).
+        ! prime time via coupler_prime(gen=). `on_mismatch` ("error" default |
+        ! "rebuild") and `hash_names` (default .false.) are passed to map_init
+        ! for every map (cache file identity, see map_init).
         type(coupler_class), intent(out) :: cpl
         character(len=*), intent(in), optional :: map_fldr
         character(len=*), intent(in), optional :: gen
+        character(len=*), intent(in), optional :: on_mismatch
+        logical,          intent(in), optional :: hash_names
 
         allocate(cpl%grids(SLOTS_INIT), cpl%maps(SLOTS_INIT))
         cpl%ngrids = 0
@@ -104,6 +110,10 @@ contains
         if (present(map_fldr)) cpl%map_fldr = trim(map_fldr)
         cpl%gen = "coords"
         if (present(gen)) cpl%gen = trim(gen)
+        cpl%on_mismatch = "error"
+        if (present(on_mismatch)) cpl%on_mismatch = trim(on_mismatch)
+        cpl%hash_names = .false.
+        if (present(hash_names)) cpl%hash_names = hash_names
     end subroutine coupler_init
 
     subroutine coupler_add_grid(cpl, name, grid)
@@ -240,26 +250,16 @@ contains
         integer,             intent(in) :: ig
         type(grid_class),    intent(in) :: grid
         character(len=*),    intent(in) :: caller
+        character(len=128) :: why
 
         if (.not. cpl%grids(ig)%from_disk) &
             call fesm_error(caller, "grid '"//trim(cpl%grids(ig)%name)//"' already registered.")
-        if (.not. grids_agree(cpl%grids(ig)%grid, grid)) &
+        if (.not. grid_signature_match(grid_signature_str(cpl%grids(ig)%grid), &
+                                       grid_signature_str(grid), why)) &
             call fesm_error(caller, "grid '"//trim(cpl%grids(ig)%name)//"' differs from the grid "// &
-                "already read from "//trim(cpl%map_fldr)//"/grid_"//trim(cpl%grids(ig)%name)//".txt.")
+                "already read from "//trim(cpl%map_fldr)//"/grid_"//trim(cpl%grids(ig)%name)//".txt ("// &
+                trim(why)//").")
     end subroutine check_disk_slot
-
-    logical function grids_agree(g1, g2)
-        ! Same coordinate system and axes (to 1e-9 of a cell: a grid read back
-        ! from grid_<name>.txt differs from the in-memory grid in the last bits).
-        type(grid_class), intent(in) :: g1, g2
-        real(dp) :: tx, ty
-        grids_agree = .false.
-        if (g1%G%nx /= g2%G%nx .or. g1%G%ny /= g2%G%ny) return
-        if (.not. compare_coord(g1, g2)) return
-        tx = 1.0e-9_dp*max(abs(g1%G%dx), tiny(1.0_dp))
-        ty = 1.0e-9_dp*max(abs(g1%G%dy), tiny(1.0_dp))
-        grids_agree = maxval(abs(g1%G%x - g2%G%x)) <= tx .and. maxval(abs(g1%G%y - g2%G%y)) <= ty
-    end function grids_agree
 
     function resolve_grid(cpl, name) result(ig)
         ! Registry index of `name`; an unregistered name is read once from
@@ -306,7 +306,8 @@ contains
         im = new_map_slot(cpl, src, dst, method)
         allocate(cpl%maps(im)%map)
         call map_init(cpl%maps(im)%map, cpl%grids(is)%grid, cpl%grids(id)%grid, &
-                      method=trim(method), gen=trim(g), fldr=trim(cpl%map_fldr), load=.true.)
+                      method=trim(method), gen=trim(g), fldr=trim(cpl%map_fldr), load=.true., &
+                      on_mismatch=trim(cpl%on_mismatch), hash_names=cpl%hash_names)
     end function get_map
 
     function resolve_method(cpl, src, dst, method, norm) result(mtd)

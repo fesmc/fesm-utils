@@ -19,6 +19,13 @@ All notable changes to fesm-utils are documented here.
   mask_pack`); `method="auto"` (`bilin` when refining, `con` when coarsening, by median
   model cell area).
 - **coords**: `map_postprocess` (the fill/filter pass of `map_field`) is public.
+- **coords**: map cache identity. New cache files carry the grid signatures and the
+  method/generator/cutoff/format as global attributes (`coords_src_sig`, ...); `map_init`
+  checks them on load (`on_mismatch="error"` default, or `"rebuild"`), loads files
+  without signatures unverified (logged once), and always stops on a file whose sizes do
+  not match the grids. Opt-in `hash_names=.true.` (`map_init`, `coupler_init`) tags the
+  file names with `grid_hash8`. New module `grid_signature` (`grid_signature_str`,
+  `grid_signature_match`, `grid_hash8`). `make check` runs `test_grid_signature`.
 - **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
   gate for the coupler/`map_field` apply surface against a reference commit.
 

@@ -113,10 +113,14 @@ $(objdir)/polygons.o: $(srcdir)/coords/polygons.f90 $(objdir)/precision.o
 $(objdir)/weight_map.o: $(srcdir)/coords/weight_map.f90 $(objdir)/precision.o $(objdir)/constants.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/grid_signature.o: $(srcdir)/coords/grid_signature.f90 $(objdir)/precision.o $(objdir)/coordinates.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/mapping.o: $(srcdir)/coords/mapping.f90 $(objdir)/precision.o $(objdir)/constants.o \
 								$(objdir)/coordinates.o $(objdir)/planet.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
 								$(objdir)/mapping_scrip.o $(objdir)/conservative.o $(objdir)/interp2D.o $(objdir)/gaussian_filter.o \
-								$(objdir)/map_io.o $(objdir)/grid_cdo.o $(objdir)/ncio.o
+								$(objdir)/map_io.o $(objdir)/grid_cdo.o $(objdir)/ncio.o $(objdir)/grid_signature.o \
+								$(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
 $(objdir)/map_io.o: $(srcdir)/coords/map_io.f90 $(objdir)/precision.o $(objdir)/weight_map.o $(objdir)/ncio.o
@@ -135,7 +139,7 @@ $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/
 								$(objdir)/planet.o $(objdir)/projection_oblimap2.o $(objdir)/coordinates.o \
 								$(objdir)/gaussian_latitudes.o $(objdir)/kdtree.o $(objdir)/weight_map.o \
 								$(objdir)/mapping.o $(objdir)/map_io.o $(objdir)/ncio_interp.o $(objdir)/conservative.o \
-								$(objdir)/grid_cdo.o
+								$(objdir)/grid_cdo.o $(objdir)/grid_signature.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/coupler.o: $(srcdir)/coupler.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
@@ -240,6 +244,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/kdtree.o \
 					$(objdir)/polygons.o \
 					$(objdir)/weight_map.o \
+					$(objdir)/grid_signature.o \
 					$(objdir)/mapping.o \
 					$(objdir)/map_io.o \
 					$(objdir)/ncio_interp.o \
@@ -361,6 +366,8 @@ test-coords : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_grid_cf_read.x $(testdir)/coords/test_grid_cf_read.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_coupler_bitident.x $(testdir)/coords/test_coupler_bitident.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_grid_signature.x $(testdir)/coords/test_grid_signature.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
@@ -535,7 +542,7 @@ CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_r
                test_map_init_con test_map_cache test_map_cdo test_map_con_proj \
                test_lon180_wrap test_varslice_map test_ncio_interp test_parity \
                test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
-               test_coupler test_grid_cf_read test_coupler_bitident
+               test_coupler test_grid_cf_read test_coupler_bitident test_grid_signature
 CHECK_DATA   = test_regions test_topodata test_htopo
 ICE_DATA     = ../ice_data/v2/NorthTest
 

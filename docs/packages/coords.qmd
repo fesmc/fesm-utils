@@ -175,6 +175,29 @@ two grid names, the folder and the method (`gen_map_filename`), and:
 2. otherwise the weights are generated (in-package for `gen="coords"`, or by an
    external `cdo gen<method>` call for `gen="cdo"`) and saved to the cache.
 
+Cache identity. Each new cache file (in-package or `cdo`) carries global
+attributes `coords_src_sig`, `coords_dst_sig` (grid signatures:
+`grid_signature_str(grid)`, the coordinate system, the axis sizes and the
+first/last/sum of the axes and bounds), `coords_method`, `coords_gen`,
+`coords_weight_cutoff` and `coords_format`. On load (`map_init` with a cached
+file), the file is checked against the grids:
+
+- signatures present and different (`grid_signature_match`, tolerance 1e-9 of a
+  cell, so a grid read back from `grid_<name>.txt` still matches):
+  `on_mismatch="error"` (default) stops and names both signatures and the file;
+  `on_mismatch="rebuild"` regenerates and overwrites the file (logged);
+- no signatures (a file written before signatures, or by another tool): loaded
+  as before, with a one-time "unverified" log line;
+- `n_src` / `n_dst` that do not match the grid sizes always stop.
+
+By default the file name stays `scrip-<method>_<src>_<dst>.nc`. With
+`map_init(..., hash_names=.true.)` (or `coupler_init(..., hash_names=.true.)`)
+it is `scrip-<method>_<src>-<h8>_<dst>-<h8>.nc`, where `h8 = grid_hash8(grid)`
+(FNV-1a over the signature at 6 significant digits), so two grids with one name
+can coexist in one folder. A legacy file of the same size but other axes is
+accepted unverified: clear the map folder (or rename the grid) when a grid
+definition changes at equal size.
+
 Because the cache is always a valid SCRIP remapping file, a `cdo`-generated map
 and an in-package `coords` map interoperate at the same filename. The file I/O
 primitives are public as `weight_map_write` / `weight_map_read` (module
@@ -197,6 +220,7 @@ type(grid_class)      :: gcoarse, gfine
 real(dp), allocatable :: fs(:,:), ft(:,:)
 
 call coupler_init(cpl, map_fldr="maps")          ! empty registry + cache
+                                                 ! [, gen, on_mismatch, hash_names]
 call coupler_add_grid(cpl, "coarse", gcoarse)    ! register grids by name
 call coupler_add_grid(cpl, "fine",   gfine)
 
