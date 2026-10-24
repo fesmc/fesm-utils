@@ -2,6 +2,7 @@
 module nml 
 
     use, intrinsic :: iso_fortran_env, only : input_unit, output_unit, error_unit
+    use fesm_log, only : fesm_error
 
     implicit none 
 
@@ -15,6 +16,11 @@ module nml
     ! building huge strings that overflow the fixed-length print line.
     integer, parameter :: nml_print_vector_max = 50
 
+    ! Length of the group and key names returned by nml_group_names and
+    ! nml_group_keys.
+    integer, parameter, public :: nml_group_len = 256
+    integer, parameter, public :: nml_key_len   = 128
+
     interface nml_read 
         module procedure nml_read_string, nml_read_double, nml_read_float 
         module procedure nml_read_integer, nml_read_logical
@@ -22,6 +28,12 @@ module nml
         module procedure nml_read_float_vector, nml_read_integer_vector
         module procedure nml_read_logical_vector
     end interface 
+
+    interface nml_validate
+        ! One template (defaults_file, group [, defaults_group]) or several
+        ! (group, defaults_files(:) [, defaults_groups(:)]).
+        module procedure nml_validate_one, nml_validate_multi
+    end interface
 
     interface nml_write
         module procedure nml_write_string 
@@ -44,6 +56,8 @@ module nml
     public :: nml_has_param
     public :: nml_has_group
     public :: nml_find_group
+    public :: nml_group_keys
+    public :: nml_group_names
 
 contains
 
@@ -597,15 +611,19 @@ contains
         return
     end subroutine split_group_dot_name
 
-    ! Walk filename collecting all (group, name) pairs whose group matches
-    ! target_group (or all if target_group is empty). Used by nml_validate.
-    subroutine nml_collect_group_params(filename, target_group, names, n)
+    ! Walk filename once and return every (group, key) pair in file order:
+    ! one entry per key line of a &group ... / block or flat 'group.key'
+    ! assignment, and one entry with key = "" per group header (so an empty
+    ! group is listed too). Duplicates are kept. Shared by nml_validate,
+    ! nml_group_keys and nml_group_names.
+    subroutine nml_scan_file(filename, groups, keys, n)
 
         implicit none
 
-        character(len=*), intent(IN)  :: filename, target_group
-        character(len=*), intent(OUT) :: names(:)
-        integer,          intent(OUT) :: n
+        character(len=*), intent(IN) :: filename
+        character(len=nml_group_len), allocatable, intent(OUT) :: groups(:)
+        character(len=nml_key_len),   allocatable, intent(OUT) :: keys(:)
+        integer, intent(OUT) :: n
 
         integer :: io, file_unit, iostat, l, ltype
         character(len=1000) :: line, name1, value1, comment1
@@ -617,7 +635,7 @@ contains
         character(len=1024) :: flat_values(MAX_FLAT)
 
         n = 0
-        names(:) = ""
+        allocate(groups(64), keys(64))
 
         inquire(file=trim(filename),NUMBER=file_unit)
         if (file_unit .eq. -1) then
@@ -641,28 +659,19 @@ contains
             call parse_flat_line(line, is_flat, flat_groups, flat_names, flat_values, n_flat)
             if (is_flat) then
                 do i = 1, n_flat
-                    if (trim(flat_groups(i)) == trim(target_group)) then
-                        if (n < size(names)) then
-                            n = n + 1
-                            names(n) = trim(flat_names(i))
-                        end if
-                    end if
+                    call push(flat_groups(i), flat_names(i))
                 end do
                 cycle
             end if
 
             call parse_line(line, ltype, name1, value1, comment1)
 
-            if (ingroup .and. ltype == 3 .and. trim(group_now) == trim(target_group)) then
-                if (n < size(names)) then
-                    n = n + 1
-                    names(n) = trim(name1)
-                end if
-            end if
+            if (ingroup .and. ltype == 3) call push(group_now, name1)
 
             if (ltype == 1) then
                 ingroup   = .true.
                 group_now = trim(name1)
+                call push(group_now, "")
             end if
             if (ltype == 2) then
                 ingroup   = .false.
@@ -674,14 +683,82 @@ contains
 
         return
 
-    end subroutine nml_collect_group_params
+    contains
+
+        subroutine push(g, k)
+            character(len=*), intent(IN) :: g, k
+            character(len=nml_group_len), allocatable :: gtmp(:)
+            character(len=nml_key_len),   allocatable :: ktmp(:)
+            if (n == size(keys)) then
+                allocate(gtmp(2*n), ktmp(2*n))
+                gtmp(1:n) = groups(1:n)
+                ktmp(1:n) = keys(1:n)
+                call move_alloc(gtmp, groups)
+                call move_alloc(ktmp, keys)
+            end if
+            n = n + 1
+            groups(n) = trim(g)
+            keys(n)   = trim(k)
+        end subroutine push
+
+    end subroutine nml_scan_file
+
+    function nml_group_keys(filename, group) result(names)
+        ! The keys set in `group` of `filename` (&group ... / blocks and flat
+        ! 'group.key' lines), each once, in file order. Empty when the group
+        ! is absent or empty.
+
+        implicit none
+
+        character(len=*), intent(IN) :: filename, group
+        character(len=nml_key_len), allocatable :: names(:)
+
+        character(len=nml_group_len), allocatable :: groups(:)
+        character(len=nml_key_len),   allocatable :: keys(:)
+        logical, allocatable :: keep(:)
+        integer :: n, i
+
+        call nml_scan_file(filename, groups, keys, n)
+
+        allocate(keep(n))
+        do i = 1, n
+            keep(i) = trim(groups(i)) == trim(group) .and. len_trim(keys(i)) > 0
+            if (keep(i)) keep(i) = .not. any(keep(1:i-1) .and. keys(1:i-1) == keys(i))
+        end do
+        names = pack(keys(1:n), keep)
+
+    end function nml_group_keys
+
+    function nml_group_names(filename) result(names)
+        ! The groups of `filename` (&group ... / blocks, possibly empty, and
+        ! flat 'group.key' lines), each once, in file order.
+
+        implicit none
+
+        character(len=*), intent(IN) :: filename
+        character(len=nml_group_len), allocatable :: names(:)
+
+        character(len=nml_group_len), allocatable :: groups(:)
+        character(len=nml_key_len),   allocatable :: keys(:)
+        logical, allocatable :: keep(:)
+        integer :: n, i
+
+        call nml_scan_file(filename, groups, keys, n)
+
+        allocate(keep(n))
+        do i = 1, n
+            keep(i) = .not. any(keep(1:i-1) .and. groups(1:i-1) == groups(i))
+        end do
+        names = pack(groups(1:n), keep)
+
+    end function nml_group_names
 
     ! Validate that every parameter set under group in filename is also
     ! declared (under defaults_group or, if not present, group) in
     ! defaults_file. Reports each unknown parameter; halts at the end if
     ! halt_on_error (default .TRUE.) and any were found. nbad (optional)
     ! returns the number of unknown parameters.
-    subroutine nml_validate(filename, defaults_file, group, defaults_group, halt_on_error, nbad)
+    subroutine nml_validate_one(filename, defaults_file, group, defaults_group, halt_on_error, nbad)
 
         implicit none
 
@@ -690,11 +767,11 @@ contains
         logical,          intent(IN), optional :: halt_on_error
         integer,          intent(OUT), optional :: nbad
 
-        integer, parameter :: MAX_PARAMS = 2000
-        character(len=128) :: names(MAX_PARAMS)
+        character(len=nml_group_len), allocatable :: groups(:)
+        character(len=nml_key_len),   allocatable :: names(:)
         character(len=1024) :: dummy_value
         character(len=256) :: def_group_actual
-        integer :: n_user, i
+        integer :: n_scan, i
         logical :: halt, any_err, found
 
         halt = .true.
@@ -703,11 +780,12 @@ contains
         def_group_actual = group
         if (present(defaults_group)) def_group_actual = trim(defaults_group)
 
-        call nml_collect_group_params(filename, group, names, n_user)
+        call nml_scan_file(filename, groups, names, n_scan)
 
         if (present(nbad)) nbad = 0
         any_err = .false.
-        do i = 1, n_user
+        do i = 1, n_scan
+            if (trim(groups(i)) /= trim(group) .or. len_trim(names(i)) == 0) cycle
             call nml_find_param(defaults_file, trim(def_group_actual), trim(names(i)), &
                                 dummy_value, found)
             if (.not. found) then
@@ -729,7 +807,79 @@ contains
 
         return
 
-    end subroutine nml_validate
+    end subroutine nml_validate_one
+
+    ! Validate `group` of filename against several templates: a key is valid
+    ! if any template declares it, template i being group defaults_groups(i)
+    ! (default: group) of defaults_files(i). Every template group must exist.
+    ! Unknown keys are reported in one message naming the group and every
+    ! template searched; it stops if halt_on_error (default .TRUE.), and
+    ! otherwise returns. nbad (optional) returns the number of unknown keys.
+    subroutine nml_validate_multi(filename, group, defaults_files, defaults_groups, halt_on_error, nbad)
+
+        implicit none
+
+        character(len=*), intent(IN) :: filename, group
+        character(len=*), intent(IN) :: defaults_files(:)
+        character(len=*), intent(IN), optional :: defaults_groups(:)
+        logical,          intent(IN), optional :: halt_on_error
+        integer,          intent(OUT), optional :: nbad
+
+        character(len=nml_key_len), allocatable :: user_keys(:), tmpl_keys(:), declared(:)
+        character(len=256), allocatable :: tmpl_groups(:)
+        character(len=:), allocatable :: unknown, searched
+        integer :: i, nb, stat
+        logical :: halt
+
+        halt = .true.
+        if (present(halt_on_error)) halt = halt_on_error
+
+        if (size(defaults_files) == 0) &
+            call fesm_error("nml_validate", "no template for group &"//trim(group)//" of "//trim(filename)//".")
+
+        allocate(tmpl_groups(size(defaults_files)))
+        tmpl_groups = group
+        if (present(defaults_groups)) then
+            if (size(defaults_groups) /= size(defaults_files)) &
+                call fesm_error("nml_validate", "defaults_groups and defaults_files differ in size.", &
+                                "group &"//trim(group)//" of "//trim(filename))
+            tmpl_groups = defaults_groups
+        end if
+
+        searched = ""
+        allocate(declared(0))
+        do i = 1, size(defaults_files)
+            searched = searched//new_line("a")//"  "//trim(defaults_files(i))//" &"//trim(tmpl_groups(i))
+            if (.not. nml_has_group(trim(defaults_files(i)), trim(tmpl_groups(i)))) &
+                call fesm_error("nml_validate", "template group &"//trim(tmpl_groups(i))// &
+                                " not found in "//trim(defaults_files(i))//".", &
+                                "validating group &"//trim(group)//" of "//trim(filename))
+            tmpl_keys = nml_group_keys(trim(defaults_files(i)), trim(tmpl_groups(i)))
+            declared  = [declared, tmpl_keys]
+        end do
+
+        user_keys = nml_group_keys(filename, group)
+
+        nb = 0
+        unknown = ""
+        do i = 1, size(user_keys)
+            if (any(declared == user_keys(i))) cycle
+            nb = nb + 1
+            unknown = unknown//new_line("a")//"  "//trim(user_keys(i))
+        end do
+
+        if (present(nbad)) nbad = nb
+        if (nb == 0) return
+
+        if (halt) then
+            call fesm_error("nml_validate", "unknown key(s) in group &"//trim(group)//" of "//trim(filename)//":", &
+                            unknown(2:)//new_line("a")//"declared by none of the templates:"//searched)
+        else
+            call fesm_error("nml_validate", "unknown key(s) in group &"//trim(group)//" of "//trim(filename)//":", &
+                            unknown(2:)//new_line("a")//"declared by none of the templates:"//searched, stat=stat)
+        end if
+
+    end subroutine nml_validate_multi
 
     subroutine nml_read_string(filename,group,name,value,comment,init,defaults_file,defaults_group)
 

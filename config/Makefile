@@ -164,7 +164,7 @@ ncio-gen:
 $(objdir)/ncio_transpose.o: $(srcdir)/ncio_transpose.f90 $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -c -o $@ $<
 
-$(objdir)/nml.o: $(srcdir)/nml.f90
+$(objdir)/nml.o: $(srcdir)/nml.f90 $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/precision.o: $(srcdir)/precision.f90
@@ -573,6 +573,21 @@ test-fields : fesmutils-static
 		@echo "    fesm_fields test programs ready: $(bindir)/test_fields_*.x, $(bindir)/fields_abort_*.x"
 		@echo " "
 
+# nml test programs: $(CHECK_NML), and the expected-abort programs
+# $(CHECK_NML_ABORT) in test/nml/abort/
+test-nml : fesmutils-static
+		for t in $(CHECK_NML); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/nml/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		for t in $(CHECK_NML_ABORT); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/nml/abort/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		@echo " "
+		@echo "    nml test programs ready: $(bindir)/test_nml_*.x, $(bindir)/nml_abort_*.x"
+		@echo " "
+
 # fesm_datasrc (field data sources) and its preparatory nml/varslice steps:
 # test programs $(CHECK_DATASRC), and the expected-abort programs
 # $(CHECK_DATASRC_ABORT) in test/datasrc/abort/
@@ -642,6 +657,8 @@ CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema test_t
                 test_nml_quoted test_varslice_units_attr test_varslice_get test_varslice_interval \
                 test_static test_transient test_clim test_scalar test_anomaly test_bind test_examples
 CHECK_DATASRC_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/datasrc/abort/datasrc_abort_*.f90))))
+CHECK_NML    = test_nml_validate
+CHECK_NML_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/nml/abort/nml_abort_*.f90))))
 ICE_DATA     = ../ice_data/v2/NorthTest
 
 # $(call check_run,<tests>): run each $(bindir)/<test>.x, log its output and
@@ -684,11 +701,12 @@ check_abort = mkdir -p logs/check; nfail=0; \
 .PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
          check-var-io check-series check-varslice check-multitopo check-units \
          check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields \
-         check-datasrc
+         check-datasrc check-nml check-nml-compat
 
 check : check-coords check-phys-constants check-root check-ncio check-var-io \
         check-series check-varslice check-multitopo check-units check-varslice-clim \
-        check-tsgen check-zremap check-log check-clock check-fields check-datasrc
+        check-tsgen check-zremap check-log check-clock check-fields check-datasrc \
+        check-nml
 		@echo " "
 		@echo "    make check: all tests passed (data tests: make check-data)."
 		@echo " "
@@ -727,6 +745,24 @@ check-fields : test-fields
 check-datasrc : test-datasrc
 		@$(call check_run,$(CHECK_DATASRC)); rc_run=$$?; \
 		$(call check_abort,$(CHECK_DATASRC_ABORT)) && [ $$rc_run -eq 0 ]
+check-nml : test-nml
+		@$(call check_run,$(CHECK_NML)); rc_run=$$?; \
+		$(call check_abort,$(CHECK_NML_ABORT)) && [ $$rc_run -eq 0 ]
+
+# nml parse compatibility against a reference commit (not part of `check`):
+#     make check-nml-compat ref=v1.4 [files="a.nml b.nml"]
+# Every key of the files, read as a string vector, must parse the same at
+# `ref` and in the working tree (test/nml/nml_compat.sh). files defaults to
+# the yelmox, yelmo, chion and FastIsostasy namelists next to fesm-utils.
+NML_COMPAT_FILES = $(wildcard ../yelmox/yelmox/*.nml ../yelmox/input/*.nml \
+                   ../yelmo/input/yelmo_defaults.nml ../chion/input/*.nml ../FastIsostasy/par/*.nml)
+check-nml-compat :
+		@if [ -z "$(ref)" ]; then echo "  usage: make check-nml-compat ref=<commit> [files=...]"; exit 2; fi
+		@if [ -z "$(or $(files),$(NML_COMPAT_FILES))" ]; then \
+			echo "  SKIP  check-nml-compat (no namelist files: pass files=...)"; \
+		else \
+			test/nml/nml_compat.sh $(ref) $(or $(files),$(NML_COMPAT_FILES)); \
+		fi
 
 # FesmData tests on the NorthTest grids; need ice_data checked out next to
 # fesm-utils (not available in CI).
@@ -814,6 +850,7 @@ usage:
 	@echo " make check            : builds and runs the self-contained tests (fails on any failure)"
 	@echo " make check-<group>    : one group, e.g. check-coords, check-ncio, check-zremap"
 	@echo " make check-data       : runs the FesmData tests that need ../ice_data"
+	@echo " make check-nml-compat ref=<commit> [files=...] : nml parsing of namelist files vs a reference commit"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

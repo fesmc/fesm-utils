@@ -29,6 +29,18 @@ All notable changes to fesm-utils are documented here.
   holds a group (par file first, then the library list; stops listing every file, or
   `stat = 1`); replaces yelmox `var_defs_find`. `nml_validate(..., nbad)` returns the
   number of unknown keys.
+- **nml**: multi-template `nml_validate(filename, group, defaults_files(:)
+  [, defaults_groups(:), halt_on_error, nbad])`, a key is valid if any template declares
+  it; unknown keys stop through `fesm_error` naming the group and every template searched
+  (the single-template form is unchanged). `nml_group_keys(filename, group)` and
+  `nml_group_names(filename)` list a group's keys and a file's groups. `nml` now uses
+  `fesm_log`. `make check-nml`; `make check-nml-compat ref=<commit> [files=...]`
+  (`test/nml/nml_compat.sh`) diffs every key read as a string vector against a reference
+  commit (not part of `make check`). Run against `v1.4` on 34 yelmox/yelmo/chion
+  namelist files (7248 keys): 17 keys differ, all `units` vectors with quoted
+  elements containing blanks (now `"kg m-2 yr-1" "mm d-1"` gives 2 elements, before
+  5). In v1.4 varslice only stored and printed `units_in/out` (conversion is
+  `scaling`), so no numerical result of yelmox changes.
 - **coupler**: `coupler_method(cpl, src, dst [, method, norm])`, the method `remap` would
   use (`"auto"` resolved) without building a map.
 - **fesm_units**: `units_conv(from, to, scale, offset [, rho_ice, sec_year, stat])`, the

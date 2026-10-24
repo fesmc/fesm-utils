@@ -73,6 +73,7 @@ make check openmp=0        # build and run the self-contained tests
 make check-coords          # one group (also check-ncio, check-zremap, ...)
 make -k check              # keep going past a failing group
 make check-data            # FesmData tests; need ../ice_data next to fesm-utils
+make check-nml-compat ref=v1.4 [files="a.nml b.nml"]   # nml parsing vs a reference commit
 ```
 
 `make check` builds each test program in `test/`, runs it from the repo root and
@@ -80,6 +81,12 @@ fails if any exits non-zero, printing one `PASS`/`FAIL`/`SKIP` line per test
 (full output in `logs/check/<test>.log`). The cdo-based tests report `SKIP`
 when `cdo` is not on `PATH`. CI (`.github/workflows/check.yml`) runs it with
 gfortran + netCDF on Ubuntu for `openmp=0` and `openmp=1`.
+
+`make check-nml-compat` is not part of `make check` (it needs a reference
+commit): `test/nml/nml_compat.sh` builds a key reader at `ref` (in a temporary
+git worktree) and in the working tree, reads every key of the files as a string
+vector with both and diffs the outputs. `files` defaults to the yelmox, yelmo,
+chion and FastIsostasy namelists next to fesm-utils.
 
 ## Machine configuration
 

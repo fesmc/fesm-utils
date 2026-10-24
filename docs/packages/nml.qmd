@@ -16,7 +16,7 @@ quirks: quoted strings, inline `!` comments, and whitespace.
 The parser accepts both the classic `&group ... /` block form and flat
 `group.param = value` lines (single- or multi-parameter per line). All public
 entities live in `module nml` (`src/nml.f90`); the module depends only on
-standard intrinsics.
+standard intrinsics and `fesm_log` (`fesm_error`).
 
 A recent addition (CHANGELOG: "nml defaults overlay + validation") layers a
 schema/defaults file underneath the user file: `nml_read` can take an optional
@@ -108,6 +108,27 @@ optional is absent). `halt_on_error` defaults to `.TRUE.`, in which case the
 program stops after reporting all unknown parameters; `nbad` (optional) returns
 their number.
 
+A group whose keys are declared by more than one template (e.g. core keys in one
+defaults file and backend keys in another) is validated against all of them:
+
+```fortran
+call nml_validate(filename, group, defaults_files, defaults_groups, halt_on_error, nbad)
+call nml_validate(par_file, "ice", [character(len=256) :: "input/kryos_defaults.nml", &
+                  "input/yelmo_defaults.nml"], [character(len=64) :: "instance", "ice_yelmo"])
+```
+
+A key is valid if any template declares it; template `i` is group
+`defaults_groups(i)` (default: `group`) of `defaults_files(i)`, and every
+template group must exist. Unknown keys are reported in one `fesm_error`
+message naming the group and every template searched; it stops unless
+`halt_on_error = .false.`, and `nbad` returns their number.
+
+`nml_group_keys(filename, group)` returns the keys set in a group, each once in
+file order (`character(len=nml_key_len)`, empty for an absent or empty group);
+`nml_group_names(filename)` returns the groups of a file the same way
+(`character(len=nml_group_len)`). Both see `&group ... /` blocks and flat
+`group.key` lines.
+
 `nml_has_param(filename, group, name)` and `nml_has_group(filename, group)` are
 queries without side effects: is the parameter set, does the file hold the group
 (a `&group ... /` block, possibly empty, or a flat `group.param` line).
@@ -160,6 +181,13 @@ by a comment (`&ice_bg   ! data ice on the globe`).
 The parser also accepts equivalent flat lines, e.g.
 `tsgen_sin.f_max = 10.0`, with one or several `group.param = value` assignments
 per line.
+
+`make check-nml-compat ref=<commit> [files=...]` (`test/nml/nml_compat.sh`)
+reads every key of a list of files as a string vector at a reference commit and
+in the working tree and diffs the two (one line per key,
+`file group key : n : v1 | v2 | ...`). Against `v1.4`, the string-vector split
+outside quotes changes the keys holding several quoted strings with blanks,
+e.g. `units = "kg m-2 yr-1" "mm d-1"` (5 elements in `v1.4`, 2 now).
 
 ## See also
 
