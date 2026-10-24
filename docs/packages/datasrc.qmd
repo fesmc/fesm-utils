@@ -1,0 +1,191 @@
+---
+title: "fesm_datasrc"
+subtitle: "Fields served from files into an exchange state"
+---
+
+## Overview
+
+`fesm_datasrc` serves a list of named fields of a caller's
+[field_state_t](fields.qmd) from files. A model's "data" component (data ice,
+data geothermal, a forcing curve) declares its exports, then hands their names
+to a `datasrc_t`, so a consumer cannot tell read from computed. Per field it:
+
+- binds the name to a **field group** (file, variable, mode), named in the
+  caller's instance group and found in the par file or a library file;
+- reads it with [varslice](varslice.qmd) (2-D, 3-D) or [series](series.qmd)
+  (0-D), with the time axis and the units taken from the file;
+- remaps it once at init onto the instance grid;
+- converts it to the units declared in the state with
+  [fesm_units](units.qmd), or stops at init;
+- evaluates it at a time or over an interval, optionally as an anomaly
+  against a reference, and puts it with its validity.
+
+It knows no field names (names, units, shape and time semantics come from the
+caller's state), does no physics (a melt file needs `scaling = -1 0`), chooses
+no clock, does not remap between instances (the exchange does) and holds no
+restart state (it is a function of time). The module depends on `fesm_fields`,
+`fesm_units`, `fesm_log`, `varslice`, `series`, `nml`, `ncio` and `coords`.
+All procedures are free; the types have no type-bound procedures.
+
+## Namelists
+
+**Instance group** (its schema belongs to the caller): one key per field
+name, the field group it is bound to; `""` or absent is unbound.
+
+```fortran
+&ice_bg                     ! data ice on the globe
+    backend = "data"
+    grid    = "GLOBAL-1DEG"
+    H_ice   = "ice6g_c_H_ice"
+    z_srf   = "ice6g_c_z_srf"
+    f_grnd  = "ice6g_c_f_grnd"
+/
+```
+
+**Field group**: read with the schema `[datasrc_field]` of
+`par/datasrc_defaults.nml` (hosts keep a synchronised copy in their `input/`),
+so it holds only what differs, usually `filename` and `name`. Every key of a
+group must be in the schema (`nml_validate`). The yelmox `clim_db.nml` groups
+(`units`, `scaling`, `time` set) are valid field groups unchanged.
+
+```fortran
+&datasrc_field
+    filename     = ""            ! keywords {domain} {grid_name} {key}; a glob = multifile
+    name         = ""            ! variable (unused for an ascii series)
+    mode         = "auto"        ! auto | const | static | clim | transient
+    value        = 0.0           ! const: the value, in the declared units
+    time_method  = "auto"        ! auto (from tsem) | interp | mean | exact
+    out_of_range = "error"       ! error | hold
+    units        = "auto" "auto" ! file units (checked), units after scaling; auto = attribute
+    scaling      = 1.0 0.0       ! var*scale + offset, before unit conversion
+    remap        = "auto"        ! auto | none | con | bilin | nn | shepard | quadrant
+    grid_src     = ""            ! file grid; "" = its global attribute grid_name
+    fill         = "none"        ! none | nearest | const
+    fill_value   = 0.0
+    anomaly_ref  = "none"        ! none | slice | group
+    ref_time     = 0.0           ! slice: reference time [yr, instance clock]
+    ref_group    = ""            ! group: a static field group of the same quantity
+    time         = -1 0 0 0 0    ! legacy "active x0 x1 dx nsub"; active < 0: axis from the file
+    time_units   = ""            ! "" = attribute of the time variable; "clock" = clock years
+    calendar     = ""            ! "" = attribute of the time variable
+/
+```
+
+**Lookup.** A field group comes from the par file if it holds it, else from the
+first file of `var_defs` that does (`nml_find_group`), so the par file's groups
+override the library.
+
+- `mode = auto`: `transient` if the variable has a time axis, else `static`;
+  `clim` must be explicit (or the time variable has the CF `climatology`
+  attribute). A legacy `time` key with `active >= 0` fixes the mode.
+- `remap = auto`: `con` for fields declared `FIELD_EXTENSIVE`, `bilin`
+  otherwise, when the grid of the file (`grid_src`, else `grid_name`) is known
+  and is not the instance grid; else the file is read as it is (its size
+  checked).
+
+## Modes and time
+
+| mode | read | value |
+|---|---|---|
+| `const` | never | `value` (any rank: one group serves 0-D and 2-D fields) |
+| `static` | at init | the field |
+| `clim` | at init | its cycle `(nx,ny,nsub)` (rank 3, `zdim = "month"`), or its annual mean with `time_method = "mean"`; a 3-D climatology only as its mean |
+| `transient` | at each new `(t0,t1)` | INSTANT: the value at `t1`; MEAN/ACCUM: the mean (rate) over `[t0,t1]` |
+
+`time_method = auto`: INSTANT → `interp`, MEAN and ACCUM → `interval_mean`
+(varslice), the overlap-weighted mean of the file's piecewise representation
+(cell means over CF `time_bnds`, else the linear interpolant). `exact` stops
+when no sample matches; `interp` on a MEAN field takes the value at
+`(t0+t1)/2`. A transient monthly axis serves the cycle of the year of `t`
+(`(nx,ny,12)`), or of each step averaged over the years for an interval.
+
+The file axis is decoded to calendar years (CF `units` and `calendar`, BP and
+CE forms; see [varslice](varslice.qmd)) and served as `t = y − time_ref`; a
+legacy `time` axis and `time_units = "clock"` are clock years as they stand.
+Outside the axis, `out_of_range = "error"` stops (at init against `time_span`,
+and at every update), `"hold"` takes the first or last sample. There is no
+linear extrapolation.
+
+## Units
+
+1. The file's units: `units(1)` if not `auto`, else the variable's `units`
+   attribute; neither stops, and both must be equivalent.
+2. The units after scaling: `units(2)` if not `auto`, else the file's (the
+   meaning of `units = in out` with `scaling` in `clim_db.nml`).
+3. `units_conv` to the declared units (ACCUM fields: `<declared> yr-1`, the
+   state integrates the rate); no conversion stops. Equal units are copied
+   without arithmetic.
+
+`sec_year` is the run's when given (else 365.25 d), `rho_ice` enables
+`m ice yr-1`.
+
+## Anomalies
+
+`anomaly_ref = "slice"` subtracts the same data at `ref_time` (exactly zero
+there); `"group"` subtracts a static group of the same quantity
+(`ref_group`). Both are converted to the declared units first, so a degC file
+against a K reference is exact. Consumers then add the change to their own
+reference, never the dataset's coarse absolute field.
+
+## Public API
+
+| Name | Purpose |
+|---|---|
+| `datasrc_t` | `group`, `time_ref`, `t0`, `t1` of the last update, `f(:)` (bound fields only) |
+| `datasrc_init(ds, par_file, group, state, names, grid, defaults_file [, required, var_defs, domain, subs, time_ref, time_span, rho_ice, sec_year, stat])` | Bind, open, check units, shape, grid and coverage; read const, static and clim fields |
+| `datasrc_update(ds, t [, stat])` | INSTANT fields at `t`; stops if a MEAN or ACCUM field is bound |
+| `datasrc_update(ds, t0, t1 [, stat])` | INSTANT at `t1`; MEAN and ACCUM over `[t0,t1]`, `t0 < t1`. Both are no-ops for an unchanged `(t0,t1)` |
+| `datasrc_fill(ds, state)` | Put every bound field with the interval of the last update (INSTANT `[t1,t1]`), static ones included |
+| `datasrc_has(ds, name)` | Is the name bound |
+| `datasrc_describe(ds [, level])` | One line per field: group, file, mode, method, units → declared (factor), coverage, grid |
+| `datasrc_get(ds, name, var)` | `dp` copy of the current value, 0-D, 2-D, 3-D (tests, backend-internal use) |
+| `datasrc_end(ds)` | Release everything |
+
+Missing values left after `fill`: a field declared `masked` gets
+`valid = .false.` there; otherwise the update stops naming the field and the
+time. Errors stop through `fesm_error` naming the instance, field, group and
+file; with `stat`, `datasrc_init` and `datasrc_update` return `stat = 1`
+instead. Errors inside `varslice` and `nml` (a malformed file or group, a file
+not on the grid without a grid to remap from) always stop.
+
+## Example
+
+```fortran
+use fesm_fields
+use fesm_datasrc
+
+type(field_state_t) :: ex
+type(datasrc_t)     :: src
+
+! The component declares and locks its exports, then hands their names over
+call datasrc_init(src, par_file, "ice_bg", ex, [character(len=8) :: "H_ice", "z_srf", "f_grnd"], &
+                  grid, "input/datasrc_defaults.nml", var_defs=var_defs, &
+                  time_ref=t_ref, time_span=t_span)
+call datasrc_describe(src)
+
+! Each step: geometry is INSTANT, so the values at t1
+call datasrc_update(src, t0, t1)
+call datasrc_fill(src, ex)
+```
+
+A constant geothermal flux is the group `mode = "const"  value = 0.042`; a sea
+level curve from an ascii file is `filename = "input/sealevel.dat"`,
+`units = "m" "m"`, `time_units = "clock"`.
+
+## Tests
+
+`make check-datasrc` runs `test/datasrc/`: `test_static`, `test_transient`,
+`test_clim`, `test_scalar`, `test_anomaly`, `test_bind`, `test_examples` (the
+four worked examples of the design note), the varslice and nml steps
+(`test_varslice_legacy`, `test_varslice_schema`, `test_time_axis`,
+`test_varslice_units_attr`, `test_varslice_get`, `test_varslice_interval`,
+`test_find_group`, `test_nml_quoted`) and the expected-abort programs of
+`test/datasrc/abort/`.
+
+## See also
+
+- [fesm_fields](fields.qmd) — the state served into
+- [fesm_units](units.qmd) — `units_conv`
+- [varslice](varslice.qmd) — the gridded reader (schema, file axis, `interval_mean`)
+- [series](series.qmd) — the 0-D reader
+- Design note: `docs/dev/datasrc-design.md`

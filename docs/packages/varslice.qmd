@@ -306,5 +306,6 @@ call varslice_update(vs, time=[time_now], method="interp")
 ## See also
 
 - [series](series.qmd) — 0-D time-series reader (the non-gridded analogue)
+- [fesm_datasrc](datasrc.qmd) — fields served from files, built on the schema, file axis and `interval_mean`
 - [ncio](ncio.qmd) — the underlying netCDF read/write layer
 - [coords](coords.qmd) — grids and mapping used by `varslice_map_to_grid`

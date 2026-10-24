@@ -1,0 +1,37 @@
+! =====================================================================
+! datasrc_defaults.nml — schema of the field groups of fesm_datasrc
+!
+! A field group binds one field to a file. It is read with
+! defaults_group = "datasrc_field" of this file, so a group holds only
+! what differs, usually filename and name; every key of a group must be
+! declared here (nml_validate). Today's varslice library groups
+! (clim_db.nml: units, scaling, time set) are valid field groups.
+!
+! Hosts keep a synchronised copy of this file in their input/ folder
+! (as for chion and VILMA2) and pass it as defaults_file to datasrc_init.
+!
+! Path keywords in filename and grid_src: {domain}, {grid_name} (the
+! instance grid) and any {key} of the subs argument. A glob in filename
+! is a multifile set, concatenated along time.
+! =====================================================================
+
+&datasrc_field
+    filename     = ""            ! keywords {domain} {grid_name} {key}; a glob = multifile
+    name         = ""            ! variable (unused for an ascii series)
+    mode         = "auto"        ! auto | const | static | clim | transient
+    value        = 0.0           ! const: the value, in the declared units
+    time_method  = "auto"        ! auto (from tsem) | interp | mean | exact
+    out_of_range = "error"       ! error | hold
+    units        = "auto" "auto" ! file units (checked), units after scaling; auto = attribute
+    scaling      = 1.0 0.0       ! var*scale + offset, before unit conversion
+    remap        = "auto"        ! auto | none | con | bilin | nn | shepard | quadrant
+    grid_src     = ""            ! file grid; "" = its global attribute grid_name
+    fill         = "none"        ! none | nearest | const
+    fill_value   = 0.0
+    anomaly_ref  = "none"        ! none | slice | group
+    ref_time     = 0.0           ! slice: reference time [yr, instance clock]
+    ref_group    = ""            ! group: a static field group of the same quantity
+    time         = -1 0 0 0 0    ! legacy "active x0 x1 dx nsub"; active < 0: axis from the file
+    time_units   = ""            ! "" = attribute of the time variable; "clock" = clock years
+    calendar     = ""            ! "" = attribute of the time variable
+/

@@ -1,6 +1,6 @@
 # `fesm_datasrc` — design note
 
-Status: proposal for review (2026-10-24), no code yet. Row 5 of the fesm-utils
+Status: implemented (commit pending), 2026-10-24. Row 5 of the fesm-utils
 additions in `kryos/docs/design.md` §12; the data backend of §8 there.
 Preconditions: `fesm_log`, `fesm_fields` ([fields-design.md](fields-design.md):
 `field_state_t`, `add`, `put(h, var, t1, t0, valid)`, public `f(h)%units,
@@ -19,6 +19,57 @@ type-bound procedures or `class(...)`: `datasrc_init`, `datasrc_update`
 `hold`/`error` only. Q8, Q9: kryos backend concerns, not datasrc. Q10:
 decoding in varslice now. Q11: same-dataset slice; kryos `design.md`
 decision 4 amended to say so.
+
+**Implementation details (2026-10-24)** that refine or differ from the text
+below; §3 has been updated to match.
+
+- Steps as committed: N1, U1, V1, V2, **N2**, V3, V4, V5, datasrc. N2 (new):
+  `nml` string vectors split at blanks outside quotes (`units = "kg m-2
+  yr-1" "mm d-1"` was read as `kg`, `m-2`), and a comment after a group name
+  is allowed. N1 also adds `nml_validate(..., nbad)`; `nml_find_group(files,
+  group [, what, stat])` takes the par file as `files(1)`.
+- U1: `units_conv` converts between any two units of a class (every row
+  inverts), matched after `units_canonical`, rates written `<q> <t>-1` or
+  `<q>/<t>`; units with the same canonical key give exactly `1, 0` (also
+  unknown ones). `fesmdata_flux_conv`/`_temp_ref` give bit-identical factors
+  (checked against values recorded before the change).
+- V1: the schema keys read by varslice are `filename, name, units, scaling,
+  time, mode, remap, grid_src, fill, fill_value, time_units, calendar`.
+  varslice's own `remap = "auto"` remaps with `bilin`; datasrc resolves
+  `auto` itself (`con` for `FIELD_EXTENSIVE`) and passes the result. New
+  `par%mode` (`static | clim | transient`), checked against a legacy `time`.
+- V2: decoding is `varslice_time_decode(t, units, calendar, y [, stat])`
+  (public). `standard`/`gregorian` stop for dates before 1582-10-15;
+  `proleptic_gregorian` is exact at all dates. A missing calendar attribute
+  is `standard`; `julian` and others stop. With a file axis, `mode = auto`
+  takes the last dimension as time when its coordinate is named `time`, has
+  `axis = "T"`, `standard_name = "time"` or decodable units; the CF
+  `climatology` attribute makes it `clim`. `nsub` > 1 only when every year
+  of the axis holds the same number of steps; it then needs a whole-year
+  `time_ref`. New `par%time_name`; bounds in `vs%time_bnds(2,nt)`.
+- V4: `varslice_get` also has 1-D specifics; the caller's array is shape
+  checked.
+- V5: with `rep = nsub`, each year's step stands for `[year, year+1)` (cell
+  weights), so a calendar year gives exactly its cycle. A single time gives
+  the interpolated value (cells: the cell holding it). The slab read of
+  `varslice_update` is one helper shared with `interval_mean`.
+- datasrc: `cpl` is not an argument (V6 deferred). `datasrc_update` takes an
+  optional `stat` too. Scalars are interpolated and averaged in dp by datasrc
+  from the series samples (`series_interp` returns sp). The monthly cycle of
+  a transient axis is served for `floor(t)`. Missing values left after
+  `fill`: `valid = .false.` (value 0) for a masked field, else update stops.
+  `ref_group` is read as a static group; `anomaly_ref` is not available for
+  const fields and `group` not for scalars. Errors inside `varslice`/`nml`
+  (a malformed file or group, a file not on the grid) always stop; they are
+  tested as expected-abort programs (`test/datasrc/abort/`).
+- Tests: §9 as listed, `test_units` as `test/units/test_fesm_units.f90`
+  (`make check-units`); in `test/datasrc/` also `test_find_group` (N1),
+  `test_nml_quoted` (N2), `test_varslice_schema` (V1), `test_varslice_units_attr`
+  (V3), `test_varslice_get` (V4), `test_varslice_interval` (V5) and
+  `test_examples` (§8 a–d). `test_varslice_legacy` compares hashes of the bit
+  patterns of `vs%var`/`vs%time` for 31 cases (transient, monthly, clim,
+  static with fill, multifile, remap) against `test_varslice_legacy.ref`,
+  recorded before V1.
 
 ## 1. Scope
 
@@ -117,14 +168,21 @@ group is validated by its owner.
 type :: datasrc_field_t                        ! private: one bound field
     character(len=32)   :: name  = ""          ! export name (the caller's)
     character(len=128)  :: group = ""          ! field group
-    character(len=1024) :: gfile = ""          ! file the group was found in
+    character(len=1024) :: gfile = "", file = ""   ! file the group was found in; data file
     integer             :: h = 0, rank = 0     ! state handle; rank 0 | 2 | 3
+    integer             :: nx = 1, ny = 1, nz = 1, tsem = FIELD_INSTANT, nsub = 1
+    logical             :: masked = .false., identity = .true.
     character(len=16)   :: mode = "", method = "", out_of_range = "", anomaly_ref = ""
+    character(len=128)  :: units_data = "", units_decl = ""
     real(dp)            :: scale = 1.0_dp, offset = 0.0_dp   ! after scaling -> declared
+    real(dp)            :: scaling(2), value = 0.0_dp      ! series scaling; const value
     real(dp)            :: trange(2) = 0.0_dp  ! coverage of the file [clock yr]
+    character(len=32)   :: remap = "none"
+    character(len=256)  :: grid_src = "", grid_tgt = ""
     type(varslice_class)  :: vs                ! rank 2, 3
     type(series_class)    :: ser               ! rank 0
     real(dp), allocatable :: ref(:,:,:)        ! anomaly reference, declared units
+    logical,  allocatable :: ref_ok(:,:,:)
     real(dp), allocatable :: buf(:,:,:)        ! current value (nx,ny,nz); rank 0: (1,1,1)
     logical,  allocatable :: valid(:,:)        ! masked fields only
 end type
@@ -133,23 +191,19 @@ type, public :: datasrc_t
     character(len=128) :: group    = ""        ! instance group
     real(dp)           :: time_ref = 0.0_dp    ! calendar year of the caller's time zero
     real(dp)           :: t0 = 0.0_dp, t1 = 0.0_dp   ! last update
+    logical            :: updated  = .false.
     type(datasrc_field_t), allocatable :: f(:) ! bound fields only
-contains
-    procedure :: init => datasrc_init
-    procedure :: update_t, update_iv
-    generic   :: update => update_t, update_iv
-    procedure :: fill, has, describe
-    procedure :: get_0d, get_2d, get_3d
-    generic   :: get => get_0d, get_2d, get_3d
-    procedure :: end => datasrc_end
 end type
+
+interface datasrc_update                       ! datasrc_update_t, datasrc_update_iv
+interface datasrc_get                          ! datasrc_get_0d, _2d, _3d
 ```
 
 ```fortran
 subroutine datasrc_init(ds, par_file, group, state, names, grid, defaults_file, &
                         required, var_defs, domain, subs, time_ref, time_span, &
-                        rho_ice, sec_year, cpl, stat)
-    class(datasrc_t),    intent(out) :: ds
+                        rho_ice, sec_year, stat)
+    type(datasrc_t),     intent(out) :: ds
     character(len=*),    intent(in)  :: par_file, group     ! the instance group
     type(field_state_t), intent(in)  :: state               ! declared (locked) exports
     character(len=*),    intent(in)  :: names(:)            ! fields this backend may serve
@@ -162,17 +216,16 @@ subroutine datasrc_init(ds, par_file, group, state, names, grid, defaults_file, 
     real(dp),            intent(in), optional :: time_span(2)   ! run interval: coverage checked here
     real(dp),            intent(in), optional :: rho_ice        ! enables "m ice yr-1"
     real(dp),            intent(in), optional :: sec_year       ! default 365.25 d (FesmData)
-    type(coupler_class), intent(inout), optional :: cpl         ! shared maps (step V6)
     integer,             intent(out), optional :: stat          ! tests: fesm_error returns
 
-subroutine update_t (ds, t)        ! INSTANT fields at t; stops if a MEAN/ACCUM field is bound
-subroutine update_iv(ds, t0, t1)   ! INSTANT at t1; MEAN/ACCUM: mean rate over [t0,t1], t0 < t1
-subroutine fill(ds, state)         ! put every bound field with [t0,t1] of the last update
-logical function has(ds, name)     ! is name bound
-subroutine describe(ds, level)     ! per field: group, file, mode, method,
-                                   ! units -> declared (scale, offset), coverage, grid_src -> grid
-subroutine get_2d(ds, name, var)   ! dp copy of buf (tests, backend-internal use); also 0d, 3d
-subroutine datasrc_end(ds)
+call datasrc_update(ds, t [, stat])        ! INSTANT fields at t; stops if a MEAN/ACCUM field is bound
+call datasrc_update(ds, t0, t1 [, stat])   ! INSTANT at t1; MEAN/ACCUM: mean rate over [t0,t1], t0 < t1
+call datasrc_fill(ds, state)               ! put every bound field with [t0,t1] of the last update
+datasrc_has(ds, name)                      ! is name bound
+call datasrc_describe(ds [, level])        ! per field: group, file, mode, method,
+                                           ! units -> declared (scale, offset), coverage, grid_src -> grid
+call datasrc_get(ds, name, var)            ! dp copy of buf (tests, backend-internal use); 0-D, 2-D, 3-D
+call datasrc_end(ds)
 ```
 
 **`init`, per name**: binding key in the instance group, else unbound (stop
@@ -184,7 +237,7 @@ check coverage against `time_span` when `out_of_range = error`; build the
 anomaly reference; read `static` and `clim` once. Errors are
 `fesm_error("datasrc_init", msg, detail)` naming instance, field, group, file.
 
-**`update` and `fill`**:
+**`datasrc_update` and `datasrc_fill`**:
 
 | mode | read | `buf` |
 |---|---|---|
@@ -216,14 +269,14 @@ the new optional arguments on a group with a `time` key: every yelmox call
 
 | # | Change | Compatibility | yelmox bit-identity |
 |---|---|---|---|
-| N1 | `nml_find_group(files, group) -> file`: par file first, then the list; stops listing all files. yelmox `var_defs_find` becomes a call to it | new procedure | identical lookup |
+| N1 | `nml_find_group(files, group [, what, stat]) -> file`: par file first (`files(1)`), then the list; stops listing all files. yelmox `var_defs_find` becomes a call to it | new procedure | identical lookup |
 | U1 | `units_conv(from, to, scale, offset, rho_ice, sec_year, stat)` in `fesm_units`, on `fesm_fields`' `units_canonical` (§5); `fesmdata_flux_conv`/`_temp_ref` call it | fesmdata API unchanged | identical factors |
 | V1 | `varslice_init_nml(..., defaults_file, defaults_group)` reads every key through a schema; argument overrides `mode`, `remap`, `grid_src`, `time_ref` | without them: today's mandatory keys | unchanged path |
 | V2 | Time axis from the file when `time(1) < 0` or the key is absent: read the time coordinate (the variable's last dimension) of each file, decode `units`/`calendar` (§6), concatenate over multifile, require strictly increasing. Irregular axes allowed (`get_indices` already handles them). `nsub` inferred as steps per whole year. New `par%time_units`, `par%calendar` | groups with `time(1) >= 0` unchanged | unchanged path |
 | V3 | `par%units_file`: the variable's `units` attribute (`""` without); stored only, the check is `datasrc`'s | metadata | none |
 | V4 | dp access: generic `varslice_get(vs, var [, k])`, dp/sp, 0-D..3-D, natural rank (as `v1/v2/v3`) | additive | none |
 | V5 | Method `interval_mean`: overlap-weighted mean over `[t0,t1]` of the file's piecewise representation (cell means over CF `time_bnds` when the time variable has `bounds`, else the linear interpolant, partial segments at both ends); with `rep = nsub`; `hold` for the part outside the axis. `range_mean` (equal weights over the samples in the closed range, both ends counted, fails with none inside) stays | new method | none |
-| V6 | Optional `cpl`: build the map through the coupler cache (`coupler_prime`), one map per (src, dst, method) per run, grid names from the coupler registry, instead of a private `map_init` | absent: today's private map | unchanged path |
+| V6 (deferred, after phase 1) | Optional `cpl`: build the map through the coupler cache (`coupler_prime`), one map per (src, dst, method) per run, grid names from the coupler registry, instead of a private `map_init` | absent: today's private map | unchanged path |
 
 Not changed: one variable per object; `var` stays `real(wp)` (= sp), hence
 V4, not dp storage: the files are float32, a km-scale bed differenced in sp
@@ -336,13 +389,13 @@ from the file, which varslice cannot do today (`clim_db.nml:631`):
 ```
 ```fortran
 ! ice_data_t extends ice_t with a datasrc_t `src`; ice_t has declared and locked self%exports
-call self%src%init(par_file, group, self%exports, ICE_EXPORT_NAMES, grid, run%datasrc_defaults, &
+call datasrc_init(self%src, par_file, group, self%exports, ICE_EXPORT_NAMES, grid, run%datasrc_defaults, &
                    required=[character(len=8) :: "H_ice", "z_srf", "f_grnd"], var_defs=run%var_defs, &
                    time_ref=t_ref, time_span=t_span)
-call self%src%describe()
+call datasrc_describe(self%src)
 ! update(t0, t1): geometry is INSTANT, so the values at t1
-call self%src%update(t0, t1)
-call self%src%fill(self%exports)
+call datasrc_update(self%src, t0, t1)
+call datasrc_fill(self%src, self%exports)
 ```
 
 **(b) Static geothermal.** `[geothermal_grl]` binds `Q_geo = "q_geo_shapiro"`;
@@ -357,10 +410,10 @@ a constant flux would be `mode = "const"  value = 0.042` (replaces
 /
 ```
 ```fortran
-call self%src%init(par_file, group, self%exports, ["Q_geo"], grid, run%datasrc_defaults, &
+call datasrc_init(self%src, par_file, group, self%exports, ["Q_geo"], grid, run%datasrc_defaults, &
                    domain=dom%name, var_defs=run%var_defs)
-call self%src%update(t)          ! nothing read; validity [t,t]
-call self%src%fill(self%exports)
+call datasrc_update(self%src, t)          ! nothing read; validity [t,t]
+call datasrc_fill(self%src, self%exports)
 ```
 
 **(c) Scalar `bsl` curve for the globe's `forcing`.** `[forcing]` binds
@@ -374,10 +427,10 @@ call self%src%fill(self%exports)
 /
 ```
 ```fortran
-call self%src%init(par_file, "forcing", self%exports, ["bsl"], globe%grid, run%datasrc_defaults, &
+call datasrc_init(self%src, par_file, "forcing", self%exports, ["bsl"], globe%grid, run%datasrc_defaults, &
                    time_ref=t_ref, time_span=t_span)
-call self%src%update(run%clk%time_rel())   ! INSTANT: series value at t
-call self%src%fill(self%exports)           ! put(h_bsl, value, t1=t)
+call datasrc_update(self%src, run%clk%time_rel())   ! INSTANT: series value at t
+call datasrc_fill(self%src, self%exports)           ! put(h_bsl, value, t1=t)
 ```
 
 **(d) Transient `geo` from a relative sea-level history, as anomalies**
@@ -405,11 +458,11 @@ call self%src%fill(self%exports)           ! put(h_bsl, value, t1=t)
 /
 ```
 ```fortran
-call self%src%init(par_file, group, self%exports, [character(len=8) :: "dz_bed", "dz_ss", "bsl"], &
+call datasrc_init(self%src, par_file, group, self%exports, [character(len=8) :: "dz_bed", "dz_ss", "bsl"], &
                    grid, run%datasrc_defaults, domain=dom%name, var_defs=run%var_defs, &
                    time_ref=t_ref, time_span=t_span)
-call self%src%update(run%clk%time_rel())
-call self%src%fill(self%exports)
+call datasrc_update(self%src, run%clk%time_rel())
+call datasrc_fill(self%src, self%exports)
 ```
 
 Consumers form `z_sl − z_bed = −z_bed_ref(grid) + (rsl(t) − rsl(0))`: the
@@ -430,7 +483,7 @@ Synthetic netCDF/ascii files written by the tests with `ncio`; failures via `sta
 | `test_scalar` | ascii and netCDF series; `units` required for ascii; `fill` into a `field_state_t`, validity as in §3 |
 | `test_anomaly` | `slice` gives exactly 0 at `ref_time`; `group` reference; conversion applied before differencing |
 | `test_bind` | lookup order (par file over library); unbound required field stops; unknown key stops; a `clim_db` group accepted unchanged; MEAN field with `update(t)` stops |
-| `test_varslice_legacy` | byte-equal `vs%var`, `vs%time` for a `clim_db` excerpt before and after V1–V6 |
+| `test_varslice_legacy` | byte-equal `vs%var`, `vs%time` for a `clim_db` excerpt before and after V1–V5 |
 
 ## 10. Open questions for review
 

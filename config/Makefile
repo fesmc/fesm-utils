@@ -243,6 +243,11 @@ $(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constan
 					$(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/fesm_datasrc.o: $(srcdir)/fesm_datasrc.f90 $(objdir)/precision.o $(objdir)/constants.o \
+					$(objdir)/fesm_log.o $(objdir)/fesm_fields.o $(objdir)/fesm_units.o \
+					$(objdir)/nml.o $(objdir)/ncio.o $(objdir)/coords.o $(objdir)/varslice.o $(objdir)/series.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/geodesic.o \
 					$(objdir)/planet.o \
@@ -291,7 +296,8 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/htopo.o \
 					$(objdir)/series.o \
 					$(objdir)/tsgen.o \
-					$(objdir)/zremap.o
+					$(objdir)/zremap.o \
+					$(objdir)/fesm_datasrc.o
 
 ###############################################
 ##
@@ -616,7 +622,8 @@ CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fie
                test_fields_exchange
 CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
 CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema test_time_axis \
-                test_nml_quoted test_varslice_units_attr test_varslice_get test_varslice_interval
+                test_nml_quoted test_varslice_units_attr test_varslice_get test_varslice_interval \
+                test_static test_transient test_clim test_scalar test_anomaly test_bind test_examples
 CHECK_DATASRC_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/datasrc/abort/datasrc_abort_*.f90))))
 ICE_DATA     = ../ice_data/v2/NorthTest
 
@@ -784,8 +791,9 @@ usage:
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
-	@echo " make test-units       : compiles the fesmdata units test program"
+	@echo " make test-units       : compiles the units test programs (fesmdata, fesm_units)"
 	@echo " make test-varslice-clim : compiles the varslice climatology test program"
+	@echo " make test-datasrc     : compiles the fesm_datasrc test programs (with its nml/varslice steps)"
 	@echo " make check            : builds and runs the self-contained tests (fails on any failure)"
 	@echo " make check-<group>    : one group, e.g. check-coords, check-ncio, check-zremap"
 	@echo " make check-data       : runs the FesmData tests that need ../ice_data"

@@ -60,6 +60,17 @@ All notable changes to fesm-utils are documented here.
   last sample held outside the axis); `rep = n_sub` averages each sub-annual step over the
   years. `range_mean` is unchanged. The slab read of `varslice_update` is now one helper
   (`read_slab`) shared by both.
+- **fesm_datasrc**: fields served from files into a `field_state_t` (the data backend of
+  kryos). Free procedures `datasrc_init`, `datasrc_update` (`t` | `t0, t1`),
+  `datasrc_fill`, `datasrc_has`, `datasrc_describe`, `datasrc_get` (0-D/2-D/3-D),
+  `datasrc_end`. Names are bound explicitly to field groups (par file over `var_defs`),
+  read with the schema `par/datasrc_defaults.nml` (`[datasrc_field]`; hosts keep a copy in
+  `input/`): modes const/static/clim/transient, varslice (2-D/3-D, remapped once at init)
+  or series (0-D), the file's time axis and units, conversion to the declared units with
+  `units_conv` (units(1) vs the attribute: stop), `interp`/`interval_mean`/`exact`,
+  `out_of_range = error | hold`, anomalies against a slice of the same data or a static
+  group, masked fields with validity. `make check-datasrc` (§9 tests, the worked
+  examples, expected-abort programs).
 
 ### Changed
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their
