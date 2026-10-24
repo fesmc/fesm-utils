@@ -37,7 +37,7 @@ module regions
     ! file, else in maps/. A file without a grid name must be on the target
     ! grid.
 
-    use, intrinsic :: iso_fortran_env, only : error_unit
+    use fesm_log, only : fesm_error
 
     use precision
     use ncio
@@ -184,7 +184,7 @@ contains
         n = count(len_trim(names) .gt. 0)
         if (n .gt. 0) then
             if (.not. nml_has_param(filename, group, "path_basins")) then
-                call regions_error("regions_init_nml", "basin_sets without path_basins.", "group = "//trim(group))
+                call fesm_error("regions_init_nml", "basin_sets without path_basins.", "group = "//trim(group))
             end if
             call nml_read(filename, group, "path_basins", path_basins)
             call fesmdata_parse_path(path_basins, domain, grid_name, subs)
@@ -224,7 +224,7 @@ contains
                     call nml_read(filename, group, "names_"//trim(l), code_names)
                     nc = count(codes .ne. huge(0))
                     if (count(len_trim(code_names) .gt. 0) .ne. nc) then
-                        call regions_error("regions_init_nml", "codes_ and names_ of a layer differ in length.", &
+                        call fesm_error("regions_init_nml", "codes_ and names_ of a layer differ in length.", &
                             "group = "//trim(group)//new_line("a")//"layer = "//trim(l))
                     end if
                 end if
@@ -316,7 +316,7 @@ contains
         integer :: k
 
         if (.not. nc_exists_var(path, "region_1")) then
-            call regions_error("regions_load_fesmdata", &
+            call fesm_error("regions_load_fesmdata", &
                 "not a FesmData v2 regions file (no variable region_1).", &
                 "file = "//trim(path)//new_line("a")// &
                 "FesmData v1 regions files (one variable mask) are not supported.")
@@ -406,7 +406,7 @@ contains
         if (present(var)) varname = var
 
         if (.not. nc_exists_var(path, varname)) then
-            call regions_error("regions_load_layer", "variable not in the file.", &
+            call fesm_error("regions_load_layer", "variable not in the file.", &
                 "layer    = "//trim(name)//new_line("a")// &
                 "file     = "//trim(path)//new_line("a")//"variable = "//trim(varname))
         end if
@@ -451,12 +451,12 @@ contains
         character(len=*), intent(IN), optional  :: names(:)
 
         if (present(codes) .neqv. present(names)) then
-            call regions_error("regions", "codes and names of a layer go together.", "layer = "//trim(layer%name))
+            call fesm_error("regions", "codes and names of a layer go together.", "layer = "//trim(layer%name))
         end if
 
         if (present(codes)) then
             if (size(codes) .ne. size(names)) then
-                call regions_error("regions", "codes and names of a layer differ in length.", &
+                call fesm_error("regions", "codes and names of a layer differ in length.", &
                     "layer = "//trim(layer%name))
             end if
             layer%tab%codes = codes
@@ -484,14 +484,14 @@ contains
         if (.not. allocated(reg%layers)) call regions_init(reg)
 
         if (regions_find(reg, layer%name) .gt. 0) then
-            call regions_error("regions", "a layer of this name exists already.", "layer = "//trim(layer%name))
+            call fesm_error("regions", "a layer of this name exists already.", "layer = "//trim(layer%name))
         end if
 
         if (reg%nx .eq. 0 .and. reg%ny .eq. 0) then
             reg%nx = size(layer%values,1)
             reg%ny = size(layer%values,2)
         else if (size(layer%values,1) .ne. reg%nx .or. size(layer%values,2) .ne. reg%ny) then
-            call regions_error("regions", "the layer differs in size from the set.", "layer = "//trim(layer%name))
+            call fesm_error("regions", "the layer differs in size from the set.", "layer = "//trim(layer%name))
         end if
 
         ! (grown by hand: an array constructor of a type with allocatable
@@ -516,7 +516,7 @@ contains
 
         if (len_trim(name) .eq. 0 .or. index(name, ".") .gt. 0 .or. &
             any(names_reserved .eq. lower(name))) then
-            call regions_error(proc, "invalid layer name (empty, with '.', or reserved: regions basins all none).", &
+            call fesm_error(proc, "invalid layer name (empty, with '.', or reserved: regions basins all none).", &
                 "name = "//trim(name))
         end if
 
@@ -635,7 +635,7 @@ contains
             end if
         end do
 
-        call regions_error("regions_mask", "no mask with this name.", "name = "//trim(name))
+        call fesm_error("regions_mask", "no mask with this name.", "name = "//trim(name))
 
     end function regions_mask
 
@@ -668,7 +668,7 @@ contains
 
         k = regions_find(reg, spec)
         if (k .eq. 0) then
-            call regions_error("regions_basin_ids", "no layer of this name (or None, domain).", &
+            call fesm_error("regions_basin_ids", "no layer of this name (or None, domain).", &
                 "spec   = "//trim(spec)//new_line("a")//"layers = "//layer_names(reg))
         end if
         ids = max(reg%layers(k)%values, 0)
@@ -699,7 +699,7 @@ contains
 
         n = len_trim(expr)
         if (n .eq. 0) then
-            call regions_error("regions_select", "empty expression.")
+            call fesm_error("regions_select", "empty expression.")
         end if
 
         mask = .false.
@@ -747,7 +747,7 @@ contains
         if (negate) t = adjustl(t(2:))
 
         if (len_trim(t) .eq. 0) then
-            call regions_error("regions_select", "empty term.", "expression = "//trim(expr))
+            call fesm_error("regions_select", "empty term.", "expression = "//trim(expr))
         end if
 
         q = index(t, ":")
@@ -758,14 +758,14 @@ contains
                 case("none")
                     mask = .false.
                 case default
-                    call regions_error("regions_select", &
+                    call fesm_error("regions_select", &
                         "a term must be layer:values, all or none.", &
                         "term       = "//trim(t)//new_line("a")//"expression = "//trim(expr))
             end select
         else
             kl = regions_find(reg, t(1:q-1))
             if (kl .eq. 0) then
-                call regions_error("regions_select", "unknown layer.", &
+                call fesm_error("regions_select", "unknown layer.", &
                     "layer      = "//trim(adjustl(t(1:q-1)))//new_line("a")// &
                     "expression = "//trim(expr)//new_line("a")//"layers     = "//layer_names(reg))
             end if
@@ -816,7 +816,7 @@ contains
             i0 = i1 + 2
 
             if (len_trim(v) .eq. 0) then
-                call regions_error("regions_select", "empty value.", &
+                call fesm_error("regions_select", "empty value.", &
                     "layer      = "//trim(layer)//new_line("a")//"expression = "//trim(expr))
             end if
 
@@ -826,14 +826,14 @@ contains
             else if (hier .and. verify(trim(v), "0123456789.") .eq. 0) then
                 code = region_code(v)
                 if (code .le. 0) then
-                    call regions_error("regions_select", "invalid region path.", &
+                    call fesm_error("regions_select", "invalid region path.", &
                         "path       = "//trim(v)//new_line("a")//"expression = "//trim(expr))
                 end if
                 codes = [codes, code]
             else
                 c = flag_codes(tab, v)
                 if (size(c) .eq. 0) then
-                    call regions_error("regions_select", "unknown name (not on this grid).", &
+                    call fesm_error("regions_select", "unknown name (not on this grid).", &
                         "layer      = "//trim(layer)//new_line("a")// &
                         "name       = "//trim(v)//new_line("a")// &
                         "expression = "//trim(expr)//new_line("a")// &
@@ -1009,38 +1009,5 @@ contains
         end do
 
     end function lower
-
-    subroutine regions_error(proc, msg, detail)
-        ! Abort with a framed message on error_unit.
-
-        implicit none
-
-        character(len=*), intent(IN)           :: proc
-        character(len=*), intent(IN)           :: msg
-        character(len=*), intent(IN), optional :: detail
-
-        integer :: p0, p1
-
-        write(error_unit,"(a)") ""
-        write(error_unit,"(a)") "regions:: error in "//trim(proc)
-        write(error_unit,"(a)") "    "//trim(msg)
-
-        if (present(detail)) then
-            p0 = 1
-            do
-                p1 = index(detail(p0:), new_line("a"))
-                if (p1 == 0) then
-                    write(error_unit,"(a)") "    "//trim(detail(p0:))
-                    exit
-                end if
-                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
-                p0 = p0 + p1
-            end do
-        end if
-
-        write(error_unit,"(a)") "  stopped by regions."
-        error stop 1
-
-    end subroutine regions_error
 
 end module regions

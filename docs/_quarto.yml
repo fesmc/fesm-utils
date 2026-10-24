@@ -53,6 +53,8 @@ website:
             href: packages/gaussian_quadrature.qmd
           - text: "foundations"
             href: packages/foundations.qmd
+          - text: "fesm_log — logging & errors"
+            href: packages/log.qmd
       - text: "External libraries"
         menu:
           - text: "FFTW"
@@ -89,6 +91,7 @@ website:
           - packages/gridops.qmd
           - packages/gaussian_quadrature.qmd
           - packages/foundations.qmd
+          - packages/log.qmd
       - section: "External libraries"
         contents:
           - external/fftw.qmd

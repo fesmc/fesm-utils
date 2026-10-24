@@ -50,6 +50,7 @@ module zremap
     use constants, only : mv
     use nml
     use ncio
+    use fesm_log, only : fesm_error
 
     implicit none
     private
@@ -105,7 +106,7 @@ contains
 
         call zremap_par_load(zr%par, filename, group)
 
-        if (dx <= 0.0_wp) call zremap_error("zremap_init", "dx must be > 0.")
+        if (dx <= 0.0_wp) call fesm_error("zremap_init", "dx must be > 0.")
 
         zr%nx = nx
         zr%ny = ny
@@ -181,7 +182,7 @@ contains
         call check_shape(zr, f_ref, "zremap_update", "f_ref")
         call check_shape(zr, z_ref, "zremap_update", "z_ref")
         if (size(mask_ref,1) /= zr%nx .or. size(mask_ref,2) /= zr%ny) &
-            call zremap_error("zremap_update", "mask_ref is not on the zremap grid.")
+            call fesm_error("zremap_update", "mask_ref is not on the zremap grid.")
 
         zr%f_ref = f_ref
         zr%z_ref = z_ref
@@ -645,7 +646,7 @@ contains
         character(len=*),   intent(in) :: proc, name
 
         if (size(var,1) /= zr%nx .or. size(var,2) /= zr%ny) &
-            call zremap_error(proc, trim(name)//" is not on the zremap grid.")
+            call fesm_error(proc, trim(name)//" is not on the zremap grid.")
 
     end subroutine check_shape
 
@@ -663,24 +664,13 @@ contains
         call nml_read(filename, group, "dfdz_lo", par%dfdz_lo)
         call nml_read(filename, group, "dfdz_hi", par%dfdz_hi)
 
-        if (par%sigma <= 0.0_wp)      call zremap_error("zremap_par_load", "sigma must be > 0.")
-        if (par%dz <= 0.0_wp)         call zremap_error("zremap_par_load", "dz must be > 0.")
-        if (par%sigma_z < 0.0_wp)     call zremap_error("zremap_par_load", "sigma_z must be >= 0.")
-        if (par%z_max <= par%z_min)   call zremap_error("zremap_par_load", "z_max must be > z_min.")
-        if (par%stride < 1)           call zremap_error("zremap_par_load", "stride must be >= 1.")
-        if (par%w_full <= 0.0_wp)     call zremap_error("zremap_par_load", "w_full must be > 0.")
+        if (par%sigma <= 0.0_wp)      call fesm_error("zremap_par_load", "sigma must be > 0.")
+        if (par%dz <= 0.0_wp)         call fesm_error("zremap_par_load", "dz must be > 0.")
+        if (par%sigma_z < 0.0_wp)     call fesm_error("zremap_par_load", "sigma_z must be >= 0.")
+        if (par%z_max <= par%z_min)   call fesm_error("zremap_par_load", "z_max must be > z_min.")
+        if (par%stride < 1)           call fesm_error("zremap_par_load", "stride must be >= 1.")
+        if (par%w_full <= 0.0_wp)     call fesm_error("zremap_par_load", "w_full must be > 0.")
 
     end subroutine zremap_par_load
-
-    subroutine zremap_error(proc, msg)
-        ! Abort with a framed message.
-        character(len=*), intent(in) :: proc, msg
-
-        write(*,*) ""
-        write(*,*) "zremap:: error in "//trim(proc)
-        write(*,*) "    "//trim(msg)
-        error stop 1
-
-    end subroutine zremap_error
 
 end module zremap

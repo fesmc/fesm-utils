@@ -33,6 +33,7 @@ module htopo
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
     use topodata,       only : topodata_class, topodata_init_nml
     use regions,        only : regions_class, regions_init_nml, regions_basin_ids, regions_write
+    use fesm_log,       only : fesm_error
 
     implicit none
     private
@@ -106,7 +107,7 @@ contains
 
         if (.not. (allocated(htopo%ref%z_bed) .and. allocated(htopo%ref%H_ice) &
                    .and. allocated(htopo%ref%z_srf))) then
-            call htopo_error("htopo_init", "the topography needs z_bed, H_ice and z_srf (vars of ["// &
+            call fesm_error("htopo_init", "the topography needs z_bed, H_ice and z_srf (vars of ["// &
                              trim(group_topo)//"]).")
         end if
         if (.not. allocated(htopo%ref%z_bed_sd)) then
@@ -212,7 +213,7 @@ contains
         if (n_bed > 0) then
             if (n_bed < size(z_bed)) call fill_nearest(z_bed, mv)
             if (any(z_bed == mv)) then
-                call htopo_error("htopo_fill_missing", "missing bedrock elevations could not be filled.", &
+                call fesm_error("htopo_fill_missing", "missing bedrock elevations could not be filled.", &
                                  "path = "//trim(htopo%ref%par%path))
             end if
         end if
@@ -290,18 +291,5 @@ contains
                       long_name="Sea-surface height", prec_abs=1e-3_wp)
         call nc_close(ncid)
     end subroutine htopo_write_step
-
-    subroutine htopo_error(proc, msg, detail)
-        ! Abort with a framed message.
-        character(len=*), intent(in)           :: proc, msg
-        character(len=*), intent(in), optional :: detail
-
-        write(*,*) ""
-        write(*,*) "htopo:: error in "//trim(proc)
-        write(*,*) "    "//trim(msg)
-        if (present(detail)) write(*,*) "    "//trim(detail)
-        error stop 1
-
-    end subroutine htopo_error
 
 end module htopo

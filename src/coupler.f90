@@ -28,6 +28,7 @@ module coupler
 
     use coords, only : dp, sp, grid_class, map_class, map_init, map_field, &
                        grid_cdo_read_desc
+    use fesm_log, only : fesm_error
 
     implicit none
     private
@@ -94,9 +95,9 @@ contains
         type(grid_class),    intent(in)    :: grid
 
         if (find_grid(cpl, name) > 0) &
-            call coupler_err("coupler_add_grid: grid '"//trim(name)//"' already registered.")
+            call fesm_error("coupler_add_grid", "grid '"//trim(name)//"' already registered.")
         if (cpl%ngrids >= GRID_MAX) &
-            call coupler_err("coupler_add_grid: GRID_MAX exceeded (raise it in coupler.f90).")
+            call fesm_error("coupler_add_grid", "GRID_MAX exceeded (raise it in coupler.f90).")
 
         cpl%ngrids = cpl%ngrids + 1
         cpl%grids(cpl%ngrids)%name = trim(name)
@@ -164,7 +165,7 @@ contains
         end do
 
         if (cpl%nmaps >= MAP_MAX) &
-            call coupler_err("remap: MAP_MAX exceeded (raise it in coupler.f90).")
+            call fesm_error("remap", "MAP_MAX exceeded (raise it in coupler.f90).")
 
         call resolve_grid(cpl, src, grid_src)
         call resolve_grid(cpl, dst, grid_dst)
@@ -200,12 +201,6 @@ contains
         mtd = "con"
         if (present(method)) mtd = trim(method)
     end function method_or_default
-
-    subroutine coupler_err(msg)
-        character(len=*), intent(in) :: msg
-        write(*,*) "coupler:: "//trim(msg)
-        stop 1
-    end subroutine coupler_err
 
     ! ----- remap: 2D ---------------------------------------------------------
 

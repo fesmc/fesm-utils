@@ -2,6 +2,20 @@
 
 All notable changes to fesm-utils are documented here.
 
+## Unreleased
+
+### Added
+- **fesm_log**: shared logging and error reporting. Levels (`LOG_DEBUG` ... `LOG_ERROR`,
+  `log_set_level`), `log_set_unit`, `log_set_prefix`, `log_msg`, `fesm_warn`,
+  `fesm_error(proc, msg [, detail] [, stat])` (framed message on `error_unit`, then
+  `error stop 1`, or `stat = 1` and return), and `to_str`. `make test-log`.
+
+### Changed
+- **varslice, coupler, fesmdata, regions, topodata, htopo, zremap**: errors go through
+  `fesm_error`; the private `*_error`/`to_str` helpers are removed. The frame header is now
+  `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`
+  (were stdout); `coupler` stops with `error stop 1` (was `stop 1`).
+
 ## [v1.4] - 2026-10-23
 
 ### Added

@@ -1,0 +1,82 @@
+---
+title: "fesm_log"
+subtitle: "Shared logging and error reporting"
+---
+
+## Overview
+
+`fesm_log` is the one place where fesm-utils modules report messages and
+errors. It replaces the private `*_error` + `to_str` helpers that each module
+used to carry. It depends only on `iso_fortran_env` and `precision`, so any
+module can use it.
+
+- Messages have a level and are written as one line,
+  `LEVEL [prefix] who: msg`, plus optional indented detail lines.
+  DEBUG/INFO go to the log unit (default `output_unit`), WARN/ERROR to
+  `error_unit`.
+- Errors write a framed diagnostic to `error_unit` and stop with
+  `error stop 1` (nonzero exit; a backtrace with `-fbacktrace`). With the
+  optional `stat`, they set `stat = 1` and return instead, so the caller can
+  propagate the failure.
+
+The level, log unit and prefix are module-level state, i.e. global to the
+process: logging is a property of the run, not of an object. Set them once at
+start-up, outside OpenMP parallel regions.
+
+## Public API
+
+| Name | Purpose |
+|---|---|
+| `LOG_DEBUG`, `LOG_INFO`, `LOG_WARN`, `LOG_ERROR` | Levels (integer parameters, increasing) |
+| `log_set_level(level)`, `log_get_level()` | Threshold; messages below it are not written (default `LOG_INFO`) |
+| `log_set_unit(unit)` | Unit for DEBUG/INFO (default `output_unit`) |
+| `log_set_prefix(prefix)` | Tag in every message, e.g. a domain (`""`: none) |
+| `log_msg(level, who, msg [, detail])` | One message; `who` is a module, procedure or instance |
+| `fesm_warn(proc, msg [, detail])` | `log_msg` at `LOG_WARN` |
+| `fesm_error(proc, msg [, detail] [, stat])` | Framed error, then `error stop 1` (or `stat = 1` and return) |
+| `to_str(v)` | Compact string of an integer, `int64`, `sp`, `dp`, logical, or a 1-D integer/`sp`/`dp` array (space-separated) |
+
+`detail` is free text; join several lines with `new_line("a")`.
+
+## Example
+
+```fortran
+use fesm_log
+
+call log_set_prefix("grl")
+call log_msg(LOG_INFO, "varslice_update", "loaded "//to_str(nt)//" time slices.")
+
+if (nt .ne. count(ndim)) then
+    call fesm_error("nc_read_multifile", &
+        "number of time axis values read in does not match the expected total.", &
+        "count = "//to_str(count)//new_line("a")// &
+        "nt    = "//to_str(nt))
+end if
+```
+
+writes
+
+```
+INFO  [grl] varslice_update: loaded 12 time slices.
+
+fesm [grl]:: error in nc_read_multifile
+    number of time axis values read in does not match the expected total.
+    count = 6 6
+    nt    = 10
+  stopped by fesm_error.
+```
+
+## Users and next steps
+
+`varslice`, `coupler`, `fesmdata`, `regions`, `topodata`, `htopo` and
+`zremap` report their errors through `fesm_error`. The `coords` modules
+(`coordinates`, `ncio_interp`) and `gaussian_quadrature` still carry their own
+helpers, and the remaining bare `stop`s (`mapping_scrip`, `grid_cdo`,
+`planet`, `nml`, `timeout`, `timestepping`, `hyster`) are still to convert.
+
+`nml` keeps its own module-level `VERBOSE` (set by `nml_set_verbose`) for now.
+It could later map onto the log level: the namelist echo becomes
+`log_msg(LOG_INFO, ...)`, so `VERBOSE = .false.` corresponds to a level of
+`LOG_WARN` (note: the level is global, not per module).
+
+Test: `make test-log`, then `./bin/test_log.x`.

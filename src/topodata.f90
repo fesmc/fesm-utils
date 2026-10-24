@@ -18,7 +18,7 @@ module topodata
     ! of the file for each of par%vars. A file without the global attribute
     ! grid_name must be on the target grid (not remapped).
 
-    use, intrinsic :: iso_fortran_env, only : error_unit
+    use fesm_log, only : fesm_error
 
     use precision
     use ncio
@@ -131,7 +131,7 @@ contains
         td%par%names = ""
         if (present(names)) then
             if (size(names) .ne. size(td%par%vars)) then
-                call topodata_error("topodata_init_arg", "vars and names differ in length.")
+                call fesm_error("topodata_init_arg", "vars and names differ in length.")
             end if
             td%par%names = names
         end if
@@ -162,12 +162,12 @@ contains
 
         do k = 1, size(td%par%vars)
             if (.not. any(vars_all .eq. td%par%vars(k))) then
-                call topodata_error("topodata_init_data", "unknown variable.", &
+                call fesm_error("topodata_init_data", "unknown variable.", &
                     "variable  = "//trim(td%par%vars(k))//new_line("a")// &
                     "variables = z_bed z_srf H_ice z_bed_sd f_ocn f_land f_grnd f_flt mask src_id")
             end if
             if (.not. nc_exists_var(fname, td%par%names(k))) then
-                call topodata_error("topodata_init_data", "variable not in the file.", &
+                call fesm_error("topodata_init_data", "variable not in the file.", &
                     "file     = "//trim(fname)//new_line("a")//"variable = "//trim(td%par%names(k)))
             end if
         end do
@@ -291,7 +291,7 @@ contains
             call nml_read(filename, group, "names", names)
         end if
         if (any(len_trim(vars) .eq. 0 .and. len_trim(names) .gt. 0)) then
-            call topodata_error("topodata_par_load", "more names than vars.", &
+            call fesm_error("topodata_par_load", "more names than vars.", &
                 "file = "//trim(filename)//new_line("a")//"group = "//trim(group))
         end if
         allocate(par%names(size(par%vars)))
@@ -314,38 +314,5 @@ contains
         return
 
     end subroutine topodata_par_load
-
-    subroutine topodata_error(proc, msg, detail)
-        ! Abort with a framed message on error_unit.
-
-        implicit none
-
-        character(len=*), intent(IN)           :: proc
-        character(len=*), intent(IN)           :: msg
-        character(len=*), intent(IN), optional :: detail
-
-        integer :: p0, p1
-
-        write(error_unit,"(a)") ""
-        write(error_unit,"(a)") "topodata:: error in "//trim(proc)
-        write(error_unit,"(a)") "    "//trim(msg)
-
-        if (present(detail)) then
-            p0 = 1
-            do
-                p1 = index(detail(p0:), new_line("a"))
-                if (p1 == 0) then
-                    write(error_unit,"(a)") "    "//trim(detail(p0:))
-                    exit
-                end if
-                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
-                p0 = p0 + p1
-            end do
-        end if
-
-        write(error_unit,"(a)") "  stopped by topodata."
-        error stop 1
-
-    end subroutine topodata_error
 
 end module topodata

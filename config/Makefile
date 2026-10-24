@@ -139,7 +139,7 @@ $(objdir)/coords.o: $(srcdir)/coords/coords.f90 $(objdir)/precision.o $(objdir)/
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/coupler.o: $(srcdir)/coupler.f90 $(objdir)/precision.o $(objdir)/coordinates.o \
-								$(objdir)/mapping.o $(objdir)/coords.o
+								$(objdir)/mapping.o $(objdir)/coords.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/ncio.o: $(srcdir)/ncio.f90
@@ -161,6 +161,9 @@ $(objdir)/nml.o: $(srcdir)/nml.f90
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/precision.o: $(srcdir)/precision.f90
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/fesm_log.o: $(srcdir)/fesm_log.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
@@ -195,24 +198,25 @@ $(objdir)/variable_io.o: $(srcdir)/variable_io.f90 $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
-					$(objdir)/mapping.o $(objdir)/interp2D.o $(objdir)/fesmdata.o
+					$(objdir)/mapping.o $(objdir)/interp2D.o $(objdir)/fesmdata.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/fesmdata.o: $(srcdir)/fesmdata.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
-					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o
+					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o \
+					$(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
-					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
+					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/topodata.o: $(srcdir)/topodata.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
-					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o
+					$(objdir)/coordinates.o $(objdir)/mapping.o $(objdir)/fesmdata.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/htopo.o: $(srcdir)/htopo.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
 					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/interp2D.o \
-					$(objdir)/phys_constants.o $(objdir)/topodata.o $(objdir)/regions.o
+					$(objdir)/phys_constants.o $(objdir)/topodata.o $(objdir)/regions.o $(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/series.o: $(srcdir)/series.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -223,7 +227,8 @@ $(objdir)/tsgen.o: $(srcdir)/tsgen.f90 $(objdir)/precision.o $(objdir)/constants
 					$(objdir)/series.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
-$(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o
+$(objdir)/zremap.o: $(srcdir)/zremap.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o $(objdir)/ncio.o \
+					$(objdir)/fesm_log.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 fesmutils_libs = 	$(objdir)/constants.o \
@@ -254,6 +259,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/ncio_transpose.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
+					$(objdir)/fesm_log.o \
 					$(objdir)/phys_constants.o \
 					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
@@ -476,6 +482,14 @@ test-zremap : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    zremap test program ready: $(bindir)/test_zremap.x"
+		@echo " "
+
+# fesm_log (shared logging and error reporting) test program
+test-log : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_log.x $(testdir)/log/test_log.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    fesm_log test program ready: $(bindir)/test_log.x"
 		@echo " "
 
 # zremap documentation demo (Greenland SMB remapped to the LGM; needs ../ice_data)

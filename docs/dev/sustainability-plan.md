@@ -87,9 +87,9 @@ avoid interdependency). All error `stop`s across these four modules are now
 `test-coords` + `test_varslice_map`/`mapinit`/`bilinear`/`conservative`/`ccsm3_grl`
 all PASS.
 
-**Note on duplication:** the `*_error` + `to_str` helpers are now near-identical
-across four modules (~30–120 lines each). If a fifth module needs it, that's the
-signal to reconsider a shared `error_handling` module vs. continued copies.
+**Note on duplication:** the `*_error` + `to_str` helpers became near-identical
+copies in ten modules (past the "fifth module" threshold set here), so they were
+promoted to a shared module in Step 4.
 
 **Remaining `stop` users (not yet done, lighter):** `mapping_scrip`, `grid_cdo`,
 `planet`, `nml`, `timeout`, `timestepping`, `hyster`.
@@ -122,6 +122,28 @@ Open design questions to settle at Step 3:
 2. `error stop` vs returnable `stat` default per call site.
 3. Whether to fold `ncio`'s existing `nc_ctx`/`nc_check` into the shared module
    or keep ncio self-contained and mirror the convention.
+
+---
+
+## Step 4 — shared `fesm_log`  *(done)*
+
+New dependency-free module `src/fesm_log.f90` (only `iso_fortran_env` +
+`precision`); page: `docs/packages/log.qmd`.
+- Levels `LOG_DEBUG/INFO/WARN/ERROR`, `log_set_level`/`log_get_level`,
+  `log_set_unit` (DEBUG/INFO; WARN/ERROR always to `error_unit`),
+  `log_set_prefix` (domain/instance tag). Process-global module state.
+- `log_msg(level, who, msg [, detail])`, `fesm_warn(proc, msg [, detail])`.
+- `fesm_error(proc, msg [, detail] [, stat])`: the `varslice_error` frame on
+  `error_unit` + `error stop 1`; with `stat`, sets `stat = 1` and returns.
+- `to_str`: integer, int64, sp, dp, logical, 1-D integer/sp/dp.
+
+Converted (private helper deleted, calls → `fesm_error`, messages kept):
+`varslice`, `coupler` (was `stop` on stdout), `htopo` and `zremap` (were on
+stdout), `fesmdata`, `regions`, `topodata`. Test: `make test-log`.
+
+Not yet converted: `coords/coordinates`, `coords/ncio_interp`,
+`gaussian_quadrature` (own helpers), and the remaining bare `stop`s listed in
+Step 3. `nml`'s `VERBOSE` could later map onto the log level.
 
 ---
 

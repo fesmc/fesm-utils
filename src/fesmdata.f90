@@ -14,7 +14,7 @@ module fesmdata
     !   - units of a variable (its units attribute): the factor of a water
     !     flux to other units, the reference temperature of a temperature
 
-    use, intrinsic :: iso_fortran_env, only : error_unit
+    use fesm_log, only : fesm_error
 
     use precision
     use constants,   only : mv
@@ -62,7 +62,7 @@ contains
         integer :: n, nm, k, i0, i1
 
         if (.not. nc_exists_attr(fname, varname, "flag_values")) then
-            call fesmdata_error("flag_table_read", "variable without flag_values.", &
+            call fesm_error("flag_table_read", "variable without flag_values.", &
                 "file = "//trim(fname)//new_line("a")//"variable = "//trim(varname))
         end if
 
@@ -93,7 +93,7 @@ contains
         end do
 
         if (k .le. n .or. len_trim(meanings(min(i0,nm+1):)) .gt. 0) then
-            call fesmdata_error("flag_table_read", "flag_values and flag_meanings differ in length.", &
+            call fesm_error("flag_table_read", "flag_values and flag_meanings differ in length.", &
                 "file = "//trim(fname)//new_line("a")//"variable = "//trim(varname))
         end if
 
@@ -306,7 +306,7 @@ contains
                 ! (the misspelling celcius occurs in older files)
                 t_ref = 273.15_wp
             case default
-                call fesmdata_error("fesmdata_temp_ref", "temperature units not recognized.", &
+                call fesm_error("fesmdata_temp_ref", "temperature units not recognized.", &
                     "file    = "//trim(fname)//new_line("a")// &
                     "varname = "//trim(varname)//new_line("a")// &
                     "units   = "//trim(key))
@@ -323,7 +323,7 @@ contains
         character(len=256) :: units
 
         if (.not. nc_exists_attr(fname, varname, "units")) then
-            call fesmdata_error(proc, "variable without a units attribute.", &
+            call fesm_error(proc, "variable without a units attribute.", &
                 "file    = "//trim(fname)//new_line("a")// &
                 "varname = "//trim(varname))
         end if
@@ -401,7 +401,7 @@ contains
             case("yr","a","year")
                 dt = sec_year
             case default
-                call fesmdata_error("fesmdata_flux_conv", "water-flux units not recognized.", &
+                call fesm_error("fesmdata_flux_conv", "water-flux units not recognized.", &
                     "file    = "//trim(fname)//new_line("a")// &
                     "varname = "//trim(varname)//new_line("a")// &
                     "units   = "//trim(units))
@@ -420,7 +420,7 @@ contains
         character(len=256) :: grid_name
 
         if (.not. nc_exists_attr(fname, "grid_name")) then
-            call fesmdata_error("fesmdata_grid_name", "file without the global attribute grid_name.", &
+            call fesm_error("fesmdata_grid_name", "file without the global attribute grid_name.", &
                 "file = "//trim(fname))
         end if
         call nc_read_attr(fname, "grid_name", grid_name)
@@ -450,7 +450,7 @@ contains
 
         found = grid_desc_folder(fname, gname, fldr)
         if (.not. found) then
-            call fesmdata_error("fesmdata_grid_read", "no description of the grid of the file.", &
+            call fesm_error("fesmdata_grid_read", "no description of the grid of the file.", &
                 "file      = "//trim(fname)//new_line("a")// &
                 "grid_name = "//trim(gname)//new_line("a")// &
                 "looked for grid_"//trim(gname)//".txt next to the file and in maps/")
@@ -545,7 +545,7 @@ contains
             if (present(grid)) then
                 if (nx .ne. grid%G%nx .or. ny .ne. grid%G%ny) then
                     if (len_trim(gsrc) .eq. 0) gsrc = "(none: the file has no grid_name)"
-                    call fesmdata_error("fesmdata_map_init", "the field is not on the target grid.", &
+                    call fesm_error("fesmdata_map_init", "the field is not on the target grid.", &
                         "file        = "//trim(fname)//new_line("a")// &
                         "variable    = "//trim(varname)//new_line("a")// &
                         "grid        = "//trim(gsrc)//new_line("a")// &
@@ -655,38 +655,5 @@ contains
         return
 
     end subroutine fesmdata_parse_path
-
-    subroutine fesmdata_error(proc, msg, detail)
-        ! Abort with a framed message on error_unit.
-
-        implicit none
-
-        character(len=*), intent(IN)           :: proc
-        character(len=*), intent(IN)           :: msg
-        character(len=*), intent(IN), optional :: detail
-
-        integer :: p0, p1
-
-        write(error_unit,"(a)") ""
-        write(error_unit,"(a)") "fesmdata:: error in "//trim(proc)
-        write(error_unit,"(a)") "    "//trim(msg)
-
-        if (present(detail)) then
-            p0 = 1
-            do
-                p1 = index(detail(p0:), new_line("a"))
-                if (p1 == 0) then
-                    write(error_unit,"(a)") "    "//trim(detail(p0:))
-                    exit
-                end if
-                write(error_unit,"(a)") "    "//trim(detail(p0:p0+p1-2))
-                p0 = p0 + p1
-            end do
-        end if
-
-        write(error_unit,"(a)") "  stopped by fesmdata."
-        error stop 1
-
-    end subroutine fesmdata_error
 
 end module fesmdata
