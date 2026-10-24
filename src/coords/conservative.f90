@@ -30,6 +30,9 @@ module conservative
     private
 
     integer, parameter :: NSUB = 8   ! great-circle segments per parallel edge (stage C)
+    ! Unit vectors closer than this are one vertex (points at a pole differ by
+    ! ~1e-17 with the longitude, as cos(90 deg) is not exactly 0 in floating point)
+    real(dp), parameter :: SAME_TOL = 1.0e-13_dp
 
     ! Per-thread link accumulator: each thread appends its target cells' links
     ! here (no shared counter), then bufs_to_wm merges them into the CSR weight
@@ -355,8 +358,15 @@ contains
     subroutine conservative_spherical(wm, grid1, grid2)
         ! Stage C: clip on the unit sphere for lat-lon / Gaussian targets. Cell
         ! polygons have NSUB great-circle segments per edge, sampled in each
-        ! grid's own axis plane (axis_cell_poly); the overlap area is the
-        ! geodesic polygon area on the target planet.
+        ! grid's own axis plane (axis_cell_poly, target_parallels); the overlap
+        ! area is the geodesic polygon area on the target planet.
+        !
+        ! A target cell's poleward parallel, traced by NSUB great-circle chords,
+        ! is concave (each chord bulges poleward), and the Sutherland-Hodgman
+        ! clip needs a convex clip polygon. The target cell is therefore clipped
+        ! as NSUB convex strips in longitude (target_strips_overlap); the strips
+        ! share their meridian edges, so their union is the cell polygon and
+        ! adjacent cells still tile the sphere exactly.
         !
         ! Source-major: each source polygon is built once (NSUB inverse
         ! projections per edge), its candidate targets come from a k-d tree
@@ -369,19 +379,27 @@ contains
 
         type(kdtree_t) :: tree
         integer  :: n1, n2, nx1, nx2
-        integer  :: i, j, ic, jc, k, cs, cc, nf, no, nv, nthreads, tid
+        integer  :: i, j, ic, jc, k, cs, cc, nf, nthreads, tid
         real(dp) :: rad, area, a, f, srcdeg, tgtdeg, srad, ang, ctr(3)
         real(dp), allocatable :: emb(:,:), trad(:), wfull_src(:)
+        real(dp), allocatable :: txe(:), tye(:)            ! target cell edges (0:n)
         integer,  allocatable :: cidx(:)
-        real(dp), allocatable :: cd2(:), sv(:,:), cv(:,:), ov(:,:)
-        real(dp) :: olon(8*NSUB), olat(8*NSUB)   ! clip output: <= 4*NSUB + 4*NSUB vertices
+        real(dp), allocatable :: cd2(:), sv(:,:), cv(:,:)
+        real(dp) :: tv(3, 0:NSUB, 2)                       ! target parallels, sampled
         type(link_buf), allocatable :: bufs(:)
-        logical  :: linked
+        logical  :: linked, inside
         real(dp), parameter :: CAP_MARGIN = 1.0e-9_dp      ! [rad], ~6 mm
 
         nx1 = grid1%G%nx; n1 = nx1*grid1%G%ny
         nx2 = grid2%G%nx; n2 = nx2*grid2%G%ny
         a = grid2%cs%planet%a; f = grid2%cs%planet%f
+
+        ! Target cell edges as in conservative_latlon: longitudes via lon_edges
+        ! (unwraps a lon180-shifted axis, whose default seam edge is wrong),
+        ! latitudes clamped to the poles.
+        allocate(txe(0:nx2), tye(0:grid2%G%ny))
+        call lon_edges(grid2, txe)
+        tye = max(-90.0_dp, min(90.0_dp, grid2%G%y_bnds))
 
         ! Target centres for the tree, and the radius of the cap around each
         ! centre that holds its polygon. Spherical-cap pre-reject: caps < 90 deg
@@ -389,12 +407,12 @@ contains
         ! pair whose caps do not meet cannot overlap and is not clipped
         ! (docs/dev/coupler-global-design.md, 7 i).
         allocate(emb(3,n2), trad(n2))
-        !$omp parallel do default(shared) schedule(guided) private(k, i, j, cv)
+        !$omp parallel do default(shared) schedule(guided) private(k, i, j, tv)
         do k = 1, n2
             i = mod(k-1, nx2) + 1; j = (k-1)/nx2 + 1
             call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), emb(1,k), emb(2,k), emb(3,k))
-            call axis_cell_poly(grid2, i, j, cv)
-            trad(k) = cap_radius(emb(:,k), cv)
+            call target_parallels(grid2, txe, tye, i, j, tv)
+            trad(k) = cap_radius(emb(:,k), reshape(tv, [3, 2*(NSUB+1)]))
         end do
         !$omp end parallel do
         call kdtree_build(tree, emb)
@@ -421,8 +439,8 @@ contains
         wfull_src = 0.0_dp
 
         !$omp parallel default(shared) &
-        !$omp   private(cs, ic, jc, k, cc, nf, no, nv, ctr, srad, ang, area, linked, &
-        !$omp           cidx, cd2, sv, cv, ov, olon, olat, tid)
+        !$omp   private(cs, ic, jc, k, cc, nf, ctr, srad, ang, area, linked, inside, &
+        !$omp           cidx, cd2, sv, tv, tid)
         tid = 0
         !$ tid = omp_get_thread_num()
         allocate(cidx(n2), cd2(n2))
@@ -439,27 +457,21 @@ contains
                 k = cidx(cc)
                 ang = acos(max(-1.0_dp, min(1.0_dp, emb(1,k)*ctr(1) + emb(2,k)*ctr(2) + emb(3,k)*ctr(3))))
                 if (ang > srad + trad(k) + CAP_MARGIN) cycle
-                call axis_cell_poly(grid2, mod(k-1, nx2) + 1, (k-1)/nx2 + 1, cv)
-                call polygon_clip_sphere(sv, cv, ov, no)
-                if (no < 3 .or. no > size(olon)) cycle
-                do nv = 1, no
-                    call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
-                end do
-                area = planet_area(a, f, olon(1:no), olat(1:no))
-                if (.not. (area > 0.0_dp)) cycle
+                call target_parallels(grid2, txe, tye, mod(k-1, nx2) + 1, (k-1)/nx2 + 1, tv)
+                area = target_strips_overlap(sv, tv, a, f, inside)
+                if (.not. (inside .or. area > 0.0_dp)) cycle
                 if (.not. linked) then
                     ! full source-cell area (the map metric), computed once
                     wfull_src(cs) = sphere_poly_area(sv, a, f)
                     linked = .true.
                 end if
+                if (inside) area = wfull_src(cs)
                 call buf_push(bufs(tid), cs, k, area)
             end do
         end do
         !$omp end do
         deallocate(cidx, cd2)
         if (allocated(sv)) deallocate(sv)
-        if (allocated(cv)) deallocate(cv)
-        if (allocated(ov)) deallocate(ov)
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
@@ -468,16 +480,18 @@ contains
         ! polygons that are clipped; the map metric).
         allocate(wm%wfull_dst(n2))
         call move_alloc(wfull_src, wm%wfull_src)
-        !$omp parallel do default(shared) schedule(guided) private(k, cv)
+        !$omp parallel do default(shared) schedule(guided) private(k, i, j, tv, cv)
         do k = 1, n2
-            call axis_cell_poly(grid2, mod(k-1, nx2) + 1, (k-1)/nx2 + 1, cv)
+            i = mod(k-1, nx2) + 1; j = (k-1)/nx2 + 1
+            call target_parallels(grid2, txe, tye, i, j, tv)
+            call target_cell_poly(tv, grid2%lon(i,j), grid2%lat(i,j), cv)
             wm%wfull_dst(k) = sphere_poly_area(cv, a, f)
         end do
         !$omp end parallel do
         call weight_map_coverage(wm, set_cov=.true.)
 
         call kdtree_free(tree)
-        deallocate(emb, trad, bufs)
+        deallocate(emb, trad, bufs, txe, tye)
     end subroutine conservative_spherical
 
     real(dp) function cap_radius(ctr, verts) result(r)
@@ -855,6 +869,120 @@ contains
         call orient_toward(verts, ctr)        ! the cell centre is interior
     end subroutine axis_cell_poly
 
+    subroutine target_parallels(grid, xe, ye, i, j, tv)
+        ! The two parallel edges of target cell (i,j), each subsampled into NSUB
+        ! segments in the grid's axis plane (lon-lat, or rotated lon-lat mapped
+        ! to geographic): tv(:,s,1) on the edge at ye(j-1), tv(:,s,2) on the edge
+        ! at ye(j), s = 0..NSUB from xe(i-1) to xe(i), as unit vectors. The
+        ! meridian edges are great circles and need no samples.
+        type(grid_class), intent(in)  :: grid
+        real(dp),         intent(in)  :: xe(0:), ye(0:)
+        integer,          intent(in)  :: i, j
+        real(dp),         intent(out) :: tv(3, 0:NSUB, 2)
+        real(dp) :: px, py, lo, la, t, xyc
+        integer  :: s, e
+        xyc = grid%cs%xy_conv
+        do e = 1, 2
+            py = ye(j-2+e)
+            do s = 0, NSUB
+                t  = real(s,dp)/real(NSUB,dp)
+                px = xe(i-1) + t*(xe(i) - xe(i-1))
+                if (grid%cs%is_projection) then
+                    call oblimap_projection_inverse(px*xyc, py*xyc, lo, la, grid%cs%proj)
+                else
+                    lo = px; la = py
+                end if
+                call lonlat_to_xyz(lo, la, tv(1,s,e), tv(2,s,e), tv(3,s,e))
+            end do
+        end do
+    end subroutine target_parallels
+
+    subroutine target_cell_poly(tv, ctrlon, ctrlat, verts)
+        ! The whole target cell polygon from its sampled parallels (target_parallels):
+        ! along the first parallel, back along the second. Equal to the union of
+        ! the NSUB strips of target_strips_overlap; used for the full cell area.
+        real(dp), intent(in)  :: tv(3, 0:NSUB, 2), ctrlon, ctrlat
+        real(dp), allocatable, intent(out) :: verts(:,:)
+        real(dp) :: ctr(3)
+        integer  :: s
+        allocate(verts(3, 2*(NSUB+1)))
+        do s = 0, NSUB
+            verts(:, s+1)        = tv(:, s, 1)
+            verts(:, 2*NSUB+2-s) = tv(:, s, 2)
+        end do
+        call drop_repeated(verts)
+        call lonlat_to_xyz(ctrlon, ctrlat, ctr(1), ctr(2), ctr(3))
+        call orient_toward(verts, ctr)        ! the cell centre is interior
+    end subroutine target_cell_poly
+
+    real(dp) function target_strips_overlap(sv, tv, a, f, contained) result(area)
+        ! Overlap area on the planet (a, f) of source polygon sv with a target
+        ! cell given by its sampled parallels tv (target_parallels). The cell is
+        ! split into NSUB strips in longitude, each a convex spherical quadrangle
+        ! (a triangle at a pole) bounded by two meridians and one great-circle
+        ! chord of each parallel; sv is clipped against each strip and the piece
+        ! areas are summed. Clipping against the whole cell instead would cut
+        ! off the slivers behind its concave poleward parallel.
+        ! A strip with every source vertex outside one of its edges is skipped.
+        ! When every source vertex is inside one strip, sv lies in it: the
+        ! overlap is the whole source polygon, contained = .true. and the area
+        ! is left to the caller (it is the source cell area, computed once).
+        real(dp), intent(in)  :: sv(:,:), tv(3, 0:NSUB, 2), a, f
+        logical,  intent(out) :: contained
+        real(dp), allocatable :: ov(:,:)
+        real(dp) :: cv(3,4), q(3,4), nrm(3)
+        real(dp) :: olon(size(sv,2)+8), olat(size(sv,2)+8)
+        integer  :: s, no, nv, nc, k, e, en, nin, ns
+        logical  :: all_in
+        area = 0.0_dp
+        contained = .false.
+        ns = size(sv, 2)
+        strips: do s = 1, NSUB
+            q(:,1) = tv(:, s-1, 1); q(:,2) = tv(:, s, 1)
+            q(:,3) = tv(:, s,   2); q(:,4) = tv(:, s-1, 2)
+            ! drop repeated vertices: a strip ending at a pole is a triangle
+            nc = 0
+            do k = 1, 4
+                if (nc > 0) then
+                    if (maxval(abs(q(:,k) - cv(:,nc))) < SAME_TOL) cycle
+                end if
+                nc = nc + 1; cv(:,nc) = q(:,k)
+            end do
+            if (nc > 1) then
+                if (maxval(abs(cv(:,nc) - cv(:,1))) < SAME_TOL) nc = nc - 1
+            end if
+            if (nc < 3) cycle strips                  ! a cell of zero height
+            call orient_toward(cv(:,1:nc), sum(cv(:,1:nc), dim=2))   ! convex: centroid inside
+            ! classify the source vertices against each strip edge (the inside
+            ! test of polygon_clip_sphere)
+            all_in = .true.
+            do e = 1, nc
+                en = mod(e,nc) + 1
+                nrm(1) = cv(2,e)*cv(3,en) - cv(3,e)*cv(2,en)
+                nrm(2) = cv(3,e)*cv(1,en) - cv(1,e)*cv(3,en)
+                nrm(3) = cv(1,e)*cv(2,en) - cv(2,e)*cv(1,en)
+                nin = 0
+                do k = 1, ns
+                    if (nrm(1)*sv(1,k) + nrm(2)*sv(2,k) + nrm(3)*sv(3,k) >= 0.0_dp) nin = nin + 1
+                end do
+                if (nin == 0) cycle strips
+                if (nin < ns) all_in = .false.
+            end do
+            if (all_in) then
+                contained = .true.
+                area = 0.0_dp
+                return
+            end if
+            call polygon_clip_sphere(sv, cv(:,1:nc), ov, no)
+            if (no >= 3 .and. no <= size(olon)) then
+                do nv = 1, no
+                    call xyz_to_lonlat(ov(1,nv), ov(2,nv), ov(3,nv), olon(nv), olat(nv))
+                end do
+                area = area + planet_area(a, f, olon(1:no), olat(1:no))
+            end if
+        end do strips
+    end function target_strips_overlap
+
     subroutine orient_toward(verts, c)
         ! Reverse the vertex order unless c (a vector pointing into the polygon)
         ! lies on the interior (+normal) side of the first edge.
@@ -878,7 +1006,6 @@ contains
         ! 1e-13 on the unit sphere (points at a pole differ by ~1e-17 with the
         ! longitude, as cos(90 deg) is not exactly 0 in floating point).
         real(dp), allocatable, intent(inout) :: verts(:,:)
-        real(dp), parameter :: TOL = 1.0e-13_dp
         real(dp), allocatable :: tmp(:,:)
         logical,  allocatable :: keep(:)
         integer :: k, n, m, kp
@@ -887,14 +1014,14 @@ contains
         keep = .true.
         kp = 1                                   ! last kept vertex
         do k = 2, n
-            if (maxval(abs(verts(:,k) - verts(:,kp))) < TOL) then
+            if (maxval(abs(verts(:,k) - verts(:,kp))) < SAME_TOL) then
                 keep(k) = .false.
             else
                 kp = k
             end if
         end do
         if (kp > 1) then
-            if (maxval(abs(verts(:,kp) - verts(:,1))) < TOL) keep(kp) = .false.
+            if (maxval(abs(verts(:,kp) - verts(:,1))) < SAME_TOL) keep(kp) = .false.
         end if
         if (all(keep)) return
         m = count(keep)

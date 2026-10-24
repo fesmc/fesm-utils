@@ -182,21 +182,27 @@ change `frac2`. A `con` map without coverage data (a `cdo` map, or a cache file
 written before coverage was stored) stops with "regenerate <file>" when `norm`
 or `frac2` is requested. The 4 `int` specifics take none of these.
 
-Limitations of `conservative_spherical` (projected source → lat-lon/Gauss
-target), both pre-existing: (1) the target cell polygon is concave along its
-poleward parallel edge (subsampled great-circle chords), and the
-Sutherland-Hodgman clip loses a sliver there (about 0.2 % of the cell at 70°S
-for 1° cells), so `Σ_k φ_jk` is slightly below 1 even for a global target; (2)
-the source cell polygon is built by interpolating the 4 inverse-projected
-corners linearly in lon/lat, so a projected cell that straddles the 0/360
-meridian, or contains the pole, is mis-built (its edges go the long way round).
-A projected domain over a pole (Antarctica, Greenland) is affected along one
-meridian strip. Polygons with repeated vertices (a cell with two corners at a
-pole) are reduced to distinct vertices before the clip. Candidate pairs whose
-bounding spherical caps do not meet are not clipped (ANT-16KM → T64: 7.2 s →
-3.8 s serial); such pairs cannot overlap, so only clip noise of disjoint
-polygons (≤ 1e-10 of a cell) is no longer stored, which the default pruning
-removed anyway.
+Geometry of `conservative_spherical` (projected source → lat-lon/Gauss
+target). Each cell edge is subsampled into NSUB = 8 segments in the grid's own
+plane (projection x-y, or rotated lon-lat) and every sample is inverse-projected
+and joined by great-circle arcs, so a projected cell that straddles the 0/360
+meridian or contains the pole is a proper spherical polygon. A target cell's
+poleward parallel, traced by great-circle chords, is concave, so the source
+polygon is clipped against the cell's 8 strips in longitude (each convex,
+bounded by two meridians and one chord of each parallel) and the pieces are
+summed; the strips of all target cells tile the sphere. Target longitudes come
+from the unwrapped axis (as in the lat-lon → lat-lon path) and latitude bounds
+are clamped to ±90. For a target that covers the source domain, `Σ_k φ_jk = 1`
+to ~1e-12 on a spherical planet (up to ~2e-10 for a cell that holds the pole,
+round-off over its ~1500 polar strip pieces) and to ~1e-8 on WGS84 (the pieces
+have great-circle edges, and their geodesic areas on the ellipsoid do not add up
+exactly). Each source polygon is built once (source-major loop over a k-d tree
+of the target centres); polygons with repeated vertices (a cell with two
+corners at a pole) are reduced to distinct vertices, candidate pairs whose
+bounding spherical caps do not meet are not clipped, and a source polygon that
+lies inside one strip takes its own area as the overlap. The links of each
+target are stored in ascending source order for any thread count. ANT-16KM →
+T64 (WGS84): 4.3 s serial, 0.8 s on 10 threads.
 
 ## Remapping kernels
 

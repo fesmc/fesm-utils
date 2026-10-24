@@ -8,7 +8,8 @@ program test_gauss_bounds
     !   * grid_cdo write/read keeps y_bnds (and the explicit-bounds flag),
     !   * a polar-cell spherical clip (projected source over the pole onto the
     !     Gauss grid, whose polar cells have two corners at the pole) returns
-    !     finite weights.
+    !     finite weights, every source cell is covered once (sum_k phi_jk = 1)
+    !     and the polar-row cells inside the source are covered once.
     ! Also: explicit bounds are validated (a centre outside its cell stops;
     ! child process, exit code checked).
 
@@ -126,13 +127,18 @@ program test_gauss_bounds
     call map_init(map, gps, gg, method="con", fldr=fldr)
     write(*,*) "polar clip: links =", map%wm%n_links, " polar-row links =", &
                count(map%wm%dst <= 192), " finite:", all(abs(map%wm%w) <= huge(1.0_dp))
-    ! (Coverage of the polar rows is not checked: projected source cells that
-    ! straddle the 0/360 meridian or contain the pole are mis-built by
-    ! conservative_spherical, see docs/packages/coords.qmd; only finiteness.)
     if (map%wm%n_links == 0 .or. count(map%wm%dst <= 192) == 0 .or. &
         .not. all(abs(map%wm%w) <= huge(1.0_dp)) .or. .not. all(map%wm%w == map%wm%w) .or. &
         .not. all(map%wm%wfull_dst == map%wm%wfull_dst)) then
         write(*,*) "FAIL: polar-cell clip gives no / non-finite weights"; fails = fails + 1
+    end if
+    ! The source (+-600 km around the pole) covers the two southern polar rows
+    ! (to ~86.7 S) and lies inside the global target.
+    emax = maxval(abs(map%wm%wcov_src/map%wm%wfull_src - 1.0_dp))
+    a_exp = maxval(abs(map%wm%wcov_dst(1:2*192)/map%wm%wfull_dst(1:2*192) - 1.0_dp))
+    write(*,*) "polar clip: max |sum_k phi_jk - 1| =", emax, " polar rows max |coverage - 1| =", a_exp
+    if (emax > 1.0e-9_dp .or. a_exp > 1.0e-9_dp) then
+        write(*,*) "FAIL: polar-cell clip does not cover the source / the polar rows once"; fails = fails + 1
     end if
 
     ! --- explicit bounds are validated (child) ---------------------------------------

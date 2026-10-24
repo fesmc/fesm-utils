@@ -157,6 +157,14 @@ All notable changes to fesm-utils are documented here.
   once; links of every target in ascending source order for any thread count). Changes
   newly generated projected -> lon-lat/Gauss `con` maps (in the bit-identity harness:
   `bi-ps` onto `bi-ll2`, `bi-ls`, `bi-gauss`); existing cache files load unchanged.
+- **coords**: `conservative_spherical` clips against each target cell as 8 convex strips in
+  longitude; the cell's poleward parallel (great-circle chords) is concave and the clip
+  lost the slivers behind it (1.3e-3 of a 1 deg cell at 70S, 2.4e-3 for T64). For a target
+  that covers the source, `sum_k phi_jk = 1` to ~1e-12 on a sphere and ~1e-8 on WGS84.
+  Target longitude bounds come from the unwrapped axis (fixes the seam cell of a lon180
+  grid built from 0..360 centres) and latitude bounds are clamped to +-90. Changes the
+  same newly generated maps as the previous entry. ANT-16KM -> T64: 3.8 s -> 4.3 s
+  serial, 1.6 s -> 0.8 s on 10 threads.
 
 ## [v1.4] - 2026-10-23
 

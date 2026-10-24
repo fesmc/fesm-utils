@@ -1,6 +1,9 @@
 # coupler: global <-> regional exchange — design note
 
-Status: implemented through step 7 (branch phase0-coupler).
+Status: implemented through step 7 (branch phase0-coupler). Follow-up on
+phase0-kryos: the two geometry problems of `conservative_spherical` found in
+step 7 (seam/pole source cells, concave target cells) are fixed, and `Σ_k φ_jk
+= 1` holds for a covering target (§11).
 
 Scope: make conservative exchange between N regional projected grids and one
 global grid (lon-lat or Gauss-Legendre, e.g. VILMA2 T64) correct and
@@ -41,7 +44,7 @@ them is `grid%area`:
 | `conservative_planar_reg` | same Cartesian plane | axis units² in the projection plane (no scale factor) |
 | `conservative_planar` | other source -> projected target | target-plane axis units² of NSUB-subsampled projected source cells |
 | `conservative_latlon` | ll/Gauss -> ll/Gauss | `Δλ[deg]·Δsinφ`, spherical band, poles clamped, no `R²` |
-| `conservative_spherical` | projected -> ll/Gauss | Karney area (target planet) of great-circle polygons, NSUB=8 |
+| `conservative_spherical` | projected -> ll/Gauss | Karney area (target planet) of great-circle polygons, NSUB=8 samples per edge in each grid's plane; target cells as 8 convex strips (§11) |
 
 `grid%area` (`grid_area`) is: plane area for Cartesian; the Karney area of the 4
 inverse-projected corners for projected grids (in axis units², i.e. km² for km
@@ -280,8 +283,8 @@ Change, in this order:
    authalic zone formula). On a sphere this equals `R²Δλ·w_j`, the SHTns
    quadrature weight. Grids without explicit bounds keep the Karney 4-corner
    area (bit-identical; §10, Q6).
-5. Polar cells now have two corners at the pole: `build_sphere_poly` must drop
-   repeated vertices (degenerate edges break the great-circle clip).
+5. Polar cells now have two corners at the pole: `build_sphere_poly` (now
+   `axis_cell_poly` and the target strips, §11) must drop repeated vertices (degenerate edges break the great-circle clip).
 6. `grid_cdo`: the writer emits cdo `ybounds` (2·ny values) only when
    `explicit_bnds`; the reader parses `ybounds` into `y_bnds`. Existing
    `grid_*.txt` files have no `ybounds` and read exactly as today. Also,
@@ -383,17 +386,17 @@ convert at their own boundary).
 ## 7. Performance
 
 - Regional projected -> Gauss/lon-lat goes through `conservative_spherical`:
-  per target a k-d tree query with radius `chord(srcdeg + 1.5·tgtdeg)`, then a
-  great-circle clip of two 32-vertex polygons (NSUB=8) per candidate. For a fine
-  source on a coarse target the candidate disk is ~7× the overlapping sources,
-  so most clips are wasted. Not yet benchmarked; add the case
-  (ANT-16KM/4KM -> T64) to `bench_conservative.f90`.
+  a k-d tree query with radius `chord(srcdeg + 1.5·tgtdeg)`, then a
+  great-circle clip per candidate pair. For a fine source on a coarse target
+  the candidate disk is ~7× the overlapping sources, so most clips are
+  wasted. Benchmarked in `bench_conservative.f90` (ANT-16KM -> T64); since §11
+  the loop is source-major (timings there).
 - Improvements, in order: (i) a spherical-cap pre-reject before the clip
   (rejects only pairs that cannot overlap, so the weights do not change);
   (ii) opt-in adaptive NSUB for source cells smaller than ~0.1° (fewer
   vertices; changes the weights of newly generated maps, so not the default).
-- OpenMP: target-parallel with `guided` schedule. Parallelism is bounded by the
-  covered targets (~10³ for one ice sheet on T64), enough for one node.
+- OpenMP: source-parallel with a `static` schedule (§11; it was
+  target-parallel, bounded by the ~10³ covered targets of one ice sheet on T64).
 - Everything is built once and cached (disk + memory). Per coupling step the
   cost is one `O(n_links)` apply per domain plus `O(N·n_global)` in
   `merge_end`, negligible next to the models. The `q`, `r`, `c_src` vectors
@@ -465,3 +468,62 @@ Downstream:
 10. `from_disk` auto-registration: OK that a later `coupler_add_grid` of the
     same name is an error when the signatures differ?
 11. `frac2` always `real(dp)` (proposed), or the kind of `var2`?
+
+## 11. Spherical clip geometry (follow-up to step 7)
+
+Two problems of `conservative_spherical` found in step 7, both fixed. They
+change newly generated projected -> lon-lat/Gauss `con` maps only (in the
+bit-identity harness: `bi-ps` onto `bi-ll2`, `bi-ls`, `bi-gauss`, 49 of 409
+streams in `gen` mode; `cached` 409 of 409 identical).
+
+1. **Source polygons.** The 4 inverse-projected corners were interpolated
+   linearly in lon/lat, so a cell across the 0/360 meridian or around the pole
+   ran the long way round (one garbage meridian strip for every pole-covering
+   ANT/GRL map). Now each edge is sampled NSUB = 8 times in the grid's own
+   plane and every sample is inverse-projected (`axis_cell_poly`); the pole
+   cell is a polygon around the pole. NSUB stays 8.
+2. **Concave target cells.** The poleward parallel of a lon-lat cell, traced
+   by great-circle chords, is concave, and Sutherland-Hodgman clipped away the
+   slivers behind it. Now the source polygon is clipped against the cell's
+   NSUB strips in longitude (two meridians, one chord of each parallel; convex;
+   a triangle at a pole) and the piece areas are summed
+   (`target_strips_overlap`). Strips of adjacent cells share edges, so the
+   targets tile the sphere. Target longitudes come from `lon_edges` (the
+   unwrapped axis, which also fixes the wrong default seam cell of a lon180
+   target built from 0..360 centres) and latitude bounds are clamped to ±90,
+   as in `conservative_latlon`.
+
+Measured residuals, ANT-16KM polar stereographic (WGS84, phi = -71,
+pole-centred) onto global targets that cover it; "before" is 6271c75, "fix 1"
+the source polygons alone (concave clip only):
+
+| Residual | Target | before | fix 1 | after |
+|---|---|---|---|---|
+| target row holding 70°S, `1 - wcov_dst/wfull_dst` (lon 10–350) | 1° lon-lat [-71,-70] | 1.3e-3 | 1.3e-3 | 8.6e-10 |
+| same | T64 [-70.89,-69.02] | 2.4e-3 | 2.4e-3 | 4.6e-9 |
+| source cells at 69.5–70.5°S, max `|1 - Σ_k φ_jk|` | 1° | 0.98 (seam) | 1.7e-2 | 1.7e-9 |
+| all source cells, max `|1 - Σ_k φ_jk|` | 1° | 0.98 | 3.0e-2 | 2.4e-9 |
+| same | T64 | 0.97 | 0.11 | 1.9e-9 |
+| source cells with `|1 - Σ_k φ_jk|` > 1e-2 | 1° / T64 | 7748 / 11238 | 7592 / 11076 | 0 / 0 |
+
+On a spherical planet `Σ_k φ_jk = 1` to rounding (ANT-100KM -> spherical T64:
+7.7e-13; 1.8e-10 for the cell holding the pole, which collects the round-off of
+~1500 geodesic piece areas). On WGS84 it closes to ~1e-8 (100 km cells: 3.4e-8):
+the pieces have great-circle edges, and their geodesic areas on the ellipsoid
+add up to the cell's only to O(f·L²/R). A spherical-excess area metric would
+close to rounding and be cheaper than the Karney area, but changes the map
+metric; not done. `bench_conservative`'s `max|co-cdo|` for ANT-16KM -> T64
+(1.7, in the polar row) comes from cdo: on the target cells inside the domain
+(86–50°S) coords is within 4.4e-3 of the cell-centre value of the linear test
+field, cdo off by up to 0.8.
+
+Loop and cost. Each source polygon is built once (source-major loop; candidate
+targets from a k-d tree over the target centres; the cap pre-reject of §7 i
+kept). A strip with every source vertex outside one of its edges is skipped,
+and a source polygon inside one strip takes its own area (computed once) as the
+overlap. The static schedule gives every thread one contiguous source range,
+so each target's links are in ascending source order for any thread count
+(weights identical serial / 1 / 4 / 10 threads). ANT-16KM -> T64 (WGS84,
+`bench_conservative`, mean of 3): before 3.77 s serial, 2.69 s on 4 threads,
+1.60 s on 10; after 4.32 s, 1.31 s, 0.81 s. The serial +15 % is the NSUB
+inverse projections per edge (~150 ns each).

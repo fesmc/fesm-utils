@@ -1,12 +1,13 @@
 program test_coupler_global
     ! Regional -> global conservative exchange (docs/dev/coupler-global-design.md,
     ! 1 and 8). A polar-stereographic disk domain (a load inside a disk of
-    ! radius R, missing outside; centred 2500 km from the pole on 90E) is mapped
-    ! onto a global 1 deg lon-lat grid and onto a Gaussian T64 grid (nlat = 96).
-    ! The disk avoids the pole and the 0/360 meridian: projected source cells
-    ! that straddle that meridian are mis-built by conservative_spherical
-    ! (corner longitudes interpolated the long way round; a pre-existing
-    ! issue, not changed here).
+    ! radius R, missing outside; centred 500 km from the pole, so it covers the
+    ! pole and crosses the 0/360 and 180 meridians) is mapped onto a global
+    ! 1 deg lon-lat grid (WGS84) and onto a Gaussian T64 grid (nlat = 96,
+    ! spherical).
+    !   Global target: sum_k phi_jk = 1 for every source cell (the whole
+    !       domain is covered), to CLOSE_SPH on the sphere and CLOSE_ELL on
+    !       WGS84 (see there).
     !   (b) frac2 in [0,1]; sum(wfull_dst*frac2) = sum_valid(wcov_src) on an
     !       unpruned map; frac2 = 1 for targets inside the disk, 0 outside.
     !   (f) a pruned and an unpruned map give the same norm="dst" integral
@@ -15,13 +16,21 @@ program test_coupler_global
     !   norm="dst" without areas = frac2 * mean (map metric).
     ! Through the coupler (registered model areas, 2):
     !   (a) remap norm="dst": coupler_integral on the global grid equals the
-    !       covered part of the regional integral to 1e-12.
+    !       covered part of the regional integral to 1e-12, and the whole
+    !       regional integral to 1e-12 (sphere) / 1e-8 (WGS84).
     !   (c) two overlapping regional grids (polar stereographic + regional
     !       lon-lat), owners from coupler_owner_reduce: merged integral =
     !       background part + owned regional integrals; merge(A,B) == merge(B,A)
     !       bit for bit; without owners max(frac_tot) > 1 + 1e-2.
     !   (d) an intensive merge of a constant returns the constant to 1e-14.
     !   (e) split with var_src == ref_src returns ref_dst exactly.
+    ! Pole and seam geometry (check_pole_seam), "con" to both global grids:
+    !   an ANT-like polar-stereographic grid over the pole and Greenland-like
+    !   oblique stereographic grids across the 0/360 meridian and across the
+    !   dateline: sum_k phi_jk = 1 for every source cell; a constant maps to 1
+    !   (norm="frac", 1e-10) and, with norm="dst", to 1 on every target cell
+    !   inside the domain (CLOSE_SPH / CLOSE_ELL): no cell is lost or
+    !   double-counted along the seam or around the pole.
 
     use coords
     use coupler
@@ -30,28 +39,34 @@ program test_coupler_global
 
     character(len=*), parameter :: fldr = "maps_coupler_global_test"
     real(dp), parameter :: R_DISK = 1500.0_dp      ! km
-    real(dp), parameter :: X_DISK = 2500.0_dp      ! km, disk centre (X_DISK, 0): >= 1000 km from
-                                                   ! the pole, away from the 0/360 meridian
+    real(dp), parameter :: X_DISK = 300.0_dp       ! km, disk centre (X_DISK, Y_DISK): 500 km from
+    real(dp), parameter :: Y_DISK = 400.0_dp       ! the pole; the disk holds the pole and crosses
+                                                   ! the 0/360 (+y axis) and 180 (-y) meridians
+    ! closure of sum_k phi_jk = 1 on a global target. Sphere: ~1e-12, up to
+    ! ~2e-10 for a cell holding the pole (round-off of ~1500 geodesic areas of
+    ! polar strip pieces). WGS84: ~1e-8 for 100 km cells (the pieces have
+    ! great-circle edges, their geodesic areas on the ellipsoid do not add up
+    ! exactly).
+    real(dp), parameter :: CLOSE_SPH = 1.0e-9_dp
+    real(dp), parameter :: CLOSE_ELL = 1.0e-7_dp
     type(grid_class) :: gps, gll, gga
-    real(dp), allocatable :: glat(:)
     integer :: fails
 
     fails = 0
     call execute_command_line("rm -rf "//fldr)
 
     call grid_init(gps, name="glob-ant", mtype="polar_stereographic", units="kilometers", planet="WGS84", &
-                   lon180=.false., x0=500.0_dp, dx=50.0_dp, nx=81, y0=-2000.0_dp, dy=50.0_dp, ny=81, &
+                   lon180=.false., x0=-2000.0_dp, dx=50.0_dp, nx=81, y0=-2000.0_dp, dy=50.0_dp, ny=81, &
                    lambda=0.0_dp, phi=-71.0_dp)
     call grid_init(gll, name="glob-ll1", mtype="latlon", units="degrees", planet="WGS84", &
                    x0=0.5_dp, dx=1.0_dp, nx=360, y0=-89.5_dp, dy=1.0_dp, ny=180)
-    allocate(glat(96))
-    call gaussian_latitudes_calc(96, glat)
-    call grid_init(gga, name="glob-t64", mtype="gaussian", units="degrees", planet="Spherical Earth", &
-                   x0=0.0_dp, dx=1.875_dp, nx=192, y=glat)
+    ! Gauss bounds from the weights reach the poles (grid_init_gaussian)
+    call grid_init_gaussian(gga, "glob-t64", nlon=192, nlat=96, planet="Spherical Earth")
 
     call check_target(gps, gll)
     call check_target(gps, gga)
     call check_coupler(gps, gll, gga)
+    call check_pole_seam(gll, gga)
 
     call execute_command_line("rm -rf "//fldr)
     if (fails > 0) then
@@ -115,21 +130,24 @@ contains
             end do
         end do
         write(*,*) "  max |frac2 - 1| inside the disk =", emax
-        ! Tolerance: conservative_spherical clips against the target cell, whose
-        ! poleward parallel edge (NSUB great-circle chords) is concave; the
-        ! Sutherland-Hodgman clip then loses a sliver (~0.2% at 70S for 1 deg
-        ! cells; a pre-existing limitation of the generator, not changed here).
-        if (emax > 1.0e-2_dp) then
+        if (emax > close_tol(g2)) then
             write(*,*) "FAIL: frac2 /= 1 inside the disk"; fails = fails + 1
         end if
 
-        ! norm="dst" without areas = frac2 * (covered mean)
+        ! norm="dst" without areas = frac2 * (covered mean), where frac2 < 1;
+        ! on a fully covered target the coverage may exceed 1 by the closure
+        ! error of sum_k phi_jk, which frac2 clips and norm="dst" keeps
         call map_field(mu, "v", v1, v2, norm="dst")
         call map_field(mu, "v", v1, v2b)
-        emax = maxval(abs(v2 - f2*v2b), mask=m2)
-        write(*,*) "  max |dst - frac2*mean| =", emax
+        emax = maxval(abs(v2 - f2*v2b), mask=m2 .and. f2 < 1.0_dp)
+        write(*,*) "  max |dst - frac2*mean| (frac2 < 1) =", emax
         if (emax > 1.0e-12_dp*maxval(abs(v1))) then
             write(*,*) "FAIL: norm=dst (no areas) /= frac2*mean"; fails = fails + 1
+        end if
+        emax = maxval(abs(v2/v2b - 1.0_dp), mask=m2 .and. f2 == 1.0_dp)
+        write(*,*) "  max |dst/mean - 1| (frac2 = 1) =", emax
+        if (emax > close_tol(g2)) then
+            write(*,*) "FAIL: norm=dst (no areas) /= mean on covered targets"; fails = fails + 1
         end if
 
         ! (f) pruned vs unpruned: same model-metric integral (norm="dst" with areas)
@@ -143,10 +161,9 @@ contains
         where (mu%wm%wfull_src > 0.0_dp) cov = mu%wm%wcov_src/mu%wm%wfull_src
         rhs = sum(reshape(a1*v1, [size(v1)])*cov, mask=reshape(v1, [size(v1)]) /= mv_dp)
         write(*,*) "  integral pruned / unpruned / covered source =", ip, iu, rhs
-        write(*,*) "  covered fraction of the domain =", rhs/sum(a1*v1, mask=v1 /= mv_dp)
-        ! 1 for a global target up to the clip sliver loss (see above)
-        if (rhs/sum(a1*v1, mask=v1 /= mv_dp) < 0.99_dp) then
-            write(*,*) "FAIL: covered fraction of a global target < 0.99"; fails = fails + 1
+        write(*,*) "  covered fraction of the domain - 1 =", rhs/sum(a1*v1, mask=v1 /= mv_dp) - 1.0_dp
+        if (abs(rhs/sum(a1*v1, mask=v1 /= mv_dp) - 1.0_dp) > close_tol(g2)) then
+            write(*,*) "FAIL: covered fraction of a global target /= 1"; fails = fails + 1
         end if
         if (abs(ip - iu) > 1.0e-13_dp*abs(iu)) then
             write(*,*) "FAIL: pruned and unpruned integrals differ"; fails = fails + 1
@@ -194,16 +211,21 @@ contains
             i_cov = covered_integral(cpl, im, va, "glob-ant")
             i_reg = coupler_integral(cpl, "glob-ant", va, missing_value=mv_dp, describe=.true.)
             write(*,*) "(a) global / covered regional integral, rel diff =", i_glob, i_cov, &
-                       abs(i_glob - i_cov)/abs(i_cov), "  regional total =", i_reg
+                       abs(i_glob - i_cov)/abs(i_cov), "  regional total =", i_reg, &
+                       " rel diff =", abs(i_glob - i_reg)/abs(i_reg)
             if (abs(i_glob - i_cov) > 1.0e-12_dp*abs(i_cov)) then
                 write(*,*) "FAIL: (a) global integral /= covered regional integral"; fails = fails + 1
+            end if
+            ! the global target covers the whole domain: sum_k phi_jk = 1
+            if (abs(i_glob - i_reg) > merge(1.0e-12_dp, 1.0e-8_dp, k == 2)*abs(i_reg)) then
+                write(*,*) "FAIL: (a) global integral /= regional integral"; fails = fails + 1
             end if
         end do
 
         ! second regional domain: lon-lat box north of the disk centre, partly
         ! inside the disk; its 0.25 deg cells nest in the 1 deg global cells, so
         ! the owner split (per B cell) matches on the global grid
-        call oblimap_projection_inverse(X_DISK*1000.0_dp, 0.0_dp, lonc, latc, gps%cs%proj)
+        call oblimap_projection_inverse(X_DISK*1000.0_dp, Y_DISK*1000.0_dp, lonc, latc, gps%cs%proj)
         lonc = real(floor(lonc), dp); latc = real(floor(latc), dp)
         call grid_init(gb, name="glob-box", mtype="latlon", units="degrees", planet="WGS84", &
                        x0=lonc - 10.0_dp + 0.125_dp, dx=0.25_dp, nx=80, &
@@ -280,6 +302,105 @@ contains
         end if
     end subroutine check_coupler
 
+    real(dp) function close_tol(g2) result(tol)
+        ! Closure tolerance of sum_k phi_jk = 1 on the target planet of g2.
+        type(grid_class), intent(in) :: g2
+        tol = merge(CLOSE_SPH, CLOSE_ELL, g2%cs%planet%is_sphere)
+    end function close_tol
+
+    subroutine check_pole_seam(gll, gga)
+        ! Projected cells over the pole and across the 0/360 meridian / the
+        ! dateline onto global lon-lat (WGS84) and Gauss (sphere) targets.
+        type(grid_class), intent(in) :: gll, gga
+        type(grid_class) :: gant, ggrl
+        real(dp) :: lam(2) = [0.0_dp, 180.0_dp]
+        integer  :: k
+        call grid_init(gant, name="pole-ant", mtype="polar_stereographic", units="kilometers", &
+                       planet="WGS84", lon180=.false., x0=-3000.0_dp, dx=100.0_dp, nx=61, &
+                       y0=-3000.0_dp, dy=100.0_dp, ny=61, lambda=0.0_dp, phi=-71.0_dp)
+        call check_closure(gant, gll)
+        call check_closure(gant, gga)
+        do k = 1, 2
+            call grid_init(ggrl, name="seam-grl"//merge("000", "180", k == 1), mtype="stereographic", &
+                           units="kilometers", planet="WGS84", x0=-800.0_dp, dx=40.0_dp, nx=41, &
+                           y0=-1500.0_dp, dy=40.0_dp, ny=76, lambda=lam(k), phi=72.0_dp, alpha=7.5_dp)
+            call check_closure(ggrl, gll)
+            call check_closure(ggrl, gga)
+        end do
+    end subroutine check_pole_seam
+
+    subroutine check_closure(g1, g2)
+        ! A global target covers every source cell once: sum_k phi_jk = 1;
+        ! a constant maps to 1 (norm="frac") and its norm="dst" map is 1 on
+        ! every target cell lying inside the source domain.
+        type(grid_class), intent(in) :: g1, g2
+        type(map_class) :: mp
+        real(dp), allocatable :: one(:,:), v2(:,:)
+        logical,  allocatable :: m2(:,:)
+        real(dp) :: tol, emax_src, emax_frac, emax_dst
+        integer  :: i, j, nin
+
+        tol = close_tol(g2)
+        call map_init(mp, g1, g2, method="con", fldr=fldr)
+        emax_src = maxval(abs(mp%wm%wcov_src/mp%wm%wfull_src - 1.0_dp))
+
+        allocate(one(g1%G%nx, g1%G%ny), v2(g2%G%nx, g2%G%ny), m2(g2%G%nx, g2%G%ny))
+        one = 1.0_dp
+        call map_field(mp, "one", one, v2, mask2=m2)
+        emax_frac = maxval(abs(v2 - 1.0_dp), mask=m2)
+        call map_field(mp, "one", one, v2, norm="dst", mask2=m2)
+        emax_dst = 0.0_dp
+        nin = 0
+        do j = 1, g2%G%ny
+            do i = 1, g2%G%nx
+                if (.not. cell_in_domain(g1, g2, i, j)) cycle
+                nin = nin + 1
+                emax_dst = max(emax_dst, abs(v2(i,j) - 1.0_dp))
+            end do
+        end do
+        write(*,"(1x,a,' -> ',a,': max|1-sum phi| =',es9.2,'  const frac err =',es9.2, &
+             & '  const dst err on',i6,' inner targets =',es9.2)") trim(g1%name), trim(g2%name), &
+             emax_src, emax_frac, nin, emax_dst
+        if (any(mp%wm%wfull_src <= 0.0_dp)) then
+            write(*,*) "FAIL: source cells without links on a global target"; fails = fails + 1
+        end if
+        if (emax_src > tol) then
+            write(*,*) "FAIL: sum_k phi_jk /= 1 on a global target"; fails = fails + 1
+        end if
+        if (emax_frac > 1.0e-10_dp) then
+            write(*,*) "FAIL: a constant does not map to 1 (norm=frac)"; fails = fails + 1
+        end if
+        if (nin == 0 .or. emax_dst > tol) then
+            write(*,*) "FAIL: norm=dst constant /= 1 on targets inside the domain"; fails = fails + 1
+        end if
+    end subroutine check_closure
+
+    logical function cell_in_domain(g1, g2, i, j) result(inside)
+        ! Target cell (i,j) of lon-lat g2 lies inside the projected domain of
+        ! g1: its boundary, sampled 4 points per edge, projects into g1's cells.
+        type(grid_class), intent(in) :: g1, g2
+        integer,          intent(in) :: i, j
+        real(dp) :: lo, la, x, y, t, xb(4), yb(4)
+        integer  :: e, s
+        xb = [g2%G%x_bnds(i-1), g2%G%x_bnds(i), g2%G%x_bnds(i), g2%G%x_bnds(i-1)]
+        yb = [g2%G%y_bnds(j-1), g2%G%y_bnds(j-1), g2%G%y_bnds(j), g2%G%y_bnds(j)]
+        yb = max(-90.0_dp, min(90.0_dp, yb))
+        inside = .false.
+        do e = 1, 4
+            do s = 0, 3
+                t  = real(s, dp)/4.0_dp
+                lo = xb(e) + t*(xb(mod(e,4)+1) - xb(e))
+                la = yb(e) + t*(yb(mod(e,4)+1) - yb(e))
+                if (la*g1%cs%proj%phi <= 0.0_dp) return        ! other hemisphere
+                call oblimap_projection(lo, la, x, y, g1%cs%proj)
+                x = x/g1%cs%xy_conv; y = y/g1%cs%xy_conv
+                if (x < g1%G%x_bnds(0) .or. x > g1%G%x_bnds(g1%G%nx) .or. &
+                    y < g1%G%y_bnds(0) .or. y > g1%G%y_bnds(g1%G%ny)) return
+            end do
+        end do
+        inside = .true.
+    end function cell_in_domain
+
     integer function map_index(cpl, src, dst) result(im)
         type(coupler_class), intent(in) :: cpl
         character(len=*),    intent(in) :: src, dst
@@ -322,7 +443,7 @@ contains
         allocate(v(g%G%nx, g%G%ny))
         do j = 1, g%G%ny
             do i = 1, g%G%nx
-                r = sqrt((g%x(i,j) - X_DISK)**2 + g%y(i,j)**2)
+                r = sqrt((g%x(i,j) - X_DISK)**2 + (g%y(i,j) - Y_DISK)**2)
                 if (r <= R_DISK) then
                     v(i,j) = 1000.0_dp + 500.0_dp*cos(0.5_dp*3.14159_dp*r/R_DISK) + 0.1_dp*g%x(i,j)
                 else
@@ -342,7 +463,7 @@ contains
             return
         end if
         call oblimap_projection(lon, lat, x, y, g%cs%proj)
-        r = sqrt((x/1000.0_dp - X_DISK)**2 + (y/1000.0_dp)**2)
+        r = sqrt((x/1000.0_dp - X_DISK)**2 + (y/1000.0_dp - Y_DISK)**2)
     end function disk_radius
 
 end program test_coupler_global
