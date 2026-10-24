@@ -615,7 +615,7 @@ CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fie
                test_fields_mask test_fields_units test_fields_link test_fields_restart \
                test_fields_exchange
 CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
-CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema
+CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema test_time_axis
 CHECK_DATASRC_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/datasrc/abort/datasrc_abort_*.f90))))
 ICE_DATA     = ../ice_data/v2/NorthTest
 

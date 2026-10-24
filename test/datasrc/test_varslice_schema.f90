@@ -115,6 +115,8 @@ contains
         write(u,"(a)") '    fill       = "none"'
         write(u,"(a)") '    fill_value = 0.0'
         write(u,"(a)") '    time       = 0 0 0 0 0'
+        write(u,"(a)") '    time_units = ""'
+        write(u,"(a)") '    calendar   = ""'
         write(u,"(a)") "/"
         close(u)
 

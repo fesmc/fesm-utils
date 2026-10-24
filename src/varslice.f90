@@ -58,6 +58,15 @@ module varslice
         ! from the file in calendar years y is served as t = y - time_ref.
         real(dp)            :: time_ref = 0.0_dp
 
+        ! Time axis from the file (time(1) < 0, or no time key): the time
+        ! coordinate (the variable's last dimension, time_name) of each file,
+        ! decoded with its units and calendar attributes, or with these when
+        ! set (time_units = "clock": the values are clock years as they stand).
+        logical             :: time_from_file = .false.
+        character(len=128)  :: time_units = ""
+        character(len=32)   :: calendar   = ""
+        character(len=56)   :: time_name  = ""
+
         ! Internal parameters
         integer  :: ndim 
         real(dp) :: time_par(4) 
@@ -120,6 +129,7 @@ module varslice
     public :: varslice_init_arg
     public :: varslice_init_data
     public :: varslice_end 
+    public :: varslice_time_decode
 
     public :: varslice_map_to_grid
 
@@ -1455,6 +1465,10 @@ contains
         integer, allocatable :: dim_now(:)
         character(len=1024)  :: filename_dims
         character(len=:), allocatable :: fnames
+        real(dp), allocatable :: t_file(:)
+
+        ! A time axis from the file: resolve the mode and read the axis
+        if (vs%par%time_from_file) call file_time_axis(vs%par, t_file)
 
         ! Local shortcut
         with_time       = vs%par%with_time 
@@ -1483,7 +1497,20 @@ contains
             vs%dim(vs%par%ndim) = sum(vs%nt_files)
         end if
 
-        if (with_time) then
+        if (with_time .and. vs%par%time_from_file) then
+
+            ! The axis of the file(s); with a sub-annual cycle, the position
+            ! of each step within its year
+            vs%time = t_file
+            allocate(vs%time_sub(size(vs%time)))
+            vs%time_sub = 1.0_dp
+            if (with_time_sub) then
+                do k = 2, size(vs%time)
+                    if (floor(vs%time(k)) .eq. floor(vs%time(k-1))) vs%time_sub(k) = vs%time_sub(k-1) + 1.0_dp
+                end do
+            end if
+
+        else if (with_time) then
 
             if (with_time_sub) then
                 ! Need to generate a sub-annual axis too
@@ -1727,6 +1754,527 @@ contains
 
     end subroutine load_or_generate_axis
 
+    subroutine file_time_axis(par, t)
+        ! A time axis from the file. The mode (auto | static | clim |
+        ! transient) is resolved from the variable's last dimension: a time
+        ! axis if its coordinate variable exists and is named time, has
+        ! axis = "T", standard_name = "time", a decodable units attribute,
+        ! the CF climatology attribute (then: clim), or time_units is set.
+        ! transient: the axis t of every file, decoded to calendar years
+        ! (varslice_time_decode) minus time_ref, concatenated, strictly
+        ! increasing; nsub = steps per year when every year holds the same
+        ! number of them (> 1), else 1. clim: the last dimension is the
+        ! cycle, nsub = its length.
+
+        implicit none
+
+        type(varslice_param_class), intent(INOUT) :: par
+        real(dp), allocatable,      intent(OUT)   :: t(:)
+
+        character(len=56), allocatable :: dn(:)
+        integer,  allocatable :: dl(:), cnt(:)
+        real(dp), allocatable :: tf(:), yf(:), y(:)
+        character(len=256) :: units, cal, att
+        character(len=:), allocatable :: fnames
+        logical  :: has_coord, is_time, is_clim
+        integer  :: nd, i, n0, nt, k, stat, nsub, ny0
+        real(dp) :: dx
+
+        call nc_dims(par%filenames(1), par%name, dn, dl)
+        nd = size(dl)
+        par%time_name = dn(nd)
+
+        has_coord = nc_exists_var(par%filenames(1), trim(par%time_name))
+        is_time   = .false.
+        is_clim   = .false.
+        if (has_coord) then
+            is_clim = nc_exists_attr(par%filenames(1), trim(par%time_name), "climatology")
+            is_time = is_clim .or. trim(par%time_name) .eq. "time" .or. len_trim(par%time_units) .gt. 0
+            if (.not. is_time) is_time = attr_is(par%filenames(1), par%time_name, "axis", "t")
+            if (.not. is_time) is_time = attr_is(par%filenames(1), par%time_name, "standard_name", "time")
+            if (.not. is_time .and. nc_exists_attr(par%filenames(1), trim(par%time_name), "units")) then
+                call nc_read_attr(par%filenames(1), trim(par%time_name), "units", att)
+                call varslice_time_decode([0.0_dp], att, "", y, stat=stat, quiet=.true.)
+                is_time = (stat .eq. 0)
+            end if
+        end if
+
+        select case(trim(par%mode))
+            case("auto")
+                par%mode = "static"
+                if (is_time) par%mode = "transient"
+                if (is_clim) par%mode = "clim"
+            case("transient")
+                if (.not. has_coord) then
+                    call fesm_error("varslice_init_data", &
+                        "mode = ""transient"", but the last dimension of the variable has no coordinate variable.", &
+                        "name      = "//trim(par%name)//new_line("a")// &
+                        "dimension = "//trim(par%time_name)//new_line("a")// &
+                        "file      = "//trim(par%filenames(1)))
+                end if
+        end select
+
+        par%with_time     = .false.
+        par%with_time_sub = .false.
+        par%time_par      = 0.0_dp
+
+        select case(trim(par%mode))
+
+            case("static")
+                return
+
+            case("clim")
+                nsub = dl(nd)
+                if (nsub .lt. 2) then
+                    call fesm_error("varslice_init_data", &
+                        "mode = ""clim"" needs a cycle of at least two steps (the last dimension).", &
+                        "name      = "//trim(par%name)//new_line("a")// &
+                        "dimension = "//trim(par%time_name)//" ("//to_str(nsub)//")"//new_line("a")// &
+                        "file      = "//trim(par%filenames(1)))
+                end if
+                par%time_par(4)   = real(nsub, dp)
+                par%with_time_sub = .true.
+                return
+
+        end select
+
+        ! transient: decode and concatenate the axis of every file
+        allocate(t(0))
+        fnames = ""
+        do i = 1, size(par%filenames)
+            nt = nc_size(par%filenames(i), trim(par%time_name))
+            if (allocated(tf)) deallocate(tf)
+            allocate(tf(nt), yf(nt))
+            call nc_read(par%filenames(i), trim(par%time_name), tf)
+
+            units = par%time_units
+            if (len_trim(units) .eq. 0) then
+                if (.not. nc_exists_attr(par%filenames(i), trim(par%time_name), "units")) then
+                    call fesm_error("varslice_init_data", &
+                        "the time coordinate has no units attribute: set time_units.", &
+                        "name = "//trim(par%name)//new_line("a")// &
+                        "time = "//trim(par%time_name)//new_line("a")// &
+                        "file = "//trim(par%filenames(i)))
+                end if
+                call nc_read_attr(par%filenames(i), trim(par%time_name), "units", units)
+            end if
+            cal = par%calendar
+            if (len_trim(cal) .eq. 0) then
+                if (nc_exists_attr(par%filenames(i), trim(par%time_name), "calendar")) &
+                    call nc_read_attr(par%filenames(i), trim(par%time_name), "calendar", cal)
+            end if
+
+            if (trim(units) .eq. "clock") then
+                yf = tf
+            else
+                call varslice_time_decode(tf, units, cal, yf, stat=stat)
+                if (stat .ne. 0) then
+                    call fesm_error("varslice_init_data", &
+                        "the time axis of the file cannot be decoded (see above).", &
+                        "name     = "//trim(par%name)//new_line("a")// &
+                        "time     = "//trim(par%time_name)//new_line("a")// &
+                        "units    = "//trim(units)//new_line("a")// &
+                        "calendar = "//trim(cal)//new_line("a")// &
+                        "file     = "//trim(par%filenames(i)))
+                end if
+                yf = yf - par%time_ref
+            end if
+
+            t = [t, yf]
+            deallocate(yf)
+            fnames = fnames//new_line("a")//"  "//trim(par%filenames(i))//" ["//to_str(nt)//"]"
+        end do
+
+        nt = size(t)
+        do k = 2, nt
+            if (.not. (t(k) .gt. t(k-1))) then
+                call fesm_error("varslice_init_data", &
+                    "the time axis is not strictly increasing.", &
+                    "name  = "//trim(par%name)//new_line("a")// &
+                    "index = "//to_str(k)//": "//to_str(t(k-1))//" -> "//to_str(t(k))//new_line("a")// &
+                    "files:"//fnames)
+            end if
+        end do
+
+        ! Steps per year: the same number (> 1) in every year of the axis
+        nsub = 1
+        if (nt .gt. 1) then
+            ny0 = floor(t(1))
+            allocate(cnt(floor(t(nt)) - ny0 + 1))
+            cnt = 0
+            do k = 1, nt
+                cnt(floor(t(k)) - ny0 + 1) = cnt(floor(t(k)) - ny0 + 1) + 1
+            end do
+            n0 = cnt(1)
+            if (n0 .gt. 1 .and. all(cnt .eq. n0)) nsub = n0
+        end if
+        if (nsub .gt. 1 .and. par%time_ref .ne. real(nint(par%time_ref), dp)) then
+            call fesm_error("varslice_init_data", &
+                "a sub-annual axis needs time_ref in whole years.", &
+                "name     = "//trim(par%name)//new_line("a")// &
+                "time_ref = "//to_str(par%time_ref))
+        end if
+
+        dx = 0.0_dp
+        if (nt .gt. 1) then
+            dx = t(2) - t(1)
+            if (any(abs((t(2:nt) - t(1:nt-1)) - dx) .gt. 1e-6_dp*max(1.0_dp, abs(dx)))) dx = 0.0_dp
+        end if
+
+        par%with_time     = .true.
+        par%with_time_sub = (nsub .gt. 1)
+        par%time_par      = [t(1), t(nt), dx, real(nsub, dp)]
+
+    contains
+
+        logical function attr_is(fname, vname, att, val)
+            character(len=*), intent(IN) :: fname, vname, att, val
+            character(len=256) :: a
+            attr_is = .false.
+            if (.not. nc_exists_attr(fname, trim(vname), att)) return
+            call nc_read_attr(fname, trim(vname), att, a)
+            attr_is = (trim(lower(a)) .eq. val)
+        end function attr_is
+
+    end subroutine file_time_axis
+
+    subroutine varslice_time_decode(t, units, calendar, y, stat, quiet)
+        ! Calendar years y of the values t of a time coordinate with CF units
+        ! and calendar (case-insensitive):
+        !   {seconds,minutes,hours,days} since <date>: by calendar
+        !       standard | gregorian (exact day count; dates before
+        !       1582-10-15: error), proleptic_gregorian, noleap | 365_day,
+        !       all_leap | 366_day, 360_day ("" = standard);
+        !       y = year + day-of-year / days-in-year
+        !   months since <date>: 360_day only
+        !   years since <date>, common_years since <date>: year of date + t
+        !   yr BP, a BP, years BP, ka BP, kyr BP: 1950 - t*{1, 1000}
+        !   yr CE, years CE, AD: t
+        !   yr, years, ka (no reference): error (set time_units)
+        ! Errors stop, or with stat present set stat = 1 and return (quiet:
+        ! without a message).
+
+        implicit none
+
+        real(dp),         intent(IN)  :: t(:)
+        character(len=*), intent(IN)  :: units, calendar
+        real(dp), allocatable, intent(OUT) :: y(:)
+        integer,          intent(OUT), optional :: stat
+        logical,          intent(IN),  optional :: quiet
+
+        character(len=256) :: u, word, date
+        character(len=32)  :: cal
+        integer  :: p, yr0, mo0, dy0, ios, k, yy
+        real(dp) :: sec0, fac, ref, a, ystart, ylen
+        logical  :: ok, loud
+
+        loud = .true.
+        if (present(quiet)) loud = .not. quiet
+        if (present(stat)) stat = 0
+        allocate(y(size(t)))
+        y = 0.0_dp
+
+        u   = adjustl(lower(units))
+        cal = adjustl(lower(calendar))
+        if (len_trim(cal) .eq. 0) cal = "standard"
+
+        p = index(u, " since ")
+        if (p .eq. 0) then
+            select case(trim(squeeze(u)))
+                case("yr bp", "a bp", "years bp")
+                    y = 1950.0_dp - t
+                case("ka bp", "kyr bp")
+                    y = 1950.0_dp - 1000.0_dp*t
+                case("yr ce", "years ce", "ad")
+                    y = t
+                case("yr", "years", "ka", "a", "year", "kyr")
+                    call fail("time units without a reference: set time_units", "")
+                case default
+                    call fail("time units not recognised", "")
+            end select
+            return
+        end if
+
+        word = u(1:p-1)
+        date = adjustl(u(p+7:))
+        call parse_date(date, yr0, mo0, dy0, sec0, ok)
+        if (.not. ok) then
+            call fail("reference date not recognised", "date = "//trim(date))
+            return
+        end if
+
+        select case(trim(word))
+            case("years", "year", "common_years", "common_year")
+                y = real(yr0, dp) + t
+                return
+            case("seconds", "second", "secs", "sec", "s")
+                fac = 1.0_dp/86400.0_dp
+            case("minutes", "minute", "mins", "min")
+                fac = 1.0_dp/1440.0_dp
+            case("hours", "hour", "hrs", "hr", "h")
+                fac = 1.0_dp/24.0_dp
+            case("days", "day", "d")
+                fac = 1.0_dp
+            case("months", "month")
+                if (trim(cal) .ne. "360_day") then
+                    call fail("months since <date> needs the 360_day calendar", "calendar = "//trim(cal))
+                    return
+                end if
+                fac = 30.0_dp
+            case default
+                call fail("time units not recognised", "")
+                return
+        end select
+
+        select case(trim(cal))
+            case("standard", "gregorian", "proleptic_gregorian", "noleap", "365_day", &
+                 "all_leap", "366_day", "360_day")
+            case default
+                call fail("calendar not supported", "calendar = "//trim(cal))
+                return
+        end select
+
+        if (mo0 .lt. 1 .or. mo0 .gt. 12 .or. dy0 .lt. 1 .or. dy0 .gt. month_len(yr0, mo0)) then
+            call fail("reference date not valid in the calendar", "date = "//trim(date))
+            return
+        end if
+
+        ref = day_number(yr0, mo0, dy0) + sec0/86400.0_dp
+
+        do k = 1, size(t)
+            a = ref + t(k)*fac
+            if ((trim(cal) .eq. "standard" .or. trim(cal) .eq. "gregorian") .and. &
+                (a .lt. day_number(1582, 10, 15) .or. ref .lt. day_number(1582, 10, 15))) then
+                call fail("dates before 1582-10-15 in the standard calendar (use proleptic_gregorian)", "")
+                return
+            end if
+            ! The year holding day number a
+            yy = floor(a/year_mean()) + epoch_year()
+            do while (day_number(yy, 1, 1) .gt. a)
+                yy = yy - 1
+            end do
+            do while (day_number(yy+1, 1, 1) .le. a)
+                yy = yy + 1
+            end do
+            ystart = day_number(yy, 1, 1)
+            ylen   = day_number(yy+1, 1, 1) - ystart
+            y(k)   = real(yy, dp) + (a - ystart)/ylen
+        end do
+
+    contains
+
+        subroutine fail(msg, detail)
+            character(len=*), intent(IN) :: msg, detail
+            character(len=:), allocatable :: d
+            d = "units    = "//trim(units)//new_line("a")//"calendar = "//trim(calendar)
+            if (len_trim(detail) .gt. 0) d = d//new_line("a")//trim(detail)
+            if (present(stat)) then
+                stat = 1
+                if (.not. loud) return
+            end if
+            call fesm_error("varslice_time_decode", msg, d, stat)
+        end subroutine fail
+
+        logical function is_leap(yy)
+            integer, intent(IN) :: yy
+            select case(trim(cal))
+                case("noleap", "365_day", "360_day")
+                    is_leap = .false.
+                case("all_leap", "366_day")
+                    is_leap = .true.
+                case default
+                    is_leap = (mod(yy,4) .eq. 0 .and. mod(yy,100) .ne. 0) .or. mod(yy,400) .eq. 0
+            end select
+        end function is_leap
+
+        integer function month_len(yy, mm)
+            integer, intent(IN) :: yy, mm
+            integer, parameter :: ML(12) = [31,28,31,30,31,30,31,31,30,31,30,31]
+            if (trim(cal) .eq. "360_day") then
+                month_len = 30
+            else
+                month_len = ML(mm)
+                if (mm .eq. 2 .and. is_leap(yy)) month_len = 29
+            end if
+        end function month_len
+
+        real(dp) function day_number(yy, mm, dd)
+            ! Days since 0000-01-01 of the calendar (proleptic for the
+            ! Gregorian ones).
+            integer, intent(IN) :: yy, mm, dd
+            integer :: i, ym
+            real(dp) :: d
+            select case(trim(cal))
+                case("360_day")
+                    d = 360.0_dp*yy + 30.0_dp*(mm-1) + (dd-1)
+                case("noleap", "365_day")
+                    d = 365.0_dp*yy
+                    do i = 1, mm-1
+                        d = d + month_len(yy, i)
+                    end do
+                    d = d + (dd-1)
+                case("all_leap", "366_day")
+                    d = 366.0_dp*yy
+                    do i = 1, mm-1
+                        d = d + month_len(yy, i)
+                    end do
+                    d = d + (dd-1)
+                case default
+                    ! Gregorian: leap days of the years before yy
+                    ym = yy - 1
+                    d  = 365.0_dp*yy + real(floor_div(ym,4) - floor_div(ym,100) + floor_div(ym,400) + 1, dp)
+                    do i = 1, mm-1
+                        d = d + month_len(yy, i)
+                    end do
+                    d = d + (dd-1)
+            end select
+            day_number = d
+        end function day_number
+
+        integer function floor_div(a, b)
+            integer, intent(IN) :: a, b
+            floor_div = floor(real(a, dp)/real(b, dp))
+        end function floor_div
+
+        real(dp) function year_mean()
+            select case(trim(cal))
+                case("360_day")
+                    year_mean = 360.0_dp
+                case("noleap", "365_day")
+                    year_mean = 365.0_dp
+                case("all_leap", "366_day")
+                    year_mean = 366.0_dp
+                case default
+                    year_mean = 365.2425_dp
+            end select
+        end function year_mean
+
+        integer function epoch_year()
+            epoch_year = 0
+        end function epoch_year
+
+    end subroutine varslice_time_decode
+
+    subroutine parse_date(str, yr, mo, dy, sec, ok)
+        ! "Y-M-D[ h:m:s]" (also "T" between date and time; a leading "-"
+        ! for negative years; a trailing "z"/"utc" ignored). Missing month
+        ! or day: 1.
+
+        implicit none
+
+        character(len=*), intent(IN)  :: str
+        integer,          intent(OUT) :: yr, mo, dy
+        real(dp),         intent(OUT) :: sec
+        logical,          intent(OUT) :: ok
+
+        character(len=256) :: s, d, tm
+        integer :: p, q, ios, sgn, hh, mi
+        real(dp) :: ss
+
+        yr = 0; mo = 1; dy = 1; sec = 0.0_dp
+        ok = .false.
+
+        s = adjustl(str)
+        p = index(trim(s), " ")
+        q = index(s, "t")
+        if (q .gt. 1 .and. (p .eq. 0 .or. q .lt. p)) p = q
+        if (p .gt. 0) then
+            d  = s(1:p-1)
+            tm = adjustl(s(p+1:))
+        else
+            d  = s
+            tm = ""
+        end if
+        p = index(tm, "z");   if (p .gt. 0) tm = tm(1:p-1)
+        p = index(tm, "utc"); if (p .gt. 0) tm = tm(1:p-1)
+
+        sgn = 1
+        if (d(1:1) .eq. "-") then
+            sgn = -1
+            d = d(2:)
+        end if
+
+        p = index(d, "-")
+        if (p .eq. 0) then
+            read(d, *, iostat=ios) yr
+            if (ios .ne. 0) return
+        else
+            read(d(1:p-1), *, iostat=ios) yr
+            if (ios .ne. 0) return
+            d = d(p+1:)
+            p = index(d, "-")
+            if (p .eq. 0) then
+                read(d, *, iostat=ios) mo
+                if (ios .ne. 0) return
+            else
+                read(d(1:p-1), *, iostat=ios) mo
+                if (ios .ne. 0) return
+                read(d(p+1:), *, iostat=ios) dy
+                if (ios .ne. 0) return
+            end if
+        end if
+        yr = sgn*yr
+
+        if (len_trim(tm) .gt. 0) then
+            hh = 0; mi = 0; ss = 0.0_dp
+            p = index(tm, ":")
+            if (p .eq. 0) then
+                read(tm, *, iostat=ios) hh
+                if (ios .ne. 0) return
+            else
+                read(tm(1:p-1), *, iostat=ios) hh
+                if (ios .ne. 0) return
+                tm = tm(p+1:)
+                p = index(tm, ":")
+                if (p .eq. 0) then
+                    read(tm, *, iostat=ios) mi
+                    if (ios .ne. 0) return
+                else
+                    read(tm(1:p-1), *, iostat=ios) mi
+                    if (ios .ne. 0) return
+                    read(tm(p+1:), *, iostat=ios) ss
+                    if (ios .ne. 0) return
+                end if
+            end if
+            sec = 3600.0_dp*hh + 60.0_dp*mi + ss
+        end if
+
+        ok = .true.
+
+    end subroutine parse_date
+
+    pure function lower(s) result(l)
+        character(len=*), intent(IN) :: s
+        character(len=len(s)) :: l
+        integer :: i, c
+        l = s
+        do i = 1, len(s)
+            c = iachar(s(i:i))
+            if (c .ge. iachar("A") .and. c .le. iachar("Z")) l(i:i) = achar(c + 32)
+        end do
+    end function lower
+
+    pure function squeeze(s) result(r)
+        ! Runs of blanks reduced to one, leading blanks removed
+        character(len=*), intent(IN) :: s
+        character(len=len(s)) :: r
+        integer :: i, n
+        logical :: blank
+        r = ""
+        n = 0
+        blank = .true.
+        do i = 1, len_trim(s)
+            if (s(i:i) .eq. " ") then
+                if (blank) cycle
+                blank = .true.
+            else
+                blank = .false.
+            end if
+            n = n + 1
+            r(n:n) = s(i:i)
+        end do
+    end function squeeze
+
     subroutine varslice_end(vs)
         ! Deallocate all variables
 
@@ -1938,13 +2486,11 @@ contains
             call nml_read(filename,group,"grid_src",  par%grid_src,   defaults_file=defaults_file, defaults_group=dg)
             call nml_read(filename,group,"fill",      par%fill,       defaults_file=defaults_file, defaults_group=dg)
             call nml_read(filename,group,"fill_value",par%fill_value, defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"time_units",par%time_units, defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"calendar",  par%calendar,   defaults_file=defaults_file, defaults_group=dg)
             call check_fill_method(par%fill, "varslice_par_load")
 
-            if (time(1) .lt. 0.0_dp) then
-                call fesm_error("varslice_par_load", &
-                    "a time axis from the file (time(1) < 0) is not available yet.", &
-                    "group = "//trim(group))
-            end if
+            par%time_from_file = (time(1) .lt. 0.0_dp)
 
         end subroutine par_load_schema
 
@@ -1970,7 +2516,19 @@ contains
             call nml_read(filename,group,"name",     par%name)
             call nml_read(filename,group,"units",    units)
             call nml_read(filename,group,"scaling",  scaling)
-            call nml_read(filename,group,"time",     time)
+
+            ! time: the legacy axis; absent or time(1) < 0: the axis of the file
+            if (nml_has_param(filename,group,"time")) then
+                call nml_read(filename,group,"time", time)
+                par%time_from_file = (time(1) .lt. 0.0_dp)
+            else
+                time = [-1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp]
+                par%time_from_file = .true.
+            end if
+            if (nml_has_param(filename,group,"time_units")) &
+                call nml_read(filename,group,"time_units", par%time_units)
+            if (nml_has_param(filename,group,"calendar")) &
+                call nml_read(filename,group,"calendar", par%calendar)
 
             ! Optional: online remapping onto the target grid given at init
             par%remap    = "none"
@@ -2002,9 +2560,26 @@ contains
 
         subroutine resolve_mode()
             ! The mode implied by the legacy time key; an explicit mode must
-            ! agree with it.
+            ! agree with it. A time axis from the file: resolved at init
+            ! (varslice_init_data), the key is kept.
 
             character(len=16) :: implied
+
+            if (par%time_from_file) then
+                select case(trim(mode_key))
+                    case("auto","static","clim","transient")
+                        par%mode = mode_key
+                    case default
+                        call fesm_error("varslice_par_load", &
+                            "mode must be auto, static, clim or transient.", &
+                            "group = "//trim(group)//new_line("a")// &
+                            "name  = "//trim(par%name)//new_line("a")// &
+                            "mode  = "//trim(mode_key))
+                end select
+                par%with_time = .false.
+                par%time_par  = 0.0_dp
+                return
+            end if
 
             if (par%with_time) then
                 implied = "transient"

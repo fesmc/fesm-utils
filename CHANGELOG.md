@@ -41,6 +41,14 @@ All notable changes to fesm-utils are documented here.
   clim | transient`), checked against a legacy `time` key. Without the new arguments the
   legacy path is unchanged (`test_varslice_legacy`: byte-identical `var`/`time` against a
   reference recorded before the change). `make check-datasrc`.
+- **varslice**: the time axis from the file when `time(1) < 0` or the `time` key is
+  absent: the coordinate of the variable's last dimension of each file, CF `units` and
+  `calendar` decoded (`varslice_time_decode`: `{seconds..days} since <date>` in the
+  standard/gregorian, proleptic_gregorian, noleap/365_day, all_leap/366_day and 360_day
+  calendars, `months since` (360_day), `years since`, BP and CE forms), minus `time_ref`,
+  concatenated over multifile sets, strictly increasing (irregular axes allowed); `n_sub`
+  inferred; `mode = auto` resolved from the file (CF `climatology` attribute: clim). New
+  `par%time_units`, `par%calendar` (keys; `"clock"`: values as they stand), `par%time_name`.
 
 ### Changed
 - **fesmdata**: `fesmdata_flux_conv` and `fesmdata_temp_ref` are calls to `units_conv`

@@ -51,6 +51,9 @@ Static configuration for one variable, mostly loaded from the namelist.
 | `time_par(4)` | `real(dp)` | Time-axis definition `[x0, x1, dx, n_sub]` |
 | `mode` | `character(len=16)` | What the variable is, resolved at init: `static`, `clim` (a cycle without years) or `transient` |
 | `time_ref` | `real(dp)` | Calendar year of time zero of the caller's clock (default 0) |
+| `time_from_file` | `logical` | The time axis is read from the file (`time(1) < 0` or no `time` key) |
+| `time_units`, `calendar` | `character` | Override the attributes of the time coordinate (`""`: the attributes; `time_units = "clock"`: clock years as they stand) |
+| `time_name` | `character(len=56)` | Name of the time coordinate (the variable's last dimension) |
 
 ### `varslice_class`
 
@@ -83,6 +86,7 @@ The main object: parameters plus the loaded coordinates, time axis and data.
 | `varslice_nsub` | The declared sub-annual period (`time_par(4)`) |
 | `varslice_sub_mean` | Mean of the current slice over its time-like axis (e.g. the sub-annual cycle), as an `(x,y,z)` field; axes the variable lacks are singleton, missing values are skipped |
 | `varslice_end` | Deallocate all data arrays in the object |
+| `varslice_time_decode(t, units, calendar, y [, stat])` | Calendar years `y` of the values `t` of a CF time coordinate (see *Time axis from the file*) |
 | `get_matching_files` | Expand a glob pattern into a sorted list of filenames |
 | `print_var_range` | Print the min/max of a field (skipping missing values) |
 
@@ -198,6 +202,39 @@ An optional `mode` key (`auto`, `static`, `clim`, `transient`) states what the
 variable is; with a legacy `time` key it must agree with it (`active = 1`:
 transient; `0` with `n_sub > 1`: clim; else static), else init stops.
 
+### Time axis from the file
+
+With `time(1) < 0` (the schema default `time = -1 0 0 0 0`), or without a
+`time` key, the axis is not generated from `x0, x1, dx` but read from the file:
+the coordinate variable of the variable's last dimension, in every file of a
+multifile set, decoded with its `units` and `calendar` attributes (or the keys
+`time_units` and `calendar`), shifted by `time_ref` (`t = y - time_ref`, `y` in
+calendar years), concatenated over the files and required to be strictly
+increasing. Irregular axes are allowed (ICE-6G_C: 1 kyr, then 500 yr steps).
+`n_sub` is inferred as the number of steps per year when every year of the
+axis holds the same number of them (12 for monthly data), else 1.
+`time_units = "clock"` takes the values as clock years as they stand (no
+decoding, no `time_ref`).
+
+| `units` of the time variable | Calendar year |
+|---|---|
+| `{seconds,minutes,hours,days} since <date>` | by `calendar`: `standard`/`gregorian` (exact day count; dates before 1582-10-15 stop), `proleptic_gregorian`, `noleap`/`365_day`, `all_leap`/`366_day`, `360_day`; year + day-of-year/days-in-year |
+| `months since <date>` | `360_day` only, else stop |
+| `years since <date>`, `common_years since <date>` | year of date + value |
+| `yr BP`, `a BP`, `years BP`, `ka BP`, `kyr BP` | 1950 − value × {1, 1000} |
+| `yr CE`, `years CE`, `AD` | value |
+| `yr`, `years`, `ka` with no reference | stop: set `time_units` |
+
+A missing `calendar` attribute means `standard` (CF). File calendars are decoded
+independently of the run's calendar. `varslice_time_decode` is public.
+
+With a file axis, `mode = "auto"` is resolved from the file: the last dimension
+is a time axis if its coordinate variable is named `time`, has `axis = "T"`,
+`standard_name = "time"` or decodable `units`, and a climatology if it carries
+the CF `climatology` attribute (the last dimension is then the cycle, `n_sub`
+its length); otherwise the variable is static. `mode = "clim"` must be explicit
+for climatologies without that attribute.
+
 ### Schema (`defaults_file`)
 
 With `defaults_file`, every key is read through the schema group
@@ -206,7 +243,8 @@ so a group holds only what differs from it, usually `filename` and `name`.
 [fesm_datasrc](datasrc.qmd) reads its field groups this way, with the schema
 `[datasrc_field]` of `par/datasrc_defaults.nml`. The keys read by varslice are
 `filename`, `name`, `units`, `scaling`, `time`, `mode`, `remap`, `grid_src`,
-`fill` and `fill_value`, each of which the schema must declare. Without
+`fill`, `fill_value`, `time_units` and `calendar`, each of which the schema must
+declare. Without
 `defaults_file` (the legacy path) nothing changes: `filename`, `name`, `units`,
 `scaling` and `time` are required, the others optional.
 
