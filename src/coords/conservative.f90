@@ -18,7 +18,7 @@ module conservative
 
     use precision,       only: dp
     use constants, only: degrees_to_radians
-    use coordinates,     only: grid_class, compare_coord
+    use coordinates,     only: grid_class, compare_coord, axis_midpoint_bounds
     use oblimap_projection_module, only: oblimap_projection, oblimap_projection_inverse
     use planet,          only: planet_area
     use kdtree
@@ -437,21 +437,32 @@ contains
         deallocate(emb, slon, slat, bufs)
     end subroutine conservative_spherical
 
-    subroutine axis_edges(x, xe)
-        ! Cell edges (n+1 values, index 0:n) from n cell centers, using the same
-        ! adjacent-midpoint rule as cell_corners_grid so the separable/analytic
-        ! paths tile identically to the general polygon-clip path. Boundary edges
-        ! are extrapolated by half the end cell width. Requires n >= 2.
-        real(dp), intent(in)  :: x(:)
-        real(dp), intent(out) :: xe(0:)
-        integer :: n, i
-        n = size(x)
-        xe(0) = x(1) - 0.5_dp*(x(2) - x(1))
-        do i = 1, n-1
-            xe(i) = 0.5_dp*(x(i) + x(i+1))
+    subroutine lon_edges(grid, xe)
+        ! Longitude cell edges (0:nx) of a lat-lon / Gaussian grid for the
+        ! separable lat-lon path: the grid's x_bnds, except for a default-bounds
+        ! axis that is not ascending. A grid built from 0..360 centres with
+        ! lon180=.true. stores them remapped in place (0..179, -179..-0.7), so
+        ! the stored seam edge lands at ~0 instead of ~180; such an axis is
+        ! unwrapped to a monotonic sequence first and its midpoint edges taken.
+        ! (For an ascending axis unwrap_lon is the identity, so both branches
+        ! agree there.)
+        type(grid_class), intent(in)  :: grid
+        real(dp),         intent(out) :: xe(0:)
+        real(dp), allocatable :: xc(:)
+        integer :: i
+        logical :: ascending
+        ascending = .true.
+        do i = 2, grid%G%nx
+            if (grid%G%x(i) < grid%G%x(i-1)) ascending = .false.
         end do
-        xe(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
-    end subroutine axis_edges
+        if (grid%G%explicit_bnds .or. ascending) then
+            xe = grid%G%x_bnds
+        else
+            allocate(xc(grid%G%nx))
+            call unwrap_lon(grid%G%x, xc)
+            call axis_midpoint_bounds(xc, xe, grid%G%dx)
+        end if
+    end subroutine lon_edges
 
     subroutine unwrap_lon(xin, xout)
         ! Copy longitude centers to a monotonic ascending sequence, undoing the
@@ -517,7 +528,6 @@ contains
         real(dp) :: wlo, wla
         real(dp), allocatable :: sxe(:), sye(:), txe(:), tye(:)   ! 0:n edges
         real(dp), allocatable :: ssin(:), tsin(:)                 ! 0:ny sin(lat edge)
-        real(dp), allocatable :: sxc(:), txc(:)                   ! monotonic lon centers
         ! CSR of per-target-column lon overlaps and per-target-row lat overlaps
         integer,  allocatable :: lon_off(:), lat_off(:)
         integer,  allocatable :: lon_i1(:),  lat_j1(:)
@@ -527,18 +537,13 @@ contains
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
 
-        ! Unwrap the longitude centers to a monotonic sequence before taking edges:
-        ! a grid built from 0..360 centers with lon180=.true. stores them remapped
-        ! in place (0..179, -179..-0.7), so the seam cell's adjacent-midpoint edge
-        ! would land at ~0 instead of ~180. lon_overlap already handles the +-360
-        ! convention offset between source and target, so only monotonicity matters.
-        allocate(sxc(nx1), txc(nx2))
-        call unwrap_lon(grid1%G%x, sxc)
-        call unwrap_lon(grid2%G%x, txc)
-
+        ! Cell edges from the grids' bounds; longitude edges via lon_edges (which
+        ! unwraps a lon180-shifted axis, see there). lon_overlap handles the
+        ! +-360 convention offset between source and target, so only
+        ! monotonicity matters.
         allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
-        call axis_edges(sxc, sxe); call axis_edges(grid1%G%y, sye)
-        call axis_edges(txc, txe); call axis_edges(grid2%G%y, tye)
+        call lon_edges(grid1, sxe); sye = grid1%G%y_bnds
+        call lon_edges(grid2, txe); tye = grid2%G%y_bnds
 
         ! Clamp latitude edges to the poles (polar cells are half cells) and take
         ! the sine, in which latitude bands overlap linearly.
@@ -581,7 +586,7 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
-        deallocate(sxe, sye, txe, tye, ssin, tsin, sxc, txc, bufs)
+        deallocate(sxe, sye, txe, tye, ssin, tsin, bufs)
         deallocate(lon_off, lon_i1, lon_w, lat_off, lat_j1, lat_w)
     end subroutine conservative_latlon
 
@@ -671,8 +676,8 @@ contains
         nx2 = grid2%G%nx; ny2 = grid2%G%ny; n2 = nx2*ny2
 
         allocate(sxe(0:nx1), sye(0:ny1), txe(0:nx2), tye(0:ny2))
-        call axis_edges(grid1%G%x, sxe); call axis_edges(grid1%G%y, sye)
-        call axis_edges(grid2%G%x, txe); call axis_edges(grid2%G%y, tye)
+        sxe = grid1%G%x_bnds; sye = grid1%G%y_bnds
+        txe = grid2%G%x_bnds; tye = grid2%G%y_bnds
 
         call build_axis_overlap_lat(txe, sxe, nx2, nx1, x_off, x_i1, x_w)
         call build_axis_overlap_lat(tye, sye, ny2, ny1, y_off, y_j1, y_w)
@@ -787,36 +792,15 @@ contains
     end subroutine xyz_to_lonlat
 
     subroutine cell_corners_grid(grid, i, j, cx, cy)
-        ! Four corners (CCW) of cell (i,j) in axis units, from adjacent-axis
-        ! midpoints (so uniform and non-uniform/Gaussian grids share one path).
+        ! Four corners (CCW) of cell (i,j) in axis units, from the grid's cell
+        ! edges (grid%G%x_bnds, grid%G%y_bnds).
         type(grid_class), intent(in)  :: grid
         integer,          intent(in)  :: i, j
         real(dp),         intent(out) :: cx(4), cy(4)
         real(dp) :: x1, x2, y1, y2
-        integer  :: nx, ny
-        nx = grid%G%nx; ny = grid%G%ny
 
-        if (i == 1) then
-            x1 = grid%G%x(i) - 0.5_dp*(grid%G%x(i+1)-grid%G%x(i))
-            x2 = 0.5_dp*(grid%G%x(i)+grid%G%x(i+1))
-        else if (i == nx) then
-            x1 = 0.5_dp*(grid%G%x(i)+grid%G%x(i-1))
-            x2 = grid%G%x(i) + 0.5_dp*(grid%G%x(i)-grid%G%x(i-1))
-        else
-            x1 = 0.5_dp*(grid%G%x(i)+grid%G%x(i-1))
-            x2 = 0.5_dp*(grid%G%x(i)+grid%G%x(i+1))
-        end if
-
-        if (j == 1) then
-            y1 = grid%G%y(j) - 0.5_dp*(grid%G%y(j+1)-grid%G%y(j))
-            y2 = 0.5_dp*(grid%G%y(j)+grid%G%y(j+1))
-        else if (j == ny) then
-            y1 = 0.5_dp*(grid%G%y(j)+grid%G%y(j-1))
-            y2 = grid%G%y(j) + 0.5_dp*(grid%G%y(j)-grid%G%y(j-1))
-        else
-            y1 = 0.5_dp*(grid%G%y(j)+grid%G%y(j-1))
-            y2 = 0.5_dp*(grid%G%y(j)+grid%G%y(j+1))
-        end if
+        x1 = grid%G%x_bnds(i-1); x2 = grid%G%x_bnds(i)
+        y1 = grid%G%y_bnds(j-1); y2 = grid%G%y_bnds(j)
 
         cx = [x1, x2, x2, x1]
         cy = [y1, y1, y2, y2]

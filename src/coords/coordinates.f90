@@ -54,6 +54,14 @@ module coordinates
         integer :: nx, ny
         real(dp) :: x0, dx, y0, dy
         real(dp), allocatable, dimension(:) :: x, y
+        ! Cell edges in axis units, x_bnds(0:nx), y_bnds(0:ny): cell i spans
+        ! [x_bnds(i-1), x_bnds(i)]. Filled at grid_init and read by every
+        ! consumer of cell edges (grid_area, the conservative generators). The
+        ! default fill is the adjacent-midpoint rule with half-cell
+        ! extrapolation at the ends (axis_midpoint_bounds); explicit_bnds
+        ! records that the bounds were given instead.
+        real(dp), allocatable, dimension(:) :: x_bnds, y_bnds
+        logical :: explicit_bnds = .false.
     end type
 
     type grid_class
@@ -97,6 +105,7 @@ module coordinates
     public :: coord_system
     public :: points_class, points_init, points_allocate, points_write, points_print
     public :: grid_axis_class, grid_class, grid_init, grid_allocate, grid_write, grid_print
+    public :: axis_midpoint_bounds
     public :: grid_to_points, points_to_grid
     public :: compare_coord
     public :: pts_which_nearest 
@@ -133,7 +142,8 @@ contains
     end subroutine axis_init
 
     subroutine grid_area(grid)
-        ! Calculate the area of the cell each grid point represents
+        ! Calculate the area of the cell each grid point represents, from the
+        ! cell edges grid%G%x_bnds / grid%G%y_bnds.
 
         implicit none 
 
@@ -145,28 +155,11 @@ contains
         do j = 1, grid%G%ny 
             do i = 1, grid%G%nx 
 
-                ! Get vertices of cell around current grid point
-                if (i .eq. 1) then 
-                    x1 =  grid%G%x(i) - (grid%G%x(i+1)-grid%G%x(i)) / 2.0_dp
-                    x2 = (grid%G%x(i) + grid%G%x(i+1)) / 2.0_dp
-                else if (i .eq. grid%G%nx) then 
-                    x1 = (grid%G%x(i) + grid%G%x(i-1)) / 2.0_dp
-                    x2 =  grid%G%x(i) + (grid%G%x(i)-grid%G%x(i-1)) / 2.0_dp
-                else
-                    x1 = (grid%G%x(i) + grid%G%x(i-1)) / 2.0_dp
-                    x2 = (grid%G%x(i) + grid%G%x(i+1)) / 2.0_dp
-                end if 
-
-                if (j .eq. 1) then 
-                    y1 =  grid%G%y(j) - (grid%G%y(j+1)-grid%G%y(j)) / 2.0_dp
-                    y2 = (grid%G%y(j) + grid%G%y(j+1)) / 2.0_dp
-                else if (j .eq. grid%G%ny) then 
-                    y1 = (grid%G%y(j) + grid%G%y(j-1)) / 2.0_dp
-                    y2 =  grid%G%y(j) + (grid%G%y(j)-grid%G%y(j-1)) / 2.0_dp
-                else
-                    y1 = (grid%G%y(j) + grid%G%y(j-1)) / 2.0_dp
-                    y2 = (grid%G%y(j) + grid%G%y(j+1)) / 2.0_dp
-                end if 
+                ! Vertices of the cell around the current grid point
+                x1 = grid%G%x_bnds(i-1)
+                x2 = grid%G%x_bnds(i)
+                y1 = grid%G%y_bnds(j-1)
+                y2 = grid%G%y_bnds(j)
 
                 ! Convert grid points to meters as necessary
                 vertx = [x1,x1,x2,x2] * grid%cs%xy_conv 
@@ -180,8 +173,6 @@ contains
                     ! Calculate projected area 
 
                     do q = 1, 4
-!                         call inverse_oblique_sg_projection(vertx(q),verty(q), &
-!                                                            vertlon(q),vertlat(q),grid%cs%proj)
                         call oblimap_projection_inverse(vertx(q),verty(q), &
                                                         vertlon(q),vertlat(q),grid%cs%proj)
                     end do 
@@ -204,6 +195,40 @@ contains
         return
 
     end subroutine grid_area
+
+    subroutine axis_midpoint_bounds(x, xb, dx)
+        ! Default cell edges (n+1 values, index 0:n) from n cell centres: the
+        ! adjacent midpoints, with the end edges extrapolated by half the end
+        ! cell width. A single-centre axis takes +-dx/2 (dx: the axis spacing).
+        ! This is the one definition of default cell edges in coords.
+        real(dp), intent(in)  :: x(:)
+        real(dp), intent(out) :: xb(0:)
+        real(dp), intent(in)  :: dx
+        integer :: n, i
+        n = size(x)
+        if (n == 1) then
+            xb(0) = x(1) - 0.5_dp*dx
+            xb(1) = x(1) + 0.5_dp*dx
+            return
+        end if
+        xb(0) = x(1) - 0.5_dp*(x(2) - x(1))
+        do i = 1, n-1
+            xb(i) = 0.5_dp*(x(i) + x(i+1))
+        end do
+        xb(n) = x(n) + 0.5_dp*(x(n) - x(n-1))
+    end subroutine axis_midpoint_bounds
+
+    subroutine grid_axis_default_bounds(G)
+        ! (Re)fill G%x_bnds, G%y_bnds with the default midpoint edges of the
+        ! current axes.
+        type(grid_axis_class), intent(inout) :: G
+        if (allocated(G%x_bnds)) deallocate(G%x_bnds)
+        if (allocated(G%y_bnds)) deallocate(G%y_bnds)
+        allocate(G%x_bnds(0:G%nx), G%y_bnds(0:G%ny))
+        call axis_midpoint_bounds(G%x, G%x_bnds, G%dx)
+        call axis_midpoint_bounds(G%y, G%y_bnds, G%dy)
+        G%explicit_bnds = .false.
+    end subroutine grid_axis_default_bounds
 
     subroutine grid_init_from_grid(grid,grid0,name,x,y,x0,dx,nx,y0,dy,ny)
         ! Initialize a new grid based on an old grid but
@@ -569,6 +594,9 @@ contains
                          k0=k0)
         call points_to_grid(pts,grid)
 
+        ! Cell edges of the axes as given (before any lon180 shift below)
+        call grid_axis_default_bounds(grid%G)
+
         ! Calculate grid cell areas 
         if (allocated(grid%area))   deallocate(grid%area)
         allocate(grid%area(grid%G%nx,grid%G%ny))
@@ -629,6 +657,14 @@ contains
                 ! axis goes from -180 to 180
 
         end if 
+
+        ! The stored edges are those of the stored axis. grid%area above was
+        ! computed on the axis as given (for 0..360 centres with lon180, the
+        ! unshifted monotonic axis), so its seam cell is correct; the stored
+        ! midpoint edge at the seam of a shifted axis is not (conservative_latlon
+        ! unwraps such an axis itself). Fixing the seam edge is a separate,
+        ! non-bit-identical change (docs/dev/coupler-global-design.md, 3.1).
+        call grid_axis_default_bounds(grid%G)
 
         ! Finally check that the proj%alpha used is reasonable 
         if ( grid%cs%is_projection ) then 
