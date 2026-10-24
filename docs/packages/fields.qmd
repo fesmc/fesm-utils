@@ -1,0 +1,139 @@
+---
+title: "fesm_fields"
+subtitle: "Containers for fields exchanged between components"
+---
+
+## Overview
+
+`fesm_fields` holds the fields that cross a component boundary: one
+`field_state_t` per side of an exchange (a component instance's exports or
+imports), each field a `dp` buffer `v(nx,ny,nz)` with the metadata an exchange
+layer needs: units, grid tag, validity interval `[t0,t1]`, time semantics,
+conservation flag and an optional valid mask. Fields are resolved to integer
+handles at init.
+
+The module is model-agnostic: it knows no field names, does no remapping and no
+unit conversion. The vocabulary, the wiring tables and the lags live in the
+model (kryos), whose exchange combines `fesm_fields` with `coupler`. It depends
+on `precision`, `fesm_log` and `ncio`; public interfaces never use `wp`.
+
+- **One buffer shape.** Rank is metadata: scalars are `v(1,1,1)` with
+  `grid = ""`, 2-D fields have `nz = 1`, rank-3 fields (monthly climate, ocean
+  profiles) name their third axis in `zdim`. There is no rank 1 yet.
+- **Two phases.** Declare (`fields_init`, `fields_add`), then `fields_lock`,
+  which allocates every buffer once. `put`, `get`, `finalize_interval` and
+  `restart_read` never allocate.
+- **Owned copies.** `put` copies in (widening `sp` exactly), `get` copies out
+  the **published** value. Components are public: read `st%f(h)` freely, write
+  only through `fields_put`.
+- **Time semantics.** INSTANT replaces the value on each `put`. MEAN and
+  ACCUM accumulate `var*(t1-t0)` over a window that must be contiguous to the
+  bit; `fields_finalize_interval(st, t)` publishes the mean (or the integral)
+  and clears the window. Accumulators never reset in `get`, so several
+  consumers can read one published value.
+- **Loud failure.** Every misuse stops through `fesm_error` with the owner and
+  the field in the message; there are no `stat` arguments.
+
+## Public API
+
+| Name | Purpose |
+|---|---|
+| `FIELD_INSTANT`, `FIELD_MEAN`, `FIELD_ACCUM` | Time semantics: value at `t1`, mean over `[t0,t1]`, integral over `[t0,t1]` |
+| `FIELD_INTENSIVE`, `FIELD_EXTENSIVE` | Conservation flag (remap default `bilin` / `con` in the exchange) |
+| `FIELD_NAME_LEN`, `FIELD_UNITS_LEN`, `FIELD_GRID_LEN`, `FIELD_OWNER_LEN` | String lengths (32, 32, 64, 64) |
+| `field_t` | One field: metadata, published `v`, `t0`, `t1`, `valid`; open window `acc`, `acc_valid`, `wsum`, `ta0`, `ta1` |
+| `field_state_t` | `owner`, `n`, `locked`, `f(1:n)` |
+| `fields_init(st, owner)` | Reset `st`; `owner` (`"ice_grl:exports"`) is in every message |
+| `fields_add(st, name, units, tsem, cons, h [, grid, dims, zdim, masked])` | Declare a field, return its handle `h`. No `dims`: scalar; `[nx,ny]`; `[nx,ny,nz]` |
+| `fields_lock(st)` | End the declaration; allocate and zero every buffer |
+| `fields_handle(st, name)`, `fields_has(st, name)` | Handle of a name (stops if absent); is it declared |
+| `fields_put(st, h, var, t1 [, t0, valid])` | Copy in; generic over `dp`/`sp` and 0-D/2-D/3-D. `t0` required for MEAN/ACCUM; `valid` iff masked |
+| `fields_get(st, h, var [, t0, t1, valid])` | Copy out the published value; generic as `put`; `st` is `intent(in)` |
+| `fields_finalize_interval(st, t)` | Publish and clear every MEAN/ACCUM window, each of which must end at `t` |
+| `fields_check_link(src, hs, dst, hd)` | Stop unless units are equivalent, rank, `nz` and `cons` equal, and the time semantics allowed |
+| `fields_describe(st [, level])` | Log a header and one line per field (default `LOG_INFO`) |
+| `fields_restart_write(st, filename)`, `fields_restart_read(st, filename)` | The whole state in its own NetCDF file; read checks the declaration matches |
+| `units_key(units)` | Lower case, no blanks, `*` or `^`: `"kg m**-2 yr-1"` → `"kgm-2yr-1"` |
+| `units_canonical(units)` | `units_key` of the canonical spelling of an accepted alias |
+| `units_equivalent(a, b)` | Same units, possibly spelled differently |
+
+A rank-3 array with `size(var,3) == 1` is accepted for a rank-2 field in `put`
+and `get`, so an exchange can work on `v(:,:,:)` throughout.
+
+Allowed links (`fields_check_link`); horizontal shape and grid may differ:
+
+| source \\ destination | INSTANT | MEAN | ACCUM |
+|---|---|---|---|
+| INSTANT | ok | – | – |
+| MEAN | ok (last interval's mean) | ok (accumulates; slow consumer) | – |
+| ACCUM | – | – | ok |
+
+Unit aliases are identities only (factor 1, offset 0): `kg m-2 yr-1` =
+`mm w.e. yr-1` = `kg/m2/yr` = ..., `kg m-2` = `mm w.e.`, `m` = `metre`,
+`m yr-1` = `m/a`, `K` = `kelvin`, `W m-2` = `W/m2`, `1` = `fraction`. Units
+that need a factor or an offset (`m i.e.`, `degC`) are never equivalent: the
+conversion belongs in the adapter.
+
+## Example
+
+```fortran
+use precision, only : dp
+use fesm_fields
+
+type(field_state_t) :: ex
+integer :: h_smb, h_bsl
+
+call fields_init(ex, "srf_grl:exports")
+call fields_add(ex, "smb", "kg m-2 yr-1", FIELD_MEAN, FIELD_EXTENSIVE, h_smb, &
+                grid="grl-16km", dims=[nx,ny], masked=.true.)
+call fields_add(ex, "bsl", "m", FIELD_INSTANT, FIELD_INTENSIVE, h_bsl)
+call fields_lock(ex)
+call fields_describe(ex)
+
+! In the surface adapter: sub-steps of the coupling interval [ta, tb]
+call fields_put(ex, h_smb, smb_sub1, t0=ta, t1=tm, valid=ice_free)
+call fields_put(ex, h_smb, smb_sub2, t0=tm, t1=tb, valid=ice_free)
+call fields_put(ex, h_bsl, bsl, t1=tb)
+
+! After the component's update: publish the interval mean
+call fields_finalize_interval(ex, tb)
+
+! A consumer (or the exchange) reads the published value
+call fields_get(ex, h_smb, smb_mean, t0=t0, t1=t1)
+```
+
+A mistake stops with the owner and the field, for instance an exchange run
+twice for one producer interval:
+
+```
+fesm:: error in fesm_fields_put
+    gap or overlap in accumulation
+    owner = 'ice_grl:imports'
+    field = 'smb' (h = 3)
+    window = [0.00000000000000000E+000, 1.00000000000000000E+000]
+    given  = [0.00000000000000000E+000, 1.00000000000000000E+000]
+    t0 < ta1: overlap
+  stopped by fesm_error.
+```
+
+## Restart
+
+`fields_restart_write` writes the whole state (published values, open windows,
+masks, validity) to its own file, `<instance>_fields.nc` by convention:
+`<name>`, `<name>_acc`, `<name>_valid`, `<name>_acc_valid` with dimensions
+`<grid>_x`, `<grid>_y`, `<zdim>` (scalars on `one`), and the declared names as
+a global attribute. `fields_restart_read` stops unless every declared field is
+present with the same shape, units key, `tsem`, `cons` and mask and the file
+holds no other field; the restored state is then bit-identical (ncio reads
+`|x| < 1e-30` as 0 and NaN as -9999, which matters only at invalid cells).
+
+## Users and next steps
+
+`fesmdata` uses `units_key` from here. kryos builds its exchange
+(`kryos_fields_vocab`, `kryos_wiring`) on `fesm_fields` and `coupler`; the
+design is in `docs/dev/fields-design.md`. Rank 1 (obm boxes, basin profiles)
+is deferred to phase 3; masks are not yet forwarded through a remap (coupler
+mask pass-through).
+
+Tests: `make check-fields` (`test/fields/`: nine test programs and one
+expected-abort program per error case in `test/fields/abort/`).

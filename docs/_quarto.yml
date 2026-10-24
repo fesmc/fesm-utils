@@ -55,6 +55,10 @@ website:
             href: packages/foundations.qmd
           - text: "fesm_log — logging & errors"
             href: packages/log.qmd
+          - text: "fesm_clock — run clock & schedules"
+            href: packages/clock.qmd
+          - text: "fesm_fields — exchange fields"
+            href: packages/fields.qmd
       - text: "External libraries"
         menu:
           - text: "FFTW"
@@ -92,6 +96,8 @@ website:
           - packages/gaussian_quadrature.qmd
           - packages/foundations.qmd
           - packages/log.qmd
+          - packages/clock.qmd
+          - packages/fields.qmd
       - section: "External libraries"
         contents:
           - external/fftw.qmd

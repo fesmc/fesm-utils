@@ -9,8 +9,26 @@ All notable changes to fesm-utils are documented here.
   `log_set_level`), `log_set_unit`, `log_set_prefix`, `log_msg`, `fesm_warn`,
   `fesm_error(proc, msg [, detail] [, stat])` (framed message on `error_unit`, then
   `error stop 1`, or `stat = 1` and return), and `to_str`. `make test-log`.
+- **fesm_clock**: one run clock, integer ticks inside (`int64`, N = 36000 per year) and
+  `dp` years at every interface. `clock_t` (views `clock_time`, `_rel`, `_cal`, `_elapsed`
+  for `method = rel | cal | const`; calendar `360_day | 365_day | none` and `year`
+  required, no defaults), `cadence_t` (absolute grids `phase + k*dt`, every step, or
+  `per_year`; `cadence_due`/`_mark`/`_interval`), `schedule_t` (`none | const | times |
+  file`, keys as `timeout`). Every year value must be a whole number of ticks and every
+  grid relation is checked at init (errors give the nearest valid values); restart
+  bundles detect continuation vs branch and convert other N exactly. `clock_describe`
+  logs the schedule table. `timestepping`/`timeout` are unchanged. `make check-clock`.
+- **fesm_fields**: containers for fields exchanged between components (`field_t`,
+  `field_state_t`; `dp` buffers with units, grid, validity, INSTANT/MEAN/ACCUM semantics,
+  conservation flag, optional mask). Free procedures `fields_init`, `fields_add`,
+  `fields_lock`, `fields_handle`, `fields_has`, `fields_put`/`fields_get` (generic over
+  `dp`/`sp` and 0-D/2-D/3-D), `fields_finalize_interval`, `fields_check_link`,
+  `fields_describe`, `fields_restart_write`/`_read`, and `units_key`, `units_canonical`,
+  `units_equivalent`. `make check-fields` (with expected-abort programs, `check_abort`).
 
 ### Changed
+- **fesmdata**: `units_key` now comes from `fesm_fields` and also drops `^`, so
+  `kg m^-2 s^-1` is recognised (it was rejected before); other units are unchanged.
 - **varslice, coupler, fesmdata, regions, topodata, htopo, zremap**: errors go through
   `fesm_error`; the private `*_error`/`to_str` helpers are removed. The frame header is now
   `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`

@@ -166,6 +166,10 @@ $(objdir)/precision.o: $(srcdir)/precision.f90
 $(objdir)/fesm_log.o: $(srcdir)/fesm_log.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/fesm_fields.o: $(srcdir)/fesm_fields.f90 $(objdir)/precision.o $(objdir)/fesm_log.o \
+					$(objdir)/ncio.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/constants.o: $(srcdir)/constants.f90 $(objdir)/precision.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -194,6 +198,10 @@ $(objdir)/timeout.o: $(srcdir)/timeout.f90 $(objdir)/nml.o
 $(objdir)/timestepping.o: $(srcdir)/timestepping.f90 $(objdir)/nml.o $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
+$(objdir)/fesm_clock.o: $(srcdir)/fesm_clock.f90 $(objdir)/precision.o $(objdir)/fesm_log.o \
+					$(objdir)/nml.o $(objdir)/ncio.o $(objdir)/phys_constants.o
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
 $(objdir)/variable_io.o: $(srcdir)/variable_io.f90 $(objdir)/ncio.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
@@ -203,7 +211,7 @@ $(objdir)/varslice.o: $(srcdir)/varslice.f90 $(objdir)/precision.o $(objdir)/con
 
 $(objdir)/fesmdata.o: $(srcdir)/fesmdata.f90 $(objdir)/precision.o $(objdir)/constants.o $(objdir)/nml.o \
 					$(objdir)/ncio.o $(objdir)/coordinates.o $(objdir)/grid_cdo.o $(objdir)/mapping.o \
-					$(objdir)/fesm_log.o
+					$(objdir)/fesm_log.o $(objdir)/fesm_fields.o
 	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
 
 $(objdir)/regions.o: $(srcdir)/regions.f90 $(objdir)/precision.o $(objdir)/nml.o $(objdir)/ncio.o \
@@ -260,6 +268,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/nml.o \
 					$(objdir)/precision.o \
 					$(objdir)/fesm_log.o \
+					$(objdir)/fesm_fields.o \
 					$(objdir)/phys_constants.o \
 					$(objdir)/root_finder.o \
 					$(objdir)/subgrid.o \
@@ -268,6 +277,7 @@ fesmutils_libs = 	$(objdir)/constants.o \
 					$(objdir)/timer.o \
 					$(objdir)/timeout.o \
 					$(objdir)/timestepping.o \
+					$(objdir)/fesm_clock.o \
 					$(objdir)/variable_io.o \
 					$(objdir)/varslice.o \
 					$(objdir)/fesmdata.o \
@@ -494,6 +504,45 @@ test-log : fesmutils-static
 		@echo "    fesm_log test program ready: $(bindir)/test_log.x"
 		@echo " "
 
+# fesm_clock (run clock, cadences, schedules) test programs
+test-clock : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_exact.x $(testdir)/clock/test_clock_exact.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_chunks.x $(testdir)/clock/test_clock_chunks.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_reject.x $(testdir)/clock/test_clock_reject.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_restart.x $(testdir)/clock/test_clock_restart.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_forcing.x $(testdir)/clock/test_clock_forcing.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_negative.x $(testdir)/clock/test_clock_negative.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_schedule.x $(testdir)/clock/test_clock_schedule.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_calendar.x $(testdir)/clock/test_clock_calendar.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_clock_convert.x $(testdir)/clock/test_clock_convert.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    fesm_clock test programs ready: $(bindir)/test_clock_*.x"
+		@echo " "
+
+# fesm_fields (exchange field containers) test programs: $(CHECK_FIELDS), and
+# the expected-abort programs $(CHECK_FIELDS_ABORT) in test/fields/abort/
+test-fields : fesmutils-static
+		for t in $(CHECK_FIELDS); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/fields/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		for t in $(CHECK_FIELDS_ABORT); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/fields/abort/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		@echo " "
+		@echo "    fesm_fields test programs ready: $(bindir)/test_fields_*.x, $(bindir)/fields_abort_*.x"
+		@echo " "
+
 # zremap documentation demo (Greenland SMB remapped to the LGM; needs ../ice_data)
 demo-zremap : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/demo_zremap_grl.x $(testdir)/zremap/demo_zremap_grl.f90 \
@@ -535,6 +584,13 @@ CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_r
                test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
                test_coupler test_grid_cf_read
 CHECK_DATA   = test_regions test_topodata test_htopo
+CHECK_CLOCK  = test_clock_exact test_clock_chunks test_clock_reject test_clock_restart \
+               test_clock_forcing test_clock_negative test_clock_schedule test_clock_calendar \
+               test_clock_convert
+CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fields_accum \
+               test_fields_mask test_fields_units test_fields_link test_fields_restart \
+               test_fields_exchange
+CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
 ICE_DATA     = ../ice_data/v2/NorthTest
 
 # $(call check_run,<tests>): run each $(bindir)/<test>.x, log its output and
@@ -554,13 +610,33 @@ check_run = mkdir -p logs/check; nfail=0; \
 	done; \
 	[ $$nfail -eq 0 ]
 
+# $(call check_abort,<tests>): as check_run, for programs that must stop
+# through fesm_error: each passes only if it exits non-zero, the log holds
+# "stopped by fesm_error" and the message line announced by its
+# "EXPECT: <msg>" line, and names the offending field `probe`.
+check_abort = mkdir -p logs/check; nfail=0; \
+	for t in $(1); do \
+		log=logs/check/$$t.log; ./$(bindir)/$$t.x > $$log 2>&1; rc=$$?; \
+		msg=$$(grep -m1 'EXPECT:' $$log | sed 's/.*EXPECT: *//'); \
+		if [ $$rc -eq 0 ]; then \
+			echo "  FAIL  $$t (exit 0, expected an abort; log: $$log)"; tail -n 20 $$log; nfail=$$((nfail+1)); \
+		elif grep -q 'stopped by fesm_error' $$log && grep -qxF "    $$msg" $$log && \
+		     grep -v 'EXPECT:' $$log | grep -q 'probe'; then \
+			echo "  PASS  $$t (aborted: $$msg)"; \
+		else \
+			echo "  FAIL  $$t (exit $$rc without the expected error '$$msg'; log: $$log)"; tail -n 20 $$log; \
+			nfail=$$((nfail+1)); \
+		fi; \
+	done; \
+	[ $$nfail -eq 0 ]
+
 .PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
          check-var-io check-series check-varslice check-multitopo check-units \
-         check-varslice-clim check-tsgen check-zremap check-log
+         check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields
 
 check : check-coords check-phys-constants check-root check-ncio check-var-io \
         check-series check-varslice check-multitopo check-units check-varslice-clim \
-        check-tsgen check-zremap check-log
+        check-tsgen check-zremap check-log check-clock check-fields
 		@echo " "
 		@echo "    make check: all tests passed (data tests: make check-data)."
 		@echo " "
@@ -591,6 +667,11 @@ check-zremap : test-zremap
 		@$(call check_run,test_zremap)
 check-log : test-log
 		@$(call check_run,test_log)
+check-clock : test-clock
+		@$(call check_run,$(CHECK_CLOCK))
+check-fields : test-fields
+		@$(call check_run,$(CHECK_FIELDS)); rc_run=$$?; \
+		$(call check_abort,$(CHECK_FIELDS_ABORT)) && [ $$rc_run -eq 0 ]
 
 # FesmData tests on the NorthTest grids; need ice_data checked out next to
 # fesm-utils (not available in CI).

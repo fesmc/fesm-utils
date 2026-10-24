@@ -15,6 +15,7 @@ module fesmdata
     !     flux to other units, the reference temperature of a temperature
 
     use fesm_log, only : fesm_error
+    use fesm_fields, only : units_key
 
     use precision
     use constants,   only : mv
@@ -330,29 +331,6 @@ contains
         call nc_read_attr(fname, varname, "units", units)
 
     end function var_units
-
-    pure function units_key(units) result(key)
-        ! Units in lower case without blanks and exponent markers:
-        ! "kg m**-2 d**-1" => "kgm-2d-1".
-
-        implicit none
-
-        character(len=*), intent(IN) :: units
-        character(len=256) :: key
-
-        integer :: i, n, c
-
-        key = ""
-        n = 0
-        do i = 1, len_trim(units)
-            if (units(i:i) .eq. " " .or. units(i:i) .eq. "*") cycle
-            c = iachar(units(i:i))
-            if (c .ge. iachar("A") .and. c .le. iachar("Z")) c = c + 32
-            n = n + 1
-            key(n:n) = achar(c)
-        end do
-
-    end function units_key
 
     function flux_time(units, fname, varname) result(dt)
         ! The time unit [s] of water-flux units (mass kg m-2 or mm w.e.).

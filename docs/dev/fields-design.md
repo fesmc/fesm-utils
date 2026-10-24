@@ -1,6 +1,7 @@
 # `fesm_fields` — design note
 
-Status: proposal for review (2026-10-24), no code yet. Row 2 of the fesm-utils
+Status: implemented (commit pending), `src/fesm_fields.f90`, tests in
+`test/fields/` (`make check-fields`), page `docs/packages/fields.qmd`. Row 2 of the fesm-utils
 additions in `kryos/docs/design.md` §12; the exchange of §5 there. Precondition:
 `fesm_log` (errors and log lines).
 
@@ -13,6 +14,44 @@ type-bound procedures or `class(...)`: `fields_init(st, owner)`, `fields_add`,
 superseded. Q1: slow consumers of MEAN fields are supported now (§6; it is an
 acceleration method). Q2: own restart file `<instance>_fields.nc`. Q3: rank 1
 deferred to phase 3. Implementation follows this note otherwise.
+
+**Implementation details (2026-10-24)** that refine or differ from the text
+below; the sections have been updated to match.
+
+- All procedures are free: `fields_add(st, ...)`, `fields_put(st, h, var, t1
+  [, t0, valid])`, `fields_get(st, h, var [, t0, t1, valid])` (specifics
+  `fields_put_{0d,2d,3d}_{dp,sp}`, private), `fields_check_link` (was
+  `field_check_link`). `proc` in messages is `fesm_fields_<name>`.
+- `FIELD_OWNER_LEN = 64` is public. `fields_lock` trims `f(:)` to `n`, so
+  `size(f) == n` afterwards; masks start `.false.` (`valid`) and `.true.`
+  (`acc_valid`, the empty window).
+- `units_key` also drops `^` (as specified here); fesmdata's private copy did
+  not, so fesmdata now also accepts `kg m^-2 s^-1` (rejected before). Every
+  other units string gives the same key as before.
+- `put`: INSTANT with `t0 > t1` is an "invalid interval" too. MEAN/ACCUM
+  values at cells invalid in that put are not accumulated (so a NaN or Inf
+  there cannot raise an FPE trap in debug builds); they carry no meaning.
+  The gap/overlap detail says which one it is. `get`, like `put`, accepts a
+  rank-3 array with nz = 1 for a rank-2 field; `valid` on an unmasked field
+  is "field has no mask" in `get` too.
+- `fields_add`: an empty name or units, strings longer than their `*_LEN`,
+  and `masked=.true.` on a scalar are "invalid declaration"; `masked=.false.`
+  on a scalar is accepted. Links need no lock.
+- `fields_check_link`: a different `nz` is "nz differs" (rank keeps "rank
+  differs").
+- Restart: extra or missing fields are detected through the global
+  attributes `fesm_fields_n` and `fesm_fields_names` (the declared names),
+  since ncio has no variable listing; `restart_read` also checks the presence
+  of `_acc`, `_valid`, `_acc_valid` against `tsem` and `masked`. New errors:
+  "restart file not found" (`_restart_read`), "restart dimension length
+  conflict" and "restart variable name collision" (`_restart_write`; a
+  dimension name such as `<zdim>` used with two lengths, or a field `a_acc`
+  next to a MEAN field `a`). Bit identity holds up to ncio's read conventions
+  (`|x| < 1e-30` reads as 0, NaN as -9999).
+- Tests: the abort programs are `test/fields/abort/fields_abort_*.f90`, one
+  per error case (27); `check_abort` in `config/Makefile` requires a nonzero
+  exit, "stopped by fesm_error", the message announced on the program's
+  `EXPECT:` line, and the field name `probe` in the output.
 
 ## 1. Purpose and scope
 
@@ -72,12 +111,10 @@ type :: field_state_t
     integer :: n = 0
     logical :: locked = .false.
     type(field_t), allocatable :: f(:)             ! f(h), h = 1..n in declaration order
-contains
-    procedure :: init, add, lock, handle, has
-    generic   :: put => put_0d_dp, put_0d_sp, put_2d_dp, put_2d_sp, put_3d_dp, put_3d_sp
-    generic   :: get => get_0d_dp, get_0d_sp, get_2d_dp, get_2d_sp, get_3d_dp, get_3d_sp
-    procedure :: finalize_interval, describe, restart_write, restart_read
 end type
+
+interface fields_put                                ! fields_put_{0d,2d,3d}_{dp,sp}
+interface fields_get                                ! fields_get_{0d,2d,3d}_{dp,sp}
 ```
 
 Decisions:
@@ -89,9 +126,8 @@ Decisions:
 2. **Components are public** (Fortran has no `protected` components). The rule
    is "read `f(h)` freely, write only through `put`". The exchange reads
    `f(h)%v` and `f(h)%grid` directly to avoid a copy (§5).
-3. **Type-bound procedures** (`call ex%put(...)`), as the kryos sketch and
-   `component_t` use, rather than the `phys_const_*` free-procedure style
-   (open question 4).
+3. **Free procedures** (`call fields_put(ex, ...)`), the fesm-utils style
+   (`phys_const_*`, `coupler_*`); superseded the type-bound proposal at review.
 4. **Two phases per state**: declare (`init`, `add`) then `lock`, which
    allocates every buffer once. `add` after `lock` and `put`/`get` before it
    are errors. While declaring, `f(:)` grows by doubling, but holds no
@@ -104,12 +140,12 @@ Decisions:
 ### 3.1 Declaration
 
 ```fortran
-subroutine init(st, owner)
-    class(field_state_t), intent(inout) :: st
-    character(len=*),     intent(in)    :: owner         ! instance + role, for messages
+subroutine fields_init(st, owner)
+    type(field_state_t), intent(out) :: st
+    character(len=*),    intent(in)  :: owner            ! instance + role, for messages
 
-subroutine add(st, name, units, tsem, cons, h, grid, dims, zdim, masked)
-    class(field_state_t), intent(inout) :: st
+subroutine fields_add(st, name, units, tsem, cons, h, grid, dims, zdim, masked)
+    type(field_state_t),  intent(inout) :: st
     character(len=*),     intent(in)    :: name, units
     integer,              intent(in)    :: tsem, cons    ! FIELD_INSTANT|MEAN|ACCUM, FIELD_INTENSIVE|EXTENSIVE
     integer,              intent(out)   :: h             ! handle, = st%n after the call
@@ -118,9 +154,9 @@ subroutine add(st, name, units, tsem, cons, h, grid, dims, zdim, masked)
     character(len=*), intent(in), optional :: zdim       ! rank 3 only; default "z"
     logical,          intent(in), optional :: masked     ! default .false.; not for rank 0
 
-subroutine lock(st)                                      ! allocate v (+ acc for MEAN/ACCUM, + masks); v = 0
-integer function handle(st, name)                        ! index of name; fesm_error if absent
-logical function has(st, name)                           ! never errors
+subroutine fields_lock(st)                               ! allocate v (+ acc for MEAN/ACCUM, + masks); v = 0
+integer function fields_handle(st, name)                 ! index of name; fesm_error if absent
+logical function fields_has(st, name)                    ! never errors
 ```
 
 `add` returns the handle as an argument (not a function result) so that a
@@ -129,8 +165,8 @@ call with side effects never sits in an expression. Names match exactly after `t
 ### 3.2 `put`: copy in
 
 ```fortran
-subroutine put_2d_dp(st, h, var, t1, t0, valid)          ! 6 specifics: {0d,2d,3d} x {dp,sp}
-    class(field_state_t), intent(inout) :: st
+subroutine fields_put_2d_dp(st, h, var, t1, t0, valid)   ! 6 specifics: {0d,2d,3d} x {dp,sp}
+    type(field_state_t),  intent(inout) :: st
     integer,  intent(in) :: h
     real(dp), intent(in) :: var(:,:)                     ! real(sp) in the _sp specifics
     real(dp), intent(in) :: t1                           ! end of validity [yr]; always dp
@@ -138,7 +174,9 @@ subroutine put_2d_dp(st, h, var, t1, t0, valid)          ! 6 specifics: {0d,2d,3
     logical,  intent(in), optional :: valid(:,:)         ! required iff field masked
 ```
 
-Call by keyword: `call ex%put(c%h_smb, smb, t0=ta, t1=tb)`.
+Call by keyword: `call fields_put(ex, c%h_smb, smb, t0=ta, t1=tb)`. The 0-D
+specifics have no `valid` (scalars cannot be masked).
+
 | tsem | effect of `put` |
 |---|---|
 | INSTANT | `v = var`, `[t0,t1]` recorded as given, `published = .true.`; replaces the previous value |
@@ -158,8 +196,8 @@ Call by keyword: `call ex%put(c%h_smb, smb, t0=ta, t1=tb)`.
 ### 3.3 `get`: copy out
 
 ```fortran
-subroutine get_2d_sp(st, h, var, t0, t1, valid)         ! 6 specifics, as put
-    class(field_state_t), intent(in)  :: st              ! intent(in): get cannot reset anything
+subroutine fields_get_2d_sp(st, h, var, t0, t1, valid)  ! 6 specifics, as put
+    type(field_state_t),  intent(in)  :: st              ! intent(in): get cannot reset anything
     integer,  intent(in)  :: h
     real(sp), intent(out) :: var(:,:)                    ! caller's array; shape must match
     real(dp), intent(out), optional :: t0, t1            ! validity of the value returned
@@ -178,8 +216,8 @@ second reader zeros. `intent(in)` on `get` makes this a compile-time property.
 ### 3.4 `finalize_interval`
 
 ```fortran
-subroutine finalize_interval(st, t)
-    class(field_state_t), intent(inout) :: st
+subroutine fields_finalize_interval(st, t)
+    type(field_state_t),  intent(inout) :: st
     real(dp),             intent(in)    :: t                 ! end of the interval being closed
 ```
 
@@ -187,8 +225,9 @@ For every MEAN and ACCUM field: requires `wsum > 0` and `ta1 == t`; then
 `v = acc/wsum` (MEAN) or `v = acc` (ACCUM), `valid = acc_valid`,
 `[t0,t1] = [ta0,ta1]`, `published = .true.`, and the window is cleared
 (`acc = 0`, `acc_valid = .true.`, `wsum = 0`). INSTANT fields are untouched.
-kryos calls `exports%finalize_interval(t_target)` after each `update`, and
-`imports%finalize_interval(t_target)` before it when imports accumulate (§6).
+kryos calls `fields_finalize_interval(exports, t_target)` after each `update`,
+and `fields_finalize_interval(imports, t_target)` before it when imports
+accumulate (§6).
 
 An ACCUM field is declared in integral units (`"kg m-2"`) and fed rates in
 those units per year; its published value is `sum(var*dt)`.
@@ -197,9 +236,9 @@ those units per year; its published value is `sum(var*dt)`.
 
 ```fortran
 pure function units_key(units) result(key)               ! lower case; drop " ", "*", "^"
-function units_canonical(units) result(key)              ! units_key, then the alias table
-logical function units_equivalent(a, b)                  ! units_canonical(a) == units_canonical(b)
-subroutine field_check_link(src, hs, dst, hd)            ! errors on any incompatibility below
+pure function units_canonical(units) result(key)         ! units_key, then the alias table
+pure logical function units_equivalent(a, b)             ! units_canonical(a) == units_canonical(b)
+subroutine fields_check_link(src, hs, dst, hd)           ! errors on any incompatibility below
 ```
 
 `units_key` moves here from `fesmdata` (`fesmdata.f90:334`, private today);
@@ -221,7 +260,7 @@ under decision 3. `m i.e.`, `degC`, `mW m-2`, `s-1` rates are **not** listed:
 they need a factor or an offset, and conversions belong in the adapters
 (design §5). Decision 7: the exchange never scales, so it stays bit-exact.
 
-`field_check_link` is called by the kryos wiring at init for every row and
+`fields_check_link` is called by the kryos wiring at init for every row and
 stops on: units not equivalent; rank or `nz` differ; `cons` differs;
 time semantics not in the allowed table:
 
@@ -233,7 +272,7 @@ time semantics not in the allowed table:
 
 ### 3.6 `describe`
 
-`subroutine describe(st, level)` (`level` default `LOG_INFO`).
+`subroutine fields_describe(st, level)` (`level` default `LOG_INFO`).
 A header (`[ice_grl:exports] 14 fields, 6.9 MB`) and one `log_msg` line per
 field: handle, name, units, grid, shape, tsem, cons, validity (or
 `unpublished`), mask. kryos logs every state at init, next to the wiring table.
@@ -241,15 +280,16 @@ field: handle, name, units, grid, shape, tsem, cons, validity (or
 ### 3.7 Restart
 
 ```fortran
-subroutine restart_write(st, filename)                   ! creates or overwrites filename
-subroutine restart_read(st, filename)                    ! into a locked state with the same declaration
+subroutine fields_restart_write(st, filename)            ! creates or overwrites filename
+subroutine fields_restart_read(st, filename)             ! into a locked state with the same declaration
 ```
 
 Written per field with `ncio`: `<name>` (`v`, double), `<name>_acc` (MEAN
 and ACCUM), `<name>_valid` and `<name>_acc_valid` (int 0/1, masked fields);
 variable attributes `units`, `tsem`, `cons`, `grid`, `published`, `t0`, `t1`,
 `ta0`, `ta1`, `wsum`. Dimensions `<grid>_x`, `<grid>_y`, `<zdim>`; scalars on a
-length-1 dimension `one`. `restart_read` checks every declared field is present
+length-1 dimension `one`; global attributes `fesm_fields_owner`,
+`fesm_fields_n`, `fesm_fields_names`. `restart_read` checks every declared field is present
 with the same shape, units key, `tsem` and `cons`, and restores all of the
 above, so a restored state is bit-identical to the written one. Extra
 variables in the file are an error (a renamed or dropped field must not pass
@@ -303,18 +343,18 @@ subroutine exchange(src, w, dst, cpl)                  ! kryos_wiring
     associate (fs => src%f(w%hs), fd => dst%f(w%hd))
     if (.not. fs%published) call fesm_error("exchange", "source not published", ...)
     if (fs%rank == 0) then                              ! scalars bypass remap
-        call dst%put(w%hd, fs%v(1,1,1), t0=fs%t0, t1=fs%t1)
+        call fields_put(dst, w%hd, fs%v(1,1,1), t0=fs%t0, t1=fs%t1)
     else
         call remap(cpl, fs%v, fs%grid, w%work, fd%grid, method=method_of(w, fs%cons))
-        call dst%put(w%hd, w%work, t0=fs%t0, t1=fs%t1)  ! valid: forwarded once coupler row 3 lands
+        call fields_put(dst, w%hd, w%work, t0=fs%t0, t1=fs%t1)  ! valid: forwarded once coupler row 3 lands
     end if
     end associate
 end subroutine
 ```
 
-At init kryos resolves `w%hs = src%handle(name_s)`, `w%hd = dst%handle(name_d)`
-(a missing producer is the named gap of design decision 7), calls
-`field_check_link`, and checks `lag` against the cadences. Transforms such as
+At init kryos resolves `w%hs = fields_handle(src, name_s)`, `w%hd =
+fields_handle(dst, name_d)` (a missing producer is the named gap of design
+decision 7), calls `fields_check_link`, and checks `lag` against the cadences. Transforms such as
 `z_bed = z_bed_ref(grid) + con(dz_bed)` are a wiring-row option applied to
 `w%work` before `put`; they are not in `fesm_fields`. Until the coupler gains
 mask pass-through (design §12 row 3), wiring a masked field between two
@@ -333,7 +373,7 @@ different grids is an init error in kryos.
 - Consumer slower than producer on a MEAN edge (ice `dt = 5`, surface
   `dt = 1`): the import is declared MEAN, kryos runs the exchange after every
   producer step, each `put` extends the import window by one producer
-  interval, and the consumer's `imports%finalize_interval(t_target)` yields
+  interval, and the consumer's `fields_finalize_interval(imports, t_target)` yields
   the mean over its own step. Equal cadences need no import accumulation
   (import declared INSTANT, `MEAN -> INSTANT` in the table). Open question 1.
 - Restarts happen only where every cadence divides the restart tick; the
@@ -347,25 +387,30 @@ All through `fesm_error(proc, msg, detail)`, which ends in `error stop 1`; no
 
 | Case | `proc` | `msg` | `detail` adds |
 |---|---|---|---|
-| `add` after `lock`; `put`/`get` before | `fesm_fields_add` / `_put` | "state is locked" / "state is not locked" | |
+| `add` after `lock` (or `lock` twice); `put`/`get`/`finalize_interval`/`restart_*` before | `fesm_fields_add` / `_lock` / `_put` / ... | "state is locked" / "state is not locked" | |
 | duplicate name | `_add` | "duplicate field name" | existing handle |
-| bad `tsem`/`cons`; `dims` size not 2 or 3, or ≤ 0; `grid` missing for rank ≥ 2 or given for rank 0; `zdim` or `masked` on the wrong rank | `_add` | "invalid declaration" | the offending argument and value |
+| bad `tsem`/`cons`; `dims` size not 2 or 3, or ≤ 0; `grid` missing for rank ≥ 2 or given for rank 0; `zdim` or `masked=.true.` on the wrong rank; empty or too long name, units, grid, zdim (owner: `_init`) | `_add` | "invalid declaration" | the offending argument and value |
 | name absent | `_handle` | "no field named 'smb'" | the declared names |
-| handle outside 1..n | `_put` / `_get` | "invalid handle" | `h`, `n` |
-| shape or rank mismatch | `_put` / `_get` | "shape mismatch" | declared `[nx,ny,nz]`, given shape |
-| mask missing on a masked field, or given on an unmasked one | `_put` | "valid mask required" / "field has no mask" | |
-| MEAN/ACCUM without `t0`, or `t0 >= t1` | `_put` | "invalid interval" | `t0`, `t1` |
-| interval does not continue the window | `_put` | "gap or overlap in accumulation" | window `[ta0,ta1]`, given `[t0,t1]`, full precision |
+| handle outside 1..n | `_put` / `_get` / `_check_link` | "invalid handle" | `h`, `n`, the declared names |
+| shape or rank mismatch (also of the mask) | `_put` / `_get` | "shape mismatch" | declared `[nx,ny,nz]`, given shape |
+| mask missing on a masked field, or given on an unmasked one | `_put` (`_get`: the latter) | "valid mask required" / "field has no mask" | |
+| MEAN/ACCUM without `t0`, or `t0 >= t1`; INSTANT with `t0 > t1` | `_put` | "invalid interval" | `t0`, `t1` |
+| interval does not continue the window | `_put` | "gap or overlap in accumulation" | window `[ta0,ta1]`, given `[t0,t1]`, full precision, gap or overlap |
 | non-finite value | `_put` | "non-finite value" | count, first index |
 | window empty or not ending at `t` | `_finalize_interval` | "accumulation does not reach t" | `ta1`, `t`, `wsum` |
 | read before publish | `_get` | "field read before any value was published" | |
-| incompatible link | `field_check_link` | "units differ and no equivalence is known" / "rank differs" / "time semantics incompatible" / "conservation flag differs" | both sides: owner, name, units, key, shape, tsem |
-| restart mismatch | `_restart_read` | "restart file does not match the declaration" | file, field, expected vs found |
+| incompatible link | `_check_link` | "units differ and no equivalence is known" / "rank differs" / "nz differs" / "time semantics incompatible" / "conservation flag differs" | both sides: owner, name, units, key, shape, tsem, cons |
+| restart mismatch | `_restart_read` | "restart file does not match the declaration" | file, field, item, expected vs found |
+| restart file missing | `_restart_read` | "restart file not found" | file |
+| restart dimension used with two lengths; two restart variables with one name | `_restart_write` | "restart dimension length conflict" / "restart variable name collision" | the dimension or name, file |
 
 ## 8. Tests (`test/fields/`)
 
-Run by `make check` (row 10). Abort cases are separate small programs that
-`make check` runs expecting a nonzero exit and the field name on stderr.
+Run by `make check` (row 10) through `make check-fields`. Abort cases are
+separate small programs, `test/fields/abort/fields_abort_*.f90` (27, one per
+case), that `check_abort` runs expecting a nonzero exit, "stopped by
+fesm_error", the message announced on their `EXPECT:` line and the field name
+(`probe`) in the output.
 
 | Program | Asserts |
 |---|---|

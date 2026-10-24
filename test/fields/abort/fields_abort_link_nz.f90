@@ -1,0 +1,25 @@
+program fields_abort_link_nz
+    ! Expected abort (make check-fields): a link between rank-3 fields with nz 12 and 4.
+    ! Must stop through fesm_error with the message announced on the EXPECT line.
+
+    use, intrinsic :: iso_fortran_env, only : output_unit
+    use precision, only : dp
+    use fesm_fields
+
+    implicit none
+
+    type(field_state_t) :: s, d
+    integer :: hs, hd
+
+    write(output_unit, "(a)") "EXPECT: nz differs"
+    flush(output_unit)
+
+    call fields_init(s, "abort_test:src")
+    call fields_init(d, "abort_test:dst")
+    call fields_add(s, "src", "K", FIELD_INSTANT, FIELD_INTENSIVE, hs, grid="g", dims=[3,2,12])
+    call fields_add(d, "probe", "K", FIELD_INSTANT, FIELD_INTENSIVE, hd, grid="g", dims=[3,2,4])
+    call fields_check_link(s, hs, d, hd)
+
+    write(output_unit, "(a)") "FAIL: fields_abort_link_nz did not abort"
+
+end program fields_abort_link_nz

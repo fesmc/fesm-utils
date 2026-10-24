@@ -2,7 +2,11 @@
 
 One run clock for fesm-utils: integer ticks inside, `dp` years at every
 interface, a declared calendar. Settled in kryos `docs/design.md` §7, §12 row 4
-and decision 8; this note fixes the interface for review. No code yet.
+and decision 8; this note fixes the interface.
+
+**Status:** implemented (commit pending): `src/fesm_clock.f90`, tests
+`test/clock/` (`make check-clock`), page `docs/packages/clock.qmd`. Sections
+2, 3 and 6 show the free-procedure interface as implemented.
 
 It replaces three things that fail today: `cadence_due` (`mod(nint(t*100),
 nint(dt*100))` on `time_elapsed`: silent with non-multiples, 0.01 yr resolution,
@@ -111,14 +115,9 @@ module fesm_clock
         real(dp)          :: sec_year = 0.0_dp
         logical           :: started   = .false.
         logical           :: continued = .false.   ! restored at n_init from a bundle
+        logical           :: branched  = .false.   ! read from a bundle at another time
+        character(len=512) :: restart_file = ""
         type(clock_entry_t), allocatable :: reg(:)
-    contains
-        generic   :: init => init_nml, init_years
-        procedure :: start, advance, finish, finished, step_index
-        procedure :: time, time_rel, time_cal, time_elapsed, time_init, time_end, dtt
-        procedure :: to_ticks, to_years, is_representable, restart_allowed
-        procedure :: year_fraction, day_of_year, month, day_of_month, sec_day
-        procedure :: describe, restart_write, restart_read
     end type
 
     type, public :: cadence_t
@@ -128,9 +127,6 @@ module fesm_clock
         integer(int64)    :: phase  = 0       ! [ticks], 0 <= phase < dt; grid phase + k*dt
         integer(int64)    :: n_last = 0       ! last mark [ticks]
         integer           :: id     = 0       ! row in clk%reg
-    contains
-        procedure :: init, due, mark, interval, t_last, t_next, dt_years
-        procedure :: restart_write, restart_read
     end type
 
     type, public :: schedule_t
@@ -140,9 +136,12 @@ module fesm_clock
         integer(int64), allocatable :: n(:)   ! sorted, unique, on the step grid
         integer           :: k  = 1           ! cursor: first n(k) >= clk%n
         integer           :: id = 0
-    contains
-        procedure :: init, due, t_next, times, size => schedule_size
+        integer(int64)    :: n_skip = -huge(1_int64)  ! last skipped bundle logged
     end type
+
+    interface clock_init     ! namelist | arguments
+    interface cadence_init   ! dt [, phase] | every_step | per_year [, phase]
+    interface schedule_init  ! namelist | arguments
 end module
 ```
 
@@ -153,47 +152,50 @@ in the objects the caller owns.
 
 ## 3. Public interface
 
-All times in and out are `real(dp)` years. Ticks appear only in `to_ticks`,
-`to_years` and restart files.
+All times in and out are `real(dp)` years. Ticks appear only in
+`clock_to_ticks`, `clock_to_years`, `is_multiple_of_all` and restart files.
+Free procedures; the object is the first argument.
 
 | Call | Semantics |
 |---|---|
-| `call clk%init(filename, group [, defaults_file])` | Read `method, time_init, time_end, dtt, time_const \| time_const_cal, time_ref, calendar, year, ticks_per_year`; validate; `n = n_origin = n_init`. |
-| `call clk%init(time_init, time_end, dtt [, method, time_const, time_const_cal, time_ref, calendar, year, ticks_per_year])` | Same from arguments (tests, hosts without a namelist). |
-| `call clk%start()` | Lock the registry, check every restart time against every cadence, write `describe`. Required before the first `advance`. |
-| `call clk%advance()` | `n = n + dt`, `k = k + 1`. Error if `finished()` or not `started`. |
-| `clk%finished()` | `n >= n_end`. |
-| `call clk%finish()` | End early at the current step (kill switch): `n_end = n`. |
-| `clk%step_index()` | `k`, steps taken in this run (resets per chunk). |
-| `clk%time()`, `time_rel()`, `time_cal()`, `time_elapsed()` | Views of section 1, `dp` years. |
-| `clk%time_init()`, `time_end()`, `dtt()` | Run parameters, `dp` years. |
-| `clk%to_ticks(years, what)` | `int64`; stops if `years` is not a whole number of ticks (section 4.4); `what` names the value in the message. |
-| `clk%to_years(n)` | `real(n,dp)/real(N,dp)`, correctly rounded. |
-| `clk%is_representable(years)` | The test of `to_ticks`, without stopping. |
-| `clk%year_fraction()`, `day_of_year()`, `month()`, `day_of_month()` | Calendar position of model time; `day_of_year` in `1..days_per_year`. |
-| `clk%sec_year`, `clk%sec_day()` | Year length; `sec_year/days_per_year`. |
-| `call c%init(clk, name, dt [, phase])` | Cadence every `dt` yr on the absolute grid `phase + k·dt`; `dt <= 0` = off. `n_last = n_init`. |
-| `call c%init(clk, name, every_step=.true.)` | Due at every step, whatever `dtt` is in this chunk. |
-| `call c%init(clk, name, per_year=12)` | `dt = N/12` exactly; for sub-annual cadences without decimal literals. |
-| `c%due(clk)` | `n > n_last` and (`every_step` or `modulo(n − phase, dt) == 0`). |
-| `call c%mark(clk)` | `n_last = n`. Call after the component reached `t1`. |
-| `call c%interval(clk, t0, t1)` | `t0 = to_years(n_last)`, `t1 = to_years(n)`. |
-| `c%t_last(clk)`, `c%t_next(clk)`, `c%dt_years(clk)` | Last mark, next grid time, `dt` in years. |
-| `call s%init(clk, name, filename, group [, restart])` | Schedule from keys `method, dt, times, file` (as `timeout`). |
-| `call s%init(clk, name, dt=, times= [, restart])` | Same from arguments. |
-| `s%due(clk)` | `n` is in the list, or `clk%finished()` (section 4.2). |
-| `s%t_next(clk)`, `s%times(clk)`, `s%size()` | Next time; all times as `dp` years; count. |
+| `call clock_init(clk, filename, group [, defaults_file, stat])` | Read `time_init, time_end, dtt, calendar, year` (required, no defaults), `method` (rel), `time_ref` (1950), `ticks_per_year` (36000), and for `const` exactly one of `time_const`, `time_const_cal`; a key may come from `defaults_file` (same group); validate; `n = n_origin = n_init`. |
+| `call clock_init(clk, time_init, time_end, dtt, calendar, year [, method, time_const, time_const_cal, time_ref, ticks_per_year, stat])` | Same from arguments (tests, hosts without a namelist). |
+| `call clock_start(clk [, stat])` | Lock the registry; with an active restart schedule, check every restart time and `time_end` against every cadence grid (an empty intersection stops); log `clock_describe`. Required before the first `clock_advance`. |
+| `call clock_advance(clk)` | `n = n + dt`, `k = k + 1`. Error if `clock_finished` or not started. |
+| `clock_finished(clk)` | `n >= n_end`. |
+| `call clock_finish(clk)` | End early at the current step (kill switch): `n_end = n`. |
+| `clock_step_index(clk)` | `k` (`int64`), steps taken in this run (resets per chunk). |
+| `clock_time(clk)`, `clock_time_rel(clk)`, `clock_time_cal(clk)`, `clock_time_elapsed(clk)` | Views of section 1, `dp` years. |
+| `clock_time_init(clk)`, `clock_time_end(clk)`, `clock_dtt(clk)` | Run parameters, `dp` years. |
+| `clock_to_ticks(clk, years, what [, stat])` | `int64`; stops if `years` is not a whole number of ticks (section 4.4); `what` names the value in the message. |
+| `clock_to_years(clk, n)` | `real(n,dp)/real(N,dp)`, correctly rounded. |
+| `clock_is_representable(clk, years)` | The test of `clock_to_ticks`, without stopping. |
+| `clock_year_fraction(clk)`, `clock_day_of_year(clk [, stat])`, `clock_month(clk [, stat])`, `clock_day_of_month(clk [, stat])` | Calendar position of model time; `day_of_year` in `1..days_per_year`. With calendar `none` all but `clock_year_fraction` stop. |
+| `clk%sec_year`, `clock_sec_day(clk [, stat])` | Year length; `sec_year/days_per_year`. |
+| `call cadence_init(c, clk, name, dt [, phase, stat])` | Cadence every `dt` yr on the absolute grid `phase + k·dt`; `dt <= 0` = off. `n_last = n_init`. |
+| `call cadence_init(c, clk, name, every_step=.true. [, stat])` | Due at every step, whatever `dtt` is in this chunk. |
+| `call cadence_init(c, clk, name, per_year=12 [, phase, stat])` | `dt = N/12` exactly; for sub-annual cadences without decimal literals. |
+| `cadence_due(c, clk)` | `n > n_last` and (`every_step` or `modulo(n − phase, dt) == 0`). |
+| `call cadence_mark(c, clk)` | `n_last = n`. Call after the component reached `t1`. |
+| `call cadence_interval(c, clk, t0, t1)` | `t0 = to_years(n_last)`, `t1 = to_years(n)`. |
+| `cadence_t_last(c, clk)`, `cadence_t_next(c, clk)`, `cadence_dt_years(c, clk)` | Last mark, next grid time (`huge` when off), `dt` in years. |
+| `call schedule_init(s, clk, name, filename, group [, restart, defaults_file, stat])` | Schedule from keys `method, dt, times, file` (as `timeout`). |
+| `call schedule_init(s, clk, name [, dt= \| times=, restart, stat])` | Same from arguments: `dt > 0` is `const`, `times` a list, neither `none`. |
+| `schedule_due(s, clk)` | `n` is in the list, or `clock_finished(clk)` (section 4.2); advances the cursor (`s` is `intent(inout)`). |
+| `schedule_t_next(s, clk)`, `schedule_times(s, clk)`, `schedule_size(s)` | Next time after now (`huge` if none); all times as `dp` years; count. |
 | `is_multiple_of_all(n, cadences)` | Pure: `n` is on the grid of every active cadence. |
-| `clk%restart_allowed()` | `is_multiple_of_all(clk%n, registered cadences)`. |
-| `call clk%restart_write(filename)` / `restart_read(filename)` | Clock state; `read` sets `continued` (section 4.7). |
-| `call c%restart_write(filename)` / `restart_read(filename, clk)` | Cadence state, keyed by `name`. |
-| `call clk%describe([unit])` | The schedule table of section 4.9. |
+| `clock_restart_allowed(clk)` | `n` is on the grid of every registered cadence. |
+| `call clock_restart_write(clk, filename)` / `clock_restart_read(clk, filename [, stat])` | Clock state; `read` sets `continued` (section 4.7). |
+| `call cadence_restart_write(c, filename)` / `cadence_restart_read(c, clk, filename [, stat])` | Cadence state, keyed by `name`, in the bundle that holds the clock; read after the clock. |
+| `call clock_describe(clk)` | The schedule table of section 4.9, through `log_msg`. |
 
 Errors go through `fesm_log`: `call fesm_error("fesm_clock::"//proc, msg,
-detail [, stat])`; every `init`, `start` and `to_ticks` takes an optional `stat`
-that it forwards, so tests can check rejections. Decision 8 spells `due(cadence)`, `from_years`, `is_output_time`,
-`is_restart_time`; here they are `c%due(clk)`, `to_ticks`, `s%due(clk)` on an
-output or restart schedule.
+detail [, stat])`; every `init`, `clock_start`, `clock_to_ticks`, the
+restart reads and the calendar queries take an optional `stat` that they
+forward, so tests can check rejections. Decision 8 spells `due(cadence)`,
+`from_years`, `is_output_time`, `is_restart_time`; here they are
+`cadence_due(c, clk)`, `clock_to_ticks`, `schedule_due(s, clk)` on an output
+or restart schedule.
 
 ## 4. Semantics
 
@@ -203,11 +205,11 @@ Every check runs at init; a run that passes can never miss a time.
 
 | Check | Where | Rule |
 |---|---|---|
-| Every year value (`time_init`, `time_end`, `dtt`, `time_ref`, `time_const`, `dt`, `phase`, schedule times) | `to_ticks` | whole number of ticks |
-| Step grid | `clk%init` | `dtt > 0`, `time_end > time_init`, `modulo(n_end − n_init, dt) == 0`, \|n\| < 2^53 |
-| Cadence grid ⊂ step grid | `c%init` | `modulo(dt_c, dt) == 0` and `modulo(phase − n_init, dt) == 0` |
-| Schedule times on the step grid | `s%init` | `modulo(t − n_init, dt) == 0`; times outside `[time_init, time_end]` are dropped |
-| Restart times ⊂ every cadence grid | `clk%start` | every restart time, and `time_end`, on the grid of every active cadence |
+| Every year value (`time_init`, `time_end`, `dtt`, `time_ref`, `time_const`, `dt`, `phase`, schedule times) | `clock_to_ticks` | whole number of ticks |
+| Step grid | `clock_init` | `dtt > 0`, `time_end > time_init`, `modulo(n_end − n_init, dt) == 0`, \|n\| < 2^53 |
+| Cadence grid ⊂ step grid | `cadence_init` | `modulo(dt_c, dt) == 0` and `modulo(phase − n_init, dt) == 0` |
+| Schedule times on the step grid | `schedule_init` | `modulo(t − n_init, dt) == 0`; times outside `[time_init, time_end]` are dropped |
+| Restart times ⊂ every cadence grid | `clock_start` | with an active restart schedule: every restart time, and `time_end`, on the grid of every active cadence |
 
 Nothing is rounded or skipped silently: `dt_isos = 15` with `dtt = 10` stops
 (today it fires only at multiples of 30). `describe` prints the restart grid
@@ -364,30 +366,30 @@ Behaviour changes, to be listed in the migration commit: views always satisfy
 ## 6. Example
 
 ```fortran
-call clk%init(path_par, "ctrl")
-call c_ice%init(clk, "ice", every_step=.true.)
-call c_geo%init(clk, "geo", dt=10.0_dp)
-call s_2D%init (clk, "out_2D",  path_par, "tm_2D")
-call s_rst%init(clk, "restart", path_par, "tm_rst", restart=.true.)
+call clock_init(clk, path_par, "ctrl")
+call cadence_init(c_ice, clk, "ice", every_step=.true.)
+call cadence_init(c_geo, clk, "geo", dt=10.0_dp)
+call schedule_init(s_2D,  clk, "out_2D",  path_par, "tm_2D")
+call schedule_init(s_rst, clk, "restart", path_par, "tm_rst", restart=.true.)
 if (restart /= "None") call run_restore(restart, dom, clk, c_ice, c_geo)
-call clk%start()                                   ! validate, log the table
+call clock_start(clk)                                   ! validate, log the table
 
 do
-    if (s_2D%due(clk))  call write_2D(dom, clk%time())
-    if (s_rst%due(clk)) call run_restart_write(dom, clk, c_ice, c_geo)
-    if (clk%finished()) exit
+    if (schedule_due(s_2D, clk))  call write_2D(dom, clock_time(clk))
+    if (schedule_due(s_rst, clk)) call run_restart_write(dom, clk, c_ice, c_geo)
+    if (clock_finished(clk)) exit
 
-    call clk%advance()
-    call forcing_update(frc, clk%time_rel())
+    call clock_advance(clk)
+    call forcing_update(frc, clock_time_rel(clk))
 
-    if (c_geo%due(clk)) then
-        call c_geo%interval(clk, t0, t1)
-        call geo_update(dom%geo, t0, t1)           ! integrates [t0, t1]
-        call c_geo%mark(clk)
+    if (cadence_due(c_geo, clk)) then
+        call cadence_interval(c_geo, clk, t0, t1)
+        call geo_update(dom%geo, t0, t1)                ! integrates [t0, t1]
+        call cadence_mark(c_geo, clk)
     end if
-    if (c_ice%due(clk)) then
-        call ice_update(dom%ice, clk%time())
-        call c_ice%mark(clk)
+    if (cadence_due(c_ice, clk)) then
+        call ice_update(dom%ice, clock_time(clk))
+        call cadence_mark(c_ice, clk)
     end if
 end do
 ```
