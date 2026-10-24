@@ -552,10 +552,15 @@ test-fields : fesmutils-static
 		@echo " "
 
 # fesm_datasrc (field data sources) and its preparatory nml/varslice steps:
-# test programs $(CHECK_DATASRC) in test/datasrc/
+# test programs $(CHECK_DATASRC), and the expected-abort programs
+# $(CHECK_DATASRC_ABORT) in test/datasrc/abort/
 test-datasrc : fesmutils-static
 		for t in $(CHECK_DATASRC); do \
 			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/datasrc/$$t.f90 \
+				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
+		done
+		for t in $(CHECK_DATASRC_ABORT); do \
+			$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/$$t.x $(testdir)/datasrc/abort/$$t.f90 \
 				-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS) || exit 1; \
 		done
 		@echo " "
@@ -610,7 +615,8 @@ CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fie
                test_fields_mask test_fields_units test_fields_link test_fields_restart \
                test_fields_exchange
 CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
-CHECK_DATASRC = test_find_group
+CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema
+CHECK_DATASRC_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/datasrc/abort/datasrc_abort_*.f90))))
 ICE_DATA     = ../ice_data/v2/NorthTest
 
 # $(call check_run,<tests>): run each $(bindir)/<test>.x, log its output and
@@ -694,7 +700,8 @@ check-fields : test-fields
 		@$(call check_run,$(CHECK_FIELDS)); rc_run=$$?; \
 		$(call check_abort,$(CHECK_FIELDS_ABORT)) && [ $$rc_run -eq 0 ]
 check-datasrc : test-datasrc
-		@$(call check_run,$(CHECK_DATASRC))
+		@$(call check_run,$(CHECK_DATASRC)); rc_run=$$?; \
+		$(call check_abort,$(CHECK_DATASRC_ABORT)) && [ $$rc_run -eq 0 ]
 
 # FesmData tests on the NorthTest grids; need ice_data checked out next to
 # fesm-utils (not available in CI).

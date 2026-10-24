@@ -34,6 +34,13 @@ All notable changes to fesm-utils are documented here.
   per s/d/yr, m w.e., m ice with `rho_ice`), degC/K, mW m-2/W m-2, km/m, velocity per
   s/d/yr, %/1, g kg-1/psu; the run's `sec_year` or 365.25 d. `make check-units`
   (`test_fesm_units`).
+- **varslice**: `varslice_init_nml(..., defaults_file, defaults_group)` reads every key
+  through a schema group (keys absent from the group come from the schema); the
+  arguments `mode`, `remap`, `grid_src`, `time_ref` override the group; `remap = "auto"`
+  remaps (bilin) only from a known grid other than the target; `par%mode` (`static |
+  clim | transient`), checked against a legacy `time` key. Without the new arguments the
+  legacy path is unchanged (`test_varslice_legacy`: byte-identical `var`/`time` against a
+  reference recorded before the change). `make check-datasrc`.
 
 ### Changed
 - **fesmdata**: `fesmdata_flux_conv` and `fesmdata_temp_ref` are calls to `units_conv`

@@ -49,6 +49,8 @@ Static configuration for one variable, mostly loaded from the namelist.
 | `with_time_sub` | `logical` | Whether a sub-annual axis is used (derived from `time_par(4)`) |
 | `ndim` | `integer` | Number of dimensions of the variable (set on init) |
 | `time_par(4)` | `real(dp)` | Time-axis definition `[x0, x1, dx, n_sub]` |
+| `mode` | `character(len=16)` | What the variable is, resolved at init: `static`, `clim` (a cycle without years) or `transient` |
+| `time_ref` | `real(dp)` | Calendar year of time zero of the caller's clock (default 0) |
 
 ### `varslice_class`
 
@@ -90,7 +92,8 @@ The types `varslice_param_class` and `varslice_class` are also public.
 
 ```fortran
 ! Initialize from a namelist group
-subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs)
+subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs, grid, &
+                             defaults_file, defaults_group, mode, remap, grid_src, time_ref)
     type(varslice_class), intent(INOUT) :: vs
     character(len=*),     intent(IN)    :: filename        ! namelist file
     character(len=*),     intent(IN)    :: group           ! namelist group name
@@ -99,6 +102,13 @@ subroutine varslice_init_nml(vs, filename, group, domain, grid_name, verbose, su
     logical,              intent(IN), optional :: verbose
     character(len=*),     intent(IN), optional :: subs(:,:) ! extra {key}->value path subs
                                                             ! subs(k,1)=key (no braces), subs(k,2)=value
+    type(grid_class),     intent(IN), optional :: grid      ! target grid (remap, size check)
+    character(len=*),     intent(IN), optional :: defaults_file  ! schema of the keys
+    character(len=*),     intent(IN), optional :: defaults_group ! its group (default: group)
+    character(len=*),     intent(IN), optional :: mode      ! overrides: auto | static | clim | transient
+    character(len=*),     intent(IN), optional :: remap     ! auto | none | a map method
+    character(len=*),     intent(IN), optional :: grid_src  ! grid of the file
+    real(dp),             intent(IN), optional :: time_ref  ! calendar year of time zero
 
 ! Initialize from explicit arguments (no namelist)
 subroutine varslice_init_arg(vs, filename, name, units_in, units_out, &
@@ -183,6 +193,27 @@ Notes on `time = [active, x0, x1, dx, n_sub]`:
 
 These keys unpack internally to `par%units_in/units_out`,
 `par%unit_scale/unit_offset`, `par%with_time`, and `par%time_par(4)`.
+
+An optional `mode` key (`auto`, `static`, `clim`, `transient`) states what the
+variable is; with a legacy `time` key it must agree with it (`active = 1`:
+transient; `0` with `n_sub > 1`: clim; else static), else init stops.
+
+### Schema (`defaults_file`)
+
+With `defaults_file`, every key is read through the schema group
+`defaults_group` of that file (`nml_read(..., defaults_file, defaults_group)`),
+so a group holds only what differs from it, usually `filename` and `name`.
+[fesm_datasrc](datasrc.qmd) reads its field groups this way, with the schema
+`[datasrc_field]` of `par/datasrc_defaults.nml`. The keys read by varslice are
+`filename`, `name`, `units`, `scaling`, `time`, `mode`, `remap`, `grid_src`,
+`fill` and `fill_value`, each of which the schema must declare. Without
+`defaults_file` (the legacy path) nothing changes: `filename`, `name`, `units`,
+`scaling` and `time` are required, the others optional.
+
+The arguments `mode`, `remap`, `grid_src` and `time_ref` override the group.
+`remap = "auto"` remaps with `bilin` when the grid of the file (`grid_src`, else
+its global attribute `grid_name`) is known and is not the target `grid`;
+otherwise the file is read as it is (and its size checked against `grid`).
 
 Example namelist group:
 

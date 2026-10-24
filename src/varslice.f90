@@ -48,6 +48,16 @@ module varslice
         character(len=32)   :: fill = "none"
         real(wp)            :: fill_value = mv
 
+        ! What the variable is, resolved at init: "static" (no time axis),
+        ! "clim" (a sub-annual cycle without years, the last dimension) or
+        ! "transient" (a time axis). A legacy `time` key fixes it; the group
+        ! key or argument `mode` (auto | static | clim | transient) must agree.
+        character(len=16)   :: mode = ""
+
+        ! Calendar year of time zero of the caller's clock: an axis decoded
+        ! from the file in calendar years y is served as t = y - time_ref.
+        real(dp)            :: time_ref = 0.0_dp
+
         ! Internal parameters
         integer  :: ndim 
         real(dp) :: time_par(4) 
@@ -1241,12 +1251,22 @@ contains
 
     end subroutine calc_vec_value
 
-    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs,grid)
+    subroutine varslice_init_nml(vs,filename,group,domain,grid_name,verbose,subs,grid, &
+                                 defaults_file,defaults_group,mode,remap,grid_src,time_ref)
         ! Routine to load information related to a given 
         ! transient variable, so that it can be processed properly.
         ! grid: the target grid. Required with remap /= "none"; without
         ! remapping the file must be on it (its two horizontal dimensions
         ! are checked against the grid's).
+        !
+        ! defaults_file: every key is read through the schema group
+        ! defaults_group (default: group) of this file, so the group holds
+        ! only what differs. Without it (the legacy path) filename, name,
+        ! units, scaling and time are required, as always.
+        ! mode, remap, grid_src, time_ref override the group's keys.
+        ! remap = "auto": remap with "bilin" when the grid of the file
+        ! (grid_src, else its global attribute grid_name) is known and is
+        ! not `grid`; else read as it is.
 
         implicit none 
 
@@ -1258,10 +1278,20 @@ contains
         logical,                intent(IN), optional :: verbose
         character(len=*),       intent(IN), optional :: subs(:,:)   ! extra {key}->value path substitutions
         type(grid_class),       intent(IN), optional :: grid
+        character(len=*),       intent(IN), optional :: defaults_file    ! schema of the group's keys
+        character(len=*),       intent(IN), optional :: defaults_group   ! its group (default: group)
+        character(len=*),       intent(IN), optional :: mode       ! auto | static | clim | transient
+        character(len=*),       intent(IN), optional :: remap      ! auto | none | a map method
+        character(len=*),       intent(IN), optional :: grid_src   ! grid of the file
+        real(dp),               intent(IN), optional :: time_ref   ! calendar year of time zero
         ! Local variables
 
         ! First load parameters from nml file
-        call varslice_par_load(vs%par,filename,group,domain,grid_name,verbose,subs)
+        call varslice_par_load(vs%par,filename,group,domain,grid_name,verbose,subs, &
+                               defaults_file,defaults_group,mode,remap,grid_src,time_ref)
+
+        ! remap = "auto": decided by the grid of the file and the target grid
+        if (trim(vs%par%remap) .eq. "auto") call remap_auto(vs%par,grid)
 
         ! Perform remaining init operations 
         call varslice_init_data(vs) 
@@ -1281,6 +1311,36 @@ contains
         return 
 
     end subroutine varslice_init_nml
+
+    subroutine remap_auto(par,grid)
+        ! remap = "auto": "bilin" from the grid of the file (grid_src, else the
+        ! file's global attribute grid_name) when it is known and is not the
+        ! target grid; else "none" (read as it is, size checked).
+
+        implicit none
+
+        type(varslice_param_class), intent(INOUT) :: par
+        type(grid_class), intent(IN), optional    :: grid
+
+        character(len=256) :: gsrc
+
+        gsrc = par%grid_src
+        if (len_trim(gsrc) .eq. 0) then
+            if (nc_exists_attr(par%filenames(1),"grid_name")) &
+                call nc_read_attr(par%filenames(1),"grid_name",gsrc)
+        end if
+
+        par%remap = "none"
+        if (present(grid)) then
+            if (len_trim(gsrc) .gt. 0 .and. trim(gsrc) .ne. trim(grid%name)) then
+                par%remap    = "bilin"
+                par%grid_src = gsrc
+            end if
+        end if
+
+        return
+
+    end subroutine remap_auto
 
     subroutine varslice_check_grid(vs,grid,group)
         ! A variable read without remapping must be on the target grid: its
@@ -1357,6 +1417,15 @@ contains
 
         vs%par%fill       = "none"
         vs%par%fill_value = mv
+
+        vs%par%time_ref = 0.0_dp
+        if (vs%par%with_time) then
+            vs%par%mode = "transient"
+        else if (nint(vs%par%time_par(4)) .gt. 1) then
+            vs%par%mode = "clim"
+        else
+            vs%par%mode = "static"
+        end if
 
         ! Resolve file list and derive internal time parameters
         ! (mirrors the nml path; without this par%filenames and
@@ -1747,7 +1816,8 @@ contains
 
     end function varslice_sub_mean
 
-    subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose,subs)
+    subroutine varslice_par_load(par,filename,group,domain,grid_name,verbose,subs, &
+                                 defaults_file,defaults_group,mode,remap,grid_src,time_ref)
 
         type(varslice_param_class), intent(OUT) :: par
         character(len=*), intent(IN) :: filename
@@ -1756,6 +1826,9 @@ contains
         character(len=*), intent(IN), optional :: grid_name
         logical, optional :: verbose
         character(len=*), intent(IN), optional :: subs(:,:)   ! extra {key}->value path substitutions
+        character(len=*), intent(IN), optional :: defaults_file, defaults_group
+        character(len=*), intent(IN), optional :: mode, remap, grid_src
+        real(dp),         intent(IN), optional :: time_ref
 
         ! Local variables
         logical  :: print_summary
@@ -1763,54 +1836,27 @@ contains
         character(len=56) :: units(2)     ! [units_in, units_out]
         real(wp)          :: scaling(2)   ! [unit_scale, unit_offset]
         real(dp)          :: time(5)      ! [active, x0, x1, dx, sub]
+        character(len=16) :: mode_key
 
         print_summary = .TRUE.
         if (present(verbose)) print_summary = verbose
 
-        ! Read the condensed namelist keys. Each value bundles related
-        ! quantities so the group stays short but fully explicit:
-        !   units   = "<in>" "<out>"
-        !   scaling = <unit_scale> <unit_offset>
-        !   time    = <active> <x0> <x1> <dx> <sub>
-        ! `active` (1.0/0.0) flags whether the variable is time-varying, or
-        ! whether x0..x1 merely document the period the (static) data represents.
-        ! `sub` is optional (trailing) and defaults to 0; every other value is
-        ! required, keeping the provenance visible in the file.
+        mode_key = "auto"
 
-        ! Pre-set defaults so an omitted trailing element falls back sensibly
-        ! (the keys themselves remain mandatory).
-        units   = ""
-        scaling = [1.0_wp, 0.0_wp]
-        time    = 0.0_dp
-
-        call nml_read(filename,group,"filename", par%filename)
-        call nml_read(filename,group,"name",     par%name)
-        call nml_read(filename,group,"units",    units)
-        call nml_read(filename,group,"scaling",  scaling)
-        call nml_read(filename,group,"time",     time)
-
-        ! Optional: online remapping onto the target grid given at init
-        par%remap    = "none"
-        par%grid_src = ""
-        if (nml_has_param(filename,group,"remap")) then
-            call nml_read(filename,group,"remap",    par%remap)
-            call nml_read(filename,group,"grid_src", par%grid_src)
+        if (present(defaults_file)) then
+            ! Every key through the schema
+            call par_load_schema()
+        else
+            ! Legacy path
+            call par_load_legacy()
         end if
 
-        ! Optional: filling of missing values (fill_value with fill = "const")
-        par%fill       = "none"
-        par%fill_value = mv
-        if (nml_has_param(filename,group,"fill")) then
-            call nml_read(filename,group,"fill", par%fill)
-            call check_fill_method(par%fill, "varslice_par_load")
-            if (trim(par%fill) .eq. "const") then
-                if (.not. nml_has_param(filename,group,"fill_value")) then
-                    call fesm_error("varslice_par_load", &
-                        "fill = ""const"" needs fill_value.", "group = "//trim(group))
-                end if
-                call nml_read(filename,group,"fill_value", par%fill_value)
-            end if
-        end if
+        ! Argument overrides
+        if (present(mode))     mode_key     = mode
+        if (present(remap))    par%remap    = remap
+        if (present(grid_src)) par%grid_src = grid_src
+        par%time_ref = 0.0_dp
+        if (present(time_ref)) par%time_ref = time_ref
 
         ! Unpack into the internal parameter fields
         par%units_in    = units(1)
@@ -1819,6 +1865,8 @@ contains
         par%unit_offset = scaling(2)
         par%with_time   = (time(1) .ge. 0.5_dp)
         par%time_par    = time(2:5)
+
+        call resolve_mode()
 
         ! Parse filename placeholders ({domain}/{grid_name} and any extra subs).
         ! parse_path skips whichever optionals are absent.
@@ -1859,6 +1907,135 @@ contains
         end if 
 
         return
+
+    contains
+
+        subroutine par_load_schema()
+            ! Every key from the group, else from the schema group.
+
+            character(len=256) :: dg
+
+            dg = group
+            if (present(defaults_group)) dg = defaults_group
+
+            par%filename = ""
+            par%name     = ""
+            units        = ""
+            scaling      = [1.0_wp, 0.0_wp]
+            time         = 0.0_dp
+            par%remap    = "none"
+            par%grid_src = ""
+            par%fill     = "none"
+            par%fill_value = mv
+
+            call nml_read(filename,group,"filename",  par%filename,   defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"name",      par%name,       defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"units",     units,          defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"scaling",   scaling,        defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"time",      time,           defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"mode",      mode_key,       defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"remap",     par%remap,      defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"grid_src",  par%grid_src,   defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"fill",      par%fill,       defaults_file=defaults_file, defaults_group=dg)
+            call nml_read(filename,group,"fill_value",par%fill_value, defaults_file=defaults_file, defaults_group=dg)
+            call check_fill_method(par%fill, "varslice_par_load")
+
+            if (time(1) .lt. 0.0_dp) then
+                call fesm_error("varslice_par_load", &
+                    "a time axis from the file (time(1) < 0) is not available yet.", &
+                    "group = "//trim(group))
+            end if
+
+        end subroutine par_load_schema
+
+        subroutine par_load_legacy()
+
+        ! Read the condensed namelist keys. Each value bundles related
+        ! quantities so the group stays short but fully explicit:
+        !   units   = "<in>" "<out>"
+        !   scaling = <unit_scale> <unit_offset>
+        !   time    = <active> <x0> <x1> <dx> <sub>
+        ! `active` (1.0/0.0) flags whether the variable is time-varying, or
+        ! whether x0..x1 merely document the period the (static) data represents.
+        ! `sub` is optional (trailing) and defaults to 0; every other value is
+        ! required, keeping the provenance visible in the file.
+
+            ! Pre-set defaults so an omitted trailing element falls back sensibly
+            ! (the keys themselves remain mandatory).
+            units   = ""
+            scaling = [1.0_wp, 0.0_wp]
+            time    = 0.0_dp
+
+            call nml_read(filename,group,"filename", par%filename)
+            call nml_read(filename,group,"name",     par%name)
+            call nml_read(filename,group,"units",    units)
+            call nml_read(filename,group,"scaling",  scaling)
+            call nml_read(filename,group,"time",     time)
+
+            ! Optional: online remapping onto the target grid given at init
+            par%remap    = "none"
+            par%grid_src = ""
+            if (nml_has_param(filename,group,"remap")) then
+                call nml_read(filename,group,"remap",    par%remap)
+                call nml_read(filename,group,"grid_src", par%grid_src)
+            end if
+
+            ! Optional: filling of missing values (fill_value with fill = "const")
+            par%fill       = "none"
+            par%fill_value = mv
+            if (nml_has_param(filename,group,"fill")) then
+                call nml_read(filename,group,"fill", par%fill)
+                call check_fill_method(par%fill, "varslice_par_load")
+                if (trim(par%fill) .eq. "const") then
+                    if (.not. nml_has_param(filename,group,"fill_value")) then
+                        call fesm_error("varslice_par_load", &
+                            "fill = ""const"" needs fill_value.", "group = "//trim(group))
+                    end if
+                    call nml_read(filename,group,"fill_value", par%fill_value)
+                end if
+            end if
+
+            ! Optional: what the variable is (must agree with time)
+            if (nml_has_param(filename,group,"mode")) call nml_read(filename,group,"mode",mode_key)
+
+        end subroutine par_load_legacy
+
+        subroutine resolve_mode()
+            ! The mode implied by the legacy time key; an explicit mode must
+            ! agree with it.
+
+            character(len=16) :: implied
+
+            if (par%with_time) then
+                implied = "transient"
+            else if (nint(par%time_par(4)) .gt. 1) then
+                implied = "clim"
+            else
+                implied = "static"
+            end if
+
+            select case(trim(mode_key))
+                case("auto")
+                    par%mode = implied
+                case("static","clim","transient")
+                    if (trim(mode_key) .ne. trim(implied)) then
+                        call fesm_error("varslice_par_load", &
+                            "mode conflicts with the time key.", &
+                            "group = "//trim(group)//new_line("a")// &
+                            "name  = "//trim(par%name)//new_line("a")// &
+                            "mode  = "//trim(mode_key)//new_line("a")// &
+                            "time  = "//to_str(time)//" (implies "//trim(implied)//")")
+                    end if
+                    par%mode = implied
+                case default
+                    call fesm_error("varslice_par_load", &
+                        "mode must be auto, static, clim or transient.", &
+                        "group = "//trim(group)//new_line("a")// &
+                        "name  = "//trim(par%name)//new_line("a")// &
+                        "mode  = "//trim(mode_key))
+            end select
+
+        end subroutine resolve_mode
 
     end subroutine varslice_par_load
 
