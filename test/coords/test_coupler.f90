@@ -280,10 +280,13 @@ program test_coupler
         else
             write(*,*) "mask2/frac2 pass-through ok (", count(m2r), " of", size(m2r), " mapped)"
         end if
+        ! norm="dst": the coupler supplies the registered (default) model areas
         call remap(cpl, fs, "coupler-coarse", fr, "coupler-fine", method="con", norm="dst")
-        call map_field(mp_direct, "x", fs, fd, norm="dst")
+        call map_field(mp_direct, "x", fs, fd, norm="dst", area1=gs%area*gs%cs%xy_conv**2, &
+                       area2=gt%area*gt%cs%xy_conv**2)
         if (any(fr /= fd)) then
-            write(*,*) "FAIL: norm pass-through differs from map_field"; fails = fails + 1
+            write(*,*) "FAIL: norm pass-through (with registered areas) differs from map_field"
+            fails = fails + 1
         end if
         fs(5,5) = flin(gs%x(5,5), gs%y(5,5))
     end block

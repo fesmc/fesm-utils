@@ -299,6 +299,56 @@ call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
   (fail-fast at init rather than mid-timestep) and is the point at which a map's
   generator can be overridden via `gen=`. It is a no-op for `src == dst`.
 
+### Global ↔ regional exchange
+
+Each registered grid carries a *model cell area* `[m²]`, the area its model
+integrates over: by default the plane `dx·dy` for a projected grid (what Yelmo
+and FastIsostasy integrate) and `grid%area·xy_conv²` otherwise.
+`coupler_set_area(cpl, name, area)` overrides it (e.g. the Gaussian quadrature
+`R²·Δλ·w_j` of a spectral model). `remap` with `norm="dst"` / `"sum"` passes the
+registered areas of both grids as `area1` / `area2`, so mass accounting and the
+integral below share one metric per grid (an identity remap with `norm="sum"`
+returns `v·area`).
+
+- `coupler_integral(cpl, name, var [, mask, missing_value, describe])` returns
+  `Σ area·var` (Neumaier-compensated) with the registered areas; with
+  `describe=.true.` it logs this integral next to the one over the ellipsoidal
+  cell areas (`grid%area`), as a diagnostic of the metric difference (several %
+  for a polar stereographic ice grid). For a regional → global `remap` with
+  `norm="dst"`, the global integral equals the covered part of the regional one
+  to rounding.
+- Merge of N regional fields and a background onto a global grid, in
+  accumulator form:
+
+  ```fortran
+  type(coupler_merge_t) :: acc
+  call coupler_merge_begin(acc, cpl, "T64" [, kind="extensive"|"intensive"])
+  call coupler_merge_add(acc, cpl, "ANT", h_ant [, owner=o_ant, missing_value=])
+  call coupler_merge_add(acc, cpl, "GRL", h_grl [, owner=o_grl])
+  call coupler_merge_end(acc, cpl, background, h_glob [, frac_tot=, overlap_tol=])
+  ```
+
+  Per domain `d` (valid cells `j`, owner weight `o_dj`, default 1) and target
+  cell `k`: coverage `F_dk = r_k Σ_j w_jk o_dj / wfull_k`; amount
+  `A_dk = Σ_j φ_jk o_dj area_j v_j / area_k` (extensive) or
+  `r_k Σ_j w_jk o_dj v_j / wfull_k` (intensive). With `F = Σ_d F_d`:
+  extensive `var = (1 - min(F,1))·bg + Σ_d A_d` (regional amounts are never
+  rescaled; only the background is capped), intensive
+  `var = (1 - min(F,1))·bg + Σ_d A_d / max(F,1)` (preserves a constant).
+  Domains are summed in the order of their names, so the result does not depend
+  on the order of `coupler_merge_add` calls; adding a domain twice is an error.
+  `max(F) > 1 + overlap_tol` (default `1e-2`) stops and names the overlapping
+  domains; a smaller excess is accepted and the double-counted amount logged.
+- `coupler_owner_reduce(cpl, src_hi, owner_hi, dst, owner)` removes from
+  `owner` (on `dst`) the part already owned by the higher-priority domain:
+  `owner := max(0, owner - covered fraction of owner_hi)`. Call it once at init,
+  in priority order, to make `Σ_d o_d = 1` where domains overlap.
+- `coupler_split(cpl, src, var_src, dst, var_dst [, method, ref_src, ref_dst,
+  missing_value, fill_method, mask2])`: global → regional. Without references
+  it is `remap` (default `method="bilin"`); with both,
+  `var_dst = ref_dst + remap(var_src - ref_src)`, where a missing anomaly counts
+  as 0 (the reference is kept). One reference without the other is an error.
+
 Each map is built once, stored once, and shared across all callers. Grids and
 maps live in allocatable slot arrays without a fixed capacity: when an array
 grows, each slot's grid / map is moved (`move_alloc`), never copied, and maps

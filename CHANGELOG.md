@@ -33,6 +33,13 @@ All notable changes to fesm-utils are documented here.
   (covered fraction, `real(dp)`), `area1`, `area2` (model cell areas). Default paths are
   unchanged. `coupler::remap` (dp/sp) passes `norm` and `frac2` through; `method="auto"`
   resolves to `con` for `norm /= "frac"`. `make check` runs `test_coupler_global`.
+- **coupler**: global <-> regional exchange. Registered grids carry a model cell area
+  (default plane `dx·dy` for projected grids, `grid%area·xy_conv²` otherwise;
+  `coupler_set_area`), supplied as `area1`/`area2` for `remap(..., norm="dst"|"sum")`.
+  `coupler_integral` (with `describe=.true.` it logs the ellipsoidal-area integral as a
+  diagnostic), `coupler_merge_begin/add/end` (`coupler_merge_t`; extensive/intensive,
+  owner weights, order independent, overlap check), `coupler_owner_reduce`,
+  `coupler_split` (optionally as an anomaly against references).
 - **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
   gate for the coupler/`map_field` apply surface against a reference commit.
 

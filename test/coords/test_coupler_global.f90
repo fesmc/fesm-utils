@@ -13,8 +13,18 @@ program test_coupler_global
     !       (with areas) to 1e-13.
     !   frac2 present vs absent gives an identical var2 (norm="frac").
     !   norm="dst" without areas = frac2 * mean (map metric).
+    ! Through the coupler (registered model areas, 2):
+    !   (a) remap norm="dst": coupler_integral on the global grid equals the
+    !       covered part of the regional integral to 1e-12.
+    !   (c) two overlapping regional grids (polar stereographic + regional
+    !       lon-lat), owners from coupler_owner_reduce: merged integral =
+    !       background part + owned regional integrals; merge(A,B) == merge(B,A)
+    !       bit for bit; without owners max(frac_tot) > 1 + 1e-2.
+    !   (d) an intensive merge of a constant returns the constant to 1e-14.
+    !   (e) split with var_src == ref_src returns ref_dst exactly.
 
     use coords
+    use coupler
 
     implicit none
 
@@ -41,6 +51,7 @@ program test_coupler_global
 
     call check_target(gps, gll)
     call check_target(gps, gga)
+    call check_coupler(gps, gll, gga)
 
     call execute_command_line("rm -rf "//fldr)
     if (fails > 0) then
@@ -152,6 +163,155 @@ contains
             write(*,*) "FAIL: norm=sum amounts /= covered source amount", ip, rhs; fails = fails + 1
         end if
     end subroutine check_target
+
+    subroutine check_coupler(gps, gll, gga)
+        type(grid_class), intent(in) :: gps, gll, gga
+        type(coupler_class) :: cpl
+        type(coupler_merge_t) :: acc
+        type(grid_class) :: gb
+        real(dp), allocatable :: va(:,:), vb(:,:), v2(:,:), oa(:,:), ob(:,:), bg(:,:), m_ab(:,:), m_ba(:,:)
+        real(dp), allocatable :: ftot(:,:), c2(:,:), ref_s(:,:), ref_d(:,:), sp_d(:,:)
+        real(dp) :: lonc, latc, i_glob, i_cov, i_bg, i_own, i_merged, i_reg
+        integer  :: im, k
+
+        call coupler_init(cpl, map_fldr=fldr//"/cpl")
+        call coupler_add_grid(cpl, "glob-ant", gps)
+        call coupler_add_grid(cpl, "glob-ll1", gll)
+        call coupler_add_grid(cpl, "glob-t64", gga)
+        call disk_field(gps, va)
+
+        ! (a) regional -> global, norm="dst" with the registered areas
+        do k = 1, 2
+            if (k == 1) then
+                call remap(cpl, va, "glob-ant", v2, "glob-ll1", method="con", norm="dst")
+                i_glob = coupler_integral(cpl, "glob-ll1", v2, missing_value=mv_dp, describe=.true.)
+                im = map_index(cpl, "glob-ant", "glob-ll1")
+            else
+                call remap(cpl, va, "glob-ant", v2, "glob-t64", method="con", norm="dst")
+                i_glob = coupler_integral(cpl, "glob-t64", v2, missing_value=mv_dp, describe=.true.)
+                im = map_index(cpl, "glob-ant", "glob-t64")
+            end if
+            i_cov = covered_integral(cpl, im, va, "glob-ant")
+            i_reg = coupler_integral(cpl, "glob-ant", va, missing_value=mv_dp, describe=.true.)
+            write(*,*) "(a) global / covered regional integral, rel diff =", i_glob, i_cov, &
+                       abs(i_glob - i_cov)/abs(i_cov), "  regional total =", i_reg
+            if (abs(i_glob - i_cov) > 1.0e-12_dp*abs(i_cov)) then
+                write(*,*) "FAIL: (a) global integral /= covered regional integral"; fails = fails + 1
+            end if
+        end do
+
+        ! second regional domain: lon-lat box north of the disk centre, partly
+        ! inside the disk; its 0.25 deg cells nest in the 1 deg global cells, so
+        ! the owner split (per B cell) matches on the global grid
+        call oblimap_projection_inverse(X_DISK*1000.0_dp, 0.0_dp, lonc, latc, gps%cs%proj)
+        lonc = real(floor(lonc), dp); latc = real(floor(latc), dp)
+        call grid_init(gb, name="glob-box", mtype="latlon", units="degrees", planet="WGS84", &
+                       x0=lonc - 10.0_dp + 0.125_dp, dx=0.25_dp, nx=80, &
+                       y0=latc + 6.0_dp + 0.125_dp, dy=0.25_dp, ny=48)
+        call coupler_add_grid(cpl, "glob-box", gb)
+        allocate(vb(gb%G%nx, gb%G%ny))
+        vb = 700.0_dp + 2.0_dp*(gb%x - lonc)
+
+        ! owners: A owns its valid disk; B owns what A leaves
+        allocate(oa(gps%G%nx, gps%G%ny), ob(gb%G%nx, gb%G%ny))
+        oa = merge(1.0_dp, 0.0_dp, va /= mv_dp)
+        ob = 1.0_dp
+        call coupler_owner_reduce(cpl, "glob-ant", oa, "glob-box", ob)
+        write(*,*) "(c) owner_reduce: B owner range", minval(ob), maxval(ob), " cells owned by A (ob < 0.01):", &
+                   count(ob < 0.01_dp), " of", size(ob)
+        if (minval(ob) > 0.01_dp .or. maxval(ob) < 0.99_dp) then
+            write(*,*) "FAIL: (c) the domains do not partly overlap"; fails = fails + 1
+        end if
+        allocate(bg(gll%G%nx, gll%G%ny), ftot(gll%G%nx, gll%G%ny))
+        bg = 10.0_dp
+
+        ! (c) merge A then B, and B then A
+        call coupler_merge_begin(acc, cpl, "glob-ll1")
+        call coupler_merge_add(acc, cpl, "glob-ant", va, owner=oa)
+        call coupler_merge_add(acc, cpl, "glob-box", vb, owner=ob)
+        call coupler_merge_end(acc, cpl, bg, m_ab, frac_tot=ftot)
+        call coupler_merge_begin(acc, cpl, "glob-ll1")
+        call coupler_merge_add(acc, cpl, "glob-box", vb, owner=ob)
+        call coupler_merge_add(acc, cpl, "glob-ant", va, owner=oa)
+        call coupler_merge_end(acc, cpl, bg, m_ba)
+        if (any(m_ab /= m_ba)) then
+            write(*,*) "FAIL: (c) merge(A,B) /= merge(B,A)"; fails = fails + 1
+        end if
+        i_merged = coupler_integral(cpl, "glob-ll1", m_ab)
+        i_bg     = coupler_integral(cpl, "glob-ll1", (1.0_dp - min(ftot, 1.0_dp))*bg)
+        i_own    = covered_integral(cpl, map_index(cpl, "glob-ant", "glob-ll1"), merge(oa*va, mv_dp, va /= mv_dp), &
+                                    "glob-ant") &
+                 + covered_integral(cpl, map_index(cpl, "glob-box", "glob-ll1"), ob*vb, "glob-box")
+        write(*,*) "(c) merged / background + owned, rel diff =", i_merged, i_bg + i_own, &
+                   abs(i_merged - i_bg - i_own)/abs(i_merged), "  max frac_tot =", maxval(ftot)
+        if (abs(i_merged - i_bg - i_own) > 1.0e-12_dp*abs(i_merged)) then
+            write(*,*) "FAIL: (c) merged integral /= background + owned integrals"; fails = fails + 1
+        end if
+        ! without owners the domains double-count
+        call coupler_merge_begin(acc, cpl, "glob-ll1")
+        call coupler_merge_add(acc, cpl, "glob-ant", va)
+        call coupler_merge_add(acc, cpl, "glob-box", vb)
+        call coupler_merge_end(acc, cpl, bg, v2, frac_tot=ftot, overlap_tol=10.0_dp)
+        write(*,*) "(c) without owners: max frac_tot =", maxval(ftot)
+        if (maxval(ftot) <= 1.01_dp) then
+            write(*,*) "FAIL: (c) overlapping domains without owners not detected"; fails = fails + 1
+        end if
+
+        ! (d) intensive merge of a constant
+        allocate(c2(gll%G%nx, gll%G%ny))
+        call coupler_merge_begin(acc, cpl, "glob-ll1", kind="intensive")
+        call coupler_merge_add(acc, cpl, "glob-ant", merge(3.5_dp, mv_dp, va /= mv_dp), owner=oa)
+        call coupler_merge_add(acc, cpl, "glob-box", vb*0.0_dp + 3.5_dp, owner=ob)
+        call coupler_merge_end(acc, cpl, bg*0.0_dp + 3.5_dp, c2)
+        write(*,*) "(d) intensive merge of 3.5: max error =", maxval(abs(c2 - 3.5_dp))
+        if (maxval(abs(c2 - 3.5_dp)) > 1.0e-14_dp*3.5_dp) then
+            write(*,*) "FAIL: (d) intensive merge does not preserve a constant"; fails = fails + 1
+        end if
+
+        ! (e) split with var_src == ref_src returns ref_dst exactly
+        allocate(ref_s(gll%G%nx, gll%G%ny), ref_d(gps%G%nx, gps%G%ny))
+        ref_s = 5.0_dp + gll%y*0.01_dp
+        ref_d = 1.0_dp + gps%x*0.001_dp
+        call coupler_split(cpl, "glob-ll1", ref_s, "glob-ant", sp_d, ref_src=ref_s, ref_dst=ref_d)
+        if (any(sp_d /= ref_d)) then
+            write(*,*) "FAIL: (e) split of the reference /= ref_dst"; fails = fails + 1
+        else
+            write(*,*) "(e) split(var_src == ref_src) == ref_dst"
+        end if
+    end subroutine check_coupler
+
+    integer function map_index(cpl, src, dst) result(im)
+        type(coupler_class), intent(in) :: cpl
+        character(len=*),    intent(in) :: src, dst
+        do im = 1, cpl%nmaps
+            if (trim(cpl%maps(im)%src) == src .and. trim(cpl%maps(im)%dst) == dst .and. &
+                trim(cpl%maps(im)%method) == "con") return
+        end do
+        im = -1
+        write(*,*) "FAIL: no con map ", src, " -> ", dst
+        stop 1
+    end function map_index
+
+    real(dp) function covered_integral(cpl, im, v, src) result(tot)
+        ! sum_j area_j v_j sum_k phi_jk: the source integral over the part of
+        ! each source cell covered by the target (registered areas).
+        type(coupler_class), intent(in) :: cpl
+        integer,             intent(in) :: im
+        real(dp),            intent(in) :: v(:,:)
+        character(len=*),    intent(in) :: src
+        real(dp), allocatable :: cov(:,:)
+        integer :: ig
+        associate (wm => cpl%maps(im)%map%wm)
+            allocate(cov(size(v,1), size(v,2)))
+            cov = 0.0_dp
+            where (reshape(wm%wfull_src, shape(v)) > 0.0_dp) &
+                cov = reshape(wm%wcov_src, shape(v))/reshape(wm%wfull_src, shape(v))
+        end associate
+        do ig = 1, cpl%ngrids
+            if (trim(cpl%grids(ig)%name) == src) exit
+        end do
+        tot = sum(cpl%grids(ig)%area*v*cov, mask=v /= mv_dp)
+    end function covered_integral
 
     subroutine disk_field(g, v)
         ! Load inside the disk (smooth, positive), missing outside.

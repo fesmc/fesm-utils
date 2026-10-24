@@ -39,7 +39,7 @@ module coupler
 
     use coords, only : dp, sp, mv_dp, grid_class, map_class, map_init, map_field, &
                        map_postprocess, grid_cdo_read_desc, grid_signature_str, grid_signature_match
-    use fesm_log, only : fesm_error, to_str
+    use fesm_log, only : fesm_error, log_msg, LOG_INFO, to_str
 
     implicit none
     private
@@ -49,8 +49,20 @@ module coupler
     type grid_slot
         character(len=256) :: name = ""
         type(grid_class), allocatable :: grid
+        real(dp), allocatable :: area(:,:)  ! model cell area [m^2] (coupler_set_area)
         logical  :: from_disk = .false.   ! resolved from grid_<name>.txt, not registered
         real(dp) :: area_med  = -1.0_dp   ! median model cell area [m^2], once computed
+    end type
+
+    type coupler_merge_t
+        ! Accumulator of coupler_merge_begin / _add / _end: per added source
+        ! domain d, its coverage F_d and its amount (or frac*mean) A_d on the
+        ! target grid. Opaque to callers.
+        character(len=256) :: dst  = ""
+        character(len=16)  :: kind = "extensive"
+        integer :: nd = 0
+        character(len=256), allocatable :: names(:)
+        real(dp), allocatable :: cov(:,:,:), amt(:,:,:)   ! (nx, ny, domain)
     end type
 
     type map_slot
@@ -85,8 +97,11 @@ module coupler
         module procedure remap_3D_dp, remap_3D_sp, remap_3D_int
     end interface
 
-    public :: coupler_class
+    public :: coupler_class, coupler_merge_t
     public :: coupler_init, coupler_add_grid, coupler_take_grid, coupler_prime
+    public :: coupler_set_area, coupler_integral
+    public :: coupler_merge_begin, coupler_merge_add, coupler_merge_end
+    public :: coupler_split, coupler_owner_reduce
     public :: remap
 
 contains
@@ -135,6 +150,7 @@ contains
         ig = new_grid_slot(cpl, name)
         allocate(cpl%grids(ig)%grid, source=grid)
         cpl%grids(ig)%grid%name = trim(name)
+        call default_area(cpl%grids(ig))
     end subroutine coupler_add_grid
 
     subroutine coupler_take_grid(cpl, name, grid)
@@ -157,6 +173,7 @@ contains
         ig = new_grid_slot(cpl, name)
         call move_alloc(grid, cpl%grids(ig)%grid)
         cpl%grids(ig)%grid%name = trim(name)
+        call default_area(cpl%grids(ig))
     end subroutine coupler_take_grid
 
     subroutine coupler_prime(cpl, src, dst, method, gen)
@@ -174,6 +191,328 @@ contains
         if (trim(src) == trim(dst)) return
         im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method), gen)
     end subroutine coupler_prime
+
+    subroutine coupler_set_area(cpl, name, area)
+        ! Set the model cell area [m^2] of grid `name` (registered, or resolved
+        ! from grid_<name>.txt): what the model on that grid integrates, e.g.
+        ! the Gaussian quadrature R^2*dlon*w_j for a spectral model. remap with
+        ! norm="dst"/"sum", coupler_integral and the merge use it.
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: name
+        real(dp),            intent(in)    :: area(:,:)
+        integer :: ig
+
+        ig = resolve_grid(cpl, name)
+        if (size(area,1) /= cpl%grids(ig)%grid%G%nx .or. size(area,2) /= cpl%grids(ig)%grid%G%ny) &
+            call fesm_error("coupler_set_area", "area of grid '"//trim(name)//"' has the wrong shape.", &
+                "shape(area) = "//to_str(shape(area))//new_line("a")// &
+                "grid shape  = "//to_str([cpl%grids(ig)%grid%G%nx, cpl%grids(ig)%grid%G%ny]))
+        cpl%grids(ig)%area = area
+        cpl%grids(ig)%area_med = -1.0_dp
+    end subroutine coupler_set_area
+
+    function coupler_integral(cpl, name, var, mask, missing_value, describe) result(total)
+        ! Integral sum(area*var) over grid `name` with its model cell areas
+        ! (Neumaier-compensated). Cells where mask is .false. or var equals
+        ! missing_value are skipped. With describe=.true. the integral is
+        ! logged together with the one over the ellipsoidal cell areas
+        ! (grid%area*xy_conv^2), as a diagnostic of the metric difference.
+        type(coupler_class), intent(in) :: cpl
+        character(len=*),    intent(in) :: name
+        real(dp),            intent(in) :: var(:,:)
+        logical,  optional,  intent(in) :: mask(:,:)
+        real(dp), optional,  intent(in) :: missing_value
+        logical,  optional,  intent(in) :: describe
+        real(dp) :: total
+        logical, allocatable :: m(:,:)
+        real(dp) :: tot_ell
+        integer  :: ig
+
+        ig = find_grid(cpl, name)
+        if (ig < 0) call fesm_error("coupler_integral", "grid '"//trim(name)//"' is not registered.")
+        if (size(var,1) /= size(cpl%grids(ig)%area,1) .or. size(var,2) /= size(cpl%grids(ig)%area,2)) &
+            call fesm_error("coupler_integral", "var has the wrong shape for grid '"//trim(name)//"'.", &
+                "shape(var) = "//to_str(shape(var))//new_line("a")// &
+                "grid shape = "//to_str(shape(cpl%grids(ig)%area)))
+        allocate(m(size(var,1), size(var,2)))
+        m = .true.
+        if (present(mask)) m = mask
+        if (present(missing_value)) m = m .and. var /= missing_value
+        total = neumaier_sum(cpl%grids(ig)%area, var, m)
+
+        if (present(describe)) then
+            if (describe) then
+                associate (g => cpl%grids(ig)%grid)
+                    tot_ell = neumaier_sum(g%area*g%cs%xy_conv**2, var, m)
+                end associate
+                call log_msg(LOG_INFO, "coupler_integral", trim(name)//": model-area integral = "// &
+                    to_str(total)//", ellipsoidal-area integral = "//to_str(tot_ell)// &
+                    " (relative difference "//to_str((tot_ell - total)/max(abs(total), tiny(1.0_dp)))//")")
+            end if
+        end if
+    end function coupler_integral
+
+    function neumaier_sum(a, v, m) result(s)
+        ! sum(a*v, mask=m) with Neumaier compensation.
+        real(dp), intent(in) :: a(:,:), v(:,:)
+        logical,  intent(in) :: m(:,:)
+        real(dp) :: s, c, t, x
+        integer  :: i, j
+        s = 0.0_dp; c = 0.0_dp
+        do j = 1, size(v,2)
+            do i = 1, size(v,1)
+                if (.not. m(i,j)) cycle
+                x = a(i,j)*v(i,j)
+                t = s + x
+                if (abs(s) >= abs(x)) then
+                    c = c + ((s - t) + x)
+                else
+                    c = c + ((x - t) + s)
+                end if
+                s = t
+            end do
+        end do
+        s = s + c
+    end function neumaier_sum
+
+    ! ----- merge: N regional fields + background -> global -----------------------
+
+    subroutine coupler_merge_begin(acc, cpl, dst, kind)
+        ! Start a merge onto grid `dst`. kind = "extensive" (default; amounts per
+        ! area, conserved) or "intensive" (coverage-weighted means).
+        type(coupler_merge_t), intent(out)   :: acc
+        type(coupler_class),   intent(inout) :: cpl
+        character(len=*),      intent(in)    :: dst
+        character(len=*), optional, intent(in) :: kind
+        integer :: ig
+
+        ig = resolve_grid(cpl, dst)
+        acc%dst = trim(dst)
+        acc%kind = "extensive"
+        if (present(kind)) acc%kind = trim(kind)
+        if (trim(acc%kind) /= "extensive" .and. trim(acc%kind) /= "intensive") &
+            call fesm_error("coupler_merge_begin", "unknown kind '"//trim(acc%kind)//"'.", &
+                            "expected 'extensive' or 'intensive'.")
+        acc%nd = 0
+        allocate(acc%names(0))
+        allocate(acc%cov(cpl%grids(ig)%grid%G%nx, cpl%grids(ig)%grid%G%ny, 0))
+        allocate(acc%amt(cpl%grids(ig)%grid%G%nx, cpl%grids(ig)%grid%G%ny, 0))
+    end subroutine coupler_merge_begin
+
+    subroutine coupler_merge_add(acc, cpl, src, var_src, owner, missing_value)
+        ! Add source domain `src` (its field var_src, owner weights in [0,1],
+        ! default 1) to the merge. Per target cell k, with the src -> dst "con"
+        ! map and valid source cells j (var_src /= missing_value):
+        !   F_k = r_k sum_j w_jk o_j / wfull_k                       coverage
+        !   A_k = sum_j phi_jk o_j area_j v_j / area_k     (extensive)
+        !   A_k = r_k sum_j w_jk o_j v_j / wfull_k         (intensive)
+        type(coupler_merge_t), intent(inout) :: acc
+        type(coupler_class),   intent(inout) :: cpl
+        character(len=*),      intent(in)    :: src
+        real(dp),              intent(in)    :: var_src(:,:)
+        real(dp), optional,    intent(in)    :: owner(:,:)
+        real(dp), optional,    intent(in)    :: missing_value
+        integer  :: im, is, id, nx, ny
+        real(dp) :: miss
+        real(dp), allocatable :: o(:,:), f(:,:), cov(:,:), amt(:,:), tmp3(:,:,:)
+        character(len=256), allocatable :: tnames(:)
+
+        if (acc%dst == "") call fesm_error("coupler_merge_add", "call coupler_merge_begin first.")
+        if (any(acc%names == src)) &
+            call fesm_error("coupler_merge_add", "domain '"//trim(src)//"' was already added.")
+        miss = mv_dp
+        if (present(missing_value)) miss = missing_value
+
+        im = get_map(cpl, src, acc%dst, "con")
+        is = find_grid(cpl, src); id = find_grid(cpl, acc%dst)
+        nx = size(acc%cov,1); ny = size(acc%cov,2)
+
+        allocate(o(size(var_src,1), size(var_src,2)), f(size(var_src,1), size(var_src,2)))
+        o = 1.0_dp
+        if (present(owner)) o = owner
+        ! coverage: the owner weight where the value is valid
+        f = merge(o, miss, var_src /= miss)
+        allocate(cov(nx,ny), amt(nx,ny))
+        call map_field(cpl%maps(im)%map, "merge", f, cov, missing_value=miss, norm="dst")
+        where (cov == miss) cov = 0.0_dp
+        ! amount (extensive, model metric) or frac*mean (intensive, map metric)
+        f = merge(o*var_src, miss, var_src /= miss)
+        if (trim(acc%kind) == "extensive") then
+            call map_field(cpl%maps(im)%map, "merge", f, amt, missing_value=miss, norm="dst", &
+                           area1=cpl%grids(is)%area, area2=cpl%grids(id)%area)
+        else
+            call map_field(cpl%maps(im)%map, "merge", f, amt, missing_value=miss, norm="dst")
+        end if
+        where (amt == miss) amt = 0.0_dp
+
+        ! append the domain
+        acc%nd = acc%nd + 1
+        allocate(tnames(acc%nd)); tnames(1:acc%nd-1) = acc%names; tnames(acc%nd) = trim(src)
+        call move_alloc(tnames, acc%names)
+        allocate(tmp3(nx, ny, acc%nd)); tmp3(:,:,1:acc%nd-1) = acc%cov; tmp3(:,:,acc%nd) = cov
+        call move_alloc(tmp3, acc%cov)
+        allocate(tmp3(nx, ny, acc%nd)); tmp3(:,:,1:acc%nd-1) = acc%amt; tmp3(:,:,acc%nd) = amt
+        call move_alloc(tmp3, acc%amt)
+    end subroutine coupler_merge_add
+
+    subroutine coupler_merge_end(acc, cpl, background, var_dst, frac_tot, overlap_tol)
+        ! Combine the added domains with the background on the target grid:
+        !   extensive: var = (1 - min(F,1))*bg + sum_d A_d
+        !   intensive: var = (1 - min(F,1))*bg + sum_d A_d / max(F,1)
+        ! with F = sum_d F_d (returned unclipped in frac_tot). Domains are summed
+        ! in the order of their names, so the result does not depend on the
+        ! order of coupler_merge_add calls. max(F) > 1 + overlap_tol (default
+        ! 1e-2) stops, naming the overlapping domains (they need owner weights);
+        ! a smaller excess is accepted and the double-counted amount logged.
+        type(coupler_merge_t),  intent(inout) :: acc
+        type(coupler_class),    intent(inout) :: cpl
+        real(dp),               intent(in)    :: background(:,:)
+        real(dp), allocatable,  intent(inout) :: var_dst(:,:)
+        real(dp), optional,     intent(out)   :: frac_tot(:,:)
+        real(dp), optional,     intent(in)    :: overlap_tol
+        real(dp), allocatable :: ftot(:,:), atot(:,:)
+        integer,  allocatable :: ord(:)
+        real(dp) :: tol, dbl
+        integer  :: nx, ny, d, id, i, j
+        character(len=:), allocatable :: who
+
+        if (acc%dst == "") call fesm_error("coupler_merge_end", "call coupler_merge_begin first.")
+        nx = size(acc%cov,1); ny = size(acc%cov,2)
+        if (size(background,1) /= nx .or. size(background,2) /= ny) &
+            call fesm_error("coupler_merge_end", "background has the wrong shape for grid '"// &
+                trim(acc%dst)//"'.", "shape(background) = "//to_str(shape(background))// &
+                new_line("a")//"grid shape        = "//to_str([nx, ny]))
+        tol = 1.0e-2_dp
+        if (present(overlap_tol)) tol = overlap_tol
+
+        ord = name_order(acc%names)
+        allocate(ftot(nx,ny), atot(nx,ny))
+        ftot = 0.0_dp; atot = 0.0_dp
+        do d = 1, acc%nd
+            ftot = ftot + acc%cov(:,:,ord(d))
+            atot = atot + acc%amt(:,:,ord(d))
+        end do
+
+        if (maxval(ftot) > 1.0_dp + tol) then
+            who = ""
+            do d = 1, acc%nd
+                if (any(acc%cov(:,:,ord(d)) > 0.0_dp .and. ftot > 1.0_dp + tol)) &
+                    who = who//" "//trim(acc%names(ord(d)))
+            end do
+            call fesm_error("coupler_merge_end", "domains overlap on grid '"//trim(acc%dst)// &
+                "' (max coverage "//to_str(maxval(ftot))//" > 1 + overlap_tol): give them owner weights.", &
+                "overlapping domains:"//who)
+        end if
+        if (maxval(ftot) > 1.0_dp) then
+            id = find_grid(cpl, acc%dst)
+            dbl = 0.0_dp
+            do j = 1, ny
+                do i = 1, nx
+                    if (ftot(i,j) > 1.0_dp) dbl = dbl + cpl%grids(id)%area(i,j)*atot(i,j)*(1.0_dp - 1.0_dp/ftot(i,j))
+                end do
+            end do
+            call log_msg(LOG_INFO, "coupler_merge_end", trim(acc%dst)//": coverage up to "// &
+                to_str(maxval(ftot))//" (within overlap_tol); double-counted amount ~ "//to_str(dbl))
+        end if
+
+        if (allocated(var_dst)) then
+            if (size(var_dst,1) /= nx .or. size(var_dst,2) /= ny) deallocate(var_dst)
+        end if
+        if (.not. allocated(var_dst)) allocate(var_dst(nx,ny))
+        if (trim(acc%kind) == "extensive") then
+            var_dst = (1.0_dp - min(ftot, 1.0_dp))*background + atot
+        else
+            var_dst = (1.0_dp - min(ftot, 1.0_dp))*background + atot/max(ftot, 1.0_dp)
+        end if
+        if (present(frac_tot)) frac_tot = ftot
+    end subroutine coupler_merge_end
+
+    function name_order(names) result(ord)
+        ! Indices that sort `names` (insertion sort; N is small).
+        character(len=*), intent(in) :: names(:)
+        integer, allocatable :: ord(:)
+        integer :: i, j, t
+        ord = [(i, i = 1, size(names))]
+        do i = 2, size(names)
+            t = ord(i); j = i - 1
+            do while (j >= 1)
+                if (llt(names(t), names(ord(j)))) then
+                    ord(j+1) = ord(j); j = j - 1
+                else
+                    exit
+                end if
+            end do
+            ord(j+1) = t
+        end do
+    end function name_order
+
+    ! ----- split: global -> one regional grid -------------------------------------
+
+    subroutine coupler_split(cpl, src, var_src, dst, var_dst, method, ref_src, ref_dst, &
+                             missing_value, fill_method, mask2)
+        ! Global field var_src on `src` onto the regional grid `dst`. Without
+        ! references: remap (default method "bilin"). With ref_src and ref_dst:
+        ! var_dst = ref_dst + remap(var_src - ref_src), where a missing anomaly
+        ! counts as 0 (the reference is kept).
+        type(coupler_class),   intent(inout) :: cpl
+        character(len=*),      intent(in)    :: src, dst
+        real(dp),              intent(in)    :: var_src(:,:)
+        real(dp), allocatable, intent(inout) :: var_dst(:,:)
+        character(len=*), optional, intent(in)  :: method
+        real(dp),         optional, intent(in)  :: ref_src(:,:), ref_dst(:,:)
+        real(dp),         optional, intent(in)  :: missing_value
+        character(len=*), optional, intent(in)  :: fill_method
+        logical,          optional, intent(out) :: mask2(:,:)
+        character(len=32) :: mtd
+        real(dp) :: miss
+        real(dp), allocatable :: anom(:,:)
+
+        mtd = "bilin"
+        if (present(method)) mtd = trim(method)
+        miss = mv_dp
+        if (present(missing_value)) miss = missing_value
+
+        if (present(ref_src) .neqv. present(ref_dst)) &
+            call fesm_error("coupler_split", "give both ref_src and ref_dst, or neither.")
+
+        if (.not. present(ref_src)) then
+            call remap(cpl, var_src, src, var_dst, dst, method=mtd, missing_value=miss, &
+                       fill_method=fill_method, mask2=mask2)
+            return
+        end if
+
+        anom = merge(var_src - ref_src, miss, var_src /= miss .and. ref_src /= miss)
+        call remap(cpl, anom, src, var_dst, dst, method=mtd, missing_value=miss, &
+                   fill_method=fill_method, mask2=mask2)
+        if (size(ref_dst,1) /= size(var_dst,1) .or. size(ref_dst,2) /= size(var_dst,2)) &
+            call fesm_error("coupler_split", "ref_dst has the wrong shape for grid '"//trim(dst)//"'.")
+        where (var_dst == miss)
+            var_dst = ref_dst
+        elsewhere
+            var_dst = ref_dst + var_dst
+        end where
+    end subroutine coupler_split
+
+    subroutine coupler_owner_reduce(cpl, src_hi, owner_hi, dst, owner)
+        ! Priority-ordered ownership: remove from `owner` (on grid dst) the
+        ! part of each cell already owned by the higher-priority domain src_hi:
+        !   owner := max(0, owner - (covered fraction of owner_hi on dst))
+        ! via the cached src_hi -> dst "con" map (norm="dst" in the map metric).
+        ! Call once at init, in priority order.
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: src_hi, dst
+        real(dp),            intent(in)    :: owner_hi(:,:)
+        real(dp),            intent(inout) :: owner(:,:)
+        integer :: im
+        real(dp), allocatable :: f(:,:)
+
+        im = get_map(cpl, src_hi, dst, "con")
+        if (size(owner,1) /= cpl%maps(im)%map%G%nx .or. size(owner,2) /= cpl%maps(im)%map%G%ny) &
+            call fesm_error("coupler_owner_reduce", "owner has the wrong shape for grid '"//trim(dst)//"'.")
+        allocate(f(size(owner,1), size(owner,2)))
+        call map_field(cpl%maps(im)%map, "owner", owner_hi, f, norm="dst")
+        where (f /= mv_dp) owner = max(0.0_dp, owner - f)
+    end subroutine coupler_owner_reduce
 
     ! ----- registry internals --------------------------------------------------
 
@@ -209,6 +548,7 @@ contains
                 tmp(i)%from_disk = cpl%grids(i)%from_disk
                 tmp(i)%area_med  = cpl%grids(i)%area_med
                 call move_alloc(cpl%grids(i)%grid, tmp(i)%grid)
+                call move_alloc(cpl%grids(i)%area, tmp(i)%area)
             end do
             call move_alloc(tmp, cpl%grids)
         end if
@@ -274,7 +614,25 @@ contains
         allocate(cpl%grids(ig)%grid)
         call grid_cdo_read_desc(cpl%grids(ig)%grid, trim(name), trim(cpl%map_fldr))
         cpl%grids(ig)%from_disk = .true.
+        call default_area(cpl%grids(ig))
     end function resolve_grid
+
+    subroutine default_area(slot)
+        ! Default model cell area [m^2]: the plane dx*dy for a projected grid
+        ! (what an ice-sheet model integrates), grid%area*xy_conv^2 otherwise
+        ! (docs/dev/coupler-global-design.md, 2.1). coupler_set_area overrides it.
+        type(grid_slot), intent(inout) :: slot
+        associate (g => slot%grid)
+            if (allocated(slot%area)) deallocate(slot%area)
+            allocate(slot%area(g%G%nx, g%G%ny))
+            if (g%cs%is_projection) then
+                slot%area = abs(g%G%dx*g%G%dy)*g%cs%xy_conv**2
+            else
+                slot%area = g%area*g%cs%xy_conv**2
+            end if
+        end associate
+        slot%area_med = -1.0_dp
+    end subroutine default_area
 
     function get_map(cpl, src, dst, method, gen) result(im)
         ! Find the cached (src->dst, method) map, or build+cache it on miss,
@@ -336,28 +694,18 @@ contains
     end function resolve_method
 
     function median_area(cpl, ig) result(amed)
-        ! Median model cell area [m^2] of grid slot ig, computed once. The
-        ! default model area is the plane dx*dy for a projected grid and
-        ! grid%area*xy_conv^2 otherwise (docs/dev/coupler-global-design.md 2.1).
+        ! Median model cell area [m^2] of grid slot ig (computed once, reset by
+        ! coupler_set_area).
         type(coupler_class), intent(inout) :: cpl
         integer,             intent(in)    :: ig
         real(dp) :: amed
         real(dp), allocatable :: a(:)
 
-        if (cpl%grids(ig)%area_med >= 0.0_dp) then
-            amed = cpl%grids(ig)%area_med
-            return
+        if (cpl%grids(ig)%area_med < 0.0_dp) then
+            a = reshape(abs(cpl%grids(ig)%area), [size(cpl%grids(ig)%area)])
+            cpl%grids(ig)%area_med = median(a)
         end if
-        associate (g => cpl%grids(ig)%grid)
-            if (g%cs%is_projection) then
-                amed = abs(g%G%dx*g%G%dy)*g%cs%xy_conv**2
-            else
-                allocate(a(size(g%area)))
-                a = reshape(abs(g%area), [size(g%area)])*g%cs%xy_conv**2
-                amed = median(a)
-            end if
-        end associate
-        cpl%grids(ig)%area_med = amed
+        amed = cpl%grids(ig)%area_med
     end function median_area
 
     function median(a) result(m)
@@ -410,19 +758,30 @@ contains
         character(len=*), intent(in),  optional :: norm
         real(dp),         intent(out), optional :: frac2(:,:)
         integer :: im
+        real(dp), allocatable :: scl(:,:)
 
         if (trim(src) == trim(dst)) then
+            call identity_scale(cpl, src, norm, scl)
             call size_dst(size(var_src,1), size(var_src,2), 1, reset, var_dst_2D=var_dst)
             call identity_2D(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                             fill_method, filt_method, filt_par, frac2)
+                             fill_method, filt_method, filt_par, frac2, scl)
             return
         end if
         im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method, norm))
         call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, 1, reset, var_dst_2D=var_dst)
-        call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
-                       missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
-                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
-                       norm=norm, frac2=frac2)
+        if (amount_norm(norm)) then
+            ! norm="dst"/"sum": the registered model areas of both grids
+            call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
+                           missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
+                           fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                           norm=norm, frac2=frac2, area1=cpl%grids(find_grid(cpl, src))%area, &
+                           area2=cpl%grids(find_grid(cpl, dst))%area)
+        else
+            call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
+                           missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
+                           fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                           norm=norm, frac2=frac2)
+        end if
     end subroutine remap_2D_dp
 
     subroutine remap_2D_sp(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
@@ -441,19 +800,30 @@ contains
         character(len=*), intent(in),  optional :: norm
         real(dp),         intent(out), optional :: frac2(:,:)
         integer :: im
+        real(dp), allocatable :: scl(:,:)
 
         if (trim(src) == trim(dst)) then
+            call identity_scale(cpl, src, norm, scl)
             call size_dst(size(var_src,1), size(var_src,2), 1, reset, var_dst_2D_sp=var_dst)
             call identity_2D_sp(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                                fill_method, filt_method, filt_par, frac2)
+                                fill_method, filt_method, filt_par, frac2, scl)
             return
         end if
         im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method, norm))
         call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, 1, reset, var_dst_2D_sp=var_dst)
-        call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
-                       missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
-                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
-                       norm=norm, frac2=frac2)
+        if (amount_norm(norm)) then
+            ! norm="dst"/"sum": the registered model areas of both grids
+            call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
+                           missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
+                           fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                           norm=norm, frac2=frac2, area1=cpl%grids(find_grid(cpl, src))%area, &
+                           area2=cpl%grids(find_grid(cpl, dst))%area)
+        else
+            call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
+                           missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
+                           fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                           norm=norm, frac2=frac2)
+        end if
     end subroutine remap_2D_sp
 
     subroutine remap_2D_int(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
@@ -606,11 +976,12 @@ contains
     ! ----- identity shortcut (src == dst) --------------------------------------
 
     subroutine identity_2D(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                           fill_method, filt_method, filt_par, frac2)
+                           fill_method, filt_method, filt_par, frac2, scale)
         ! remap of a grid onto itself: copy the valid values into var_dst
         ! (already sized). A self-map has one link per target, so mean and
         ! count are the value and stdev is 0. mask_pack, reset and the fill /
         ! filter post-processing apply as in map_field; frac2 = merge(1,0,mask2).
+        ! `scale` multiplies the copied values (the cell area for norm="sum").
         real(dp),         intent(in)    :: var_src(:,:)
         real(dp),         intent(inout) :: var_dst(:,:)
         character(len=*), intent(in),  optional :: stat
@@ -621,6 +992,7 @@ contains
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(dp),         intent(in),  optional :: filt_par(:)
         real(dp),         intent(out), optional :: frac2(:,:)
+        real(dp),         intent(in),  optional :: scale(:,:)
 
         real(dp) :: miss
         logical  :: reset_pts
@@ -640,6 +1012,9 @@ contains
             where (.not. m) var_dst = miss
         end if
         where (m) var_dst = var_src
+        if (present(scale)) then
+            where (m) var_dst = var_dst*scale
+        end if
         if (present(stat)) then
             if (trim(stat) == "stdev") then
                 where (m) var_dst = 0.0_dp
@@ -654,7 +1029,7 @@ contains
     end subroutine identity_2D
 
     subroutine identity_2D_sp(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                              fill_method, filt_method, filt_par, frac2)
+                              fill_method, filt_method, filt_par, frac2, scale)
         ! sp identity: in dp, stored back in sp (as map_field's sp wrappers do).
         real(sp),         intent(in)    :: var_src(:,:)
         real(sp),         intent(inout) :: var_dst(:,:)
@@ -666,6 +1041,7 @@ contains
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(sp),         intent(in),  optional :: filt_par(:)
         real(dp),         intent(out), optional :: frac2(:,:)
+        real(dp),         intent(in),  optional :: scale(:,:)
 
         real(dp), allocatable :: v1(:,:), v2(:,:), miss, fpar(:)
 
@@ -678,7 +1054,8 @@ contains
         if (present(missing_value)) miss = real(missing_value, dp)
         if (present(filt_par)) fpar = real(filt_par, dp)
         ! unallocated miss / fpar are passed on as absent
-        call identity_2D(v1, v2, stat, miss, mask2, reset, mask_pack, fill_method, filt_method, fpar, frac2)
+        call identity_2D(v1, v2, stat, miss, mask2, reset, mask_pack, fill_method, filt_method, fpar, &
+                         frac2, scale)
         var_dst = real(v2, sp)
     end subroutine identity_2D_sp
 
@@ -709,6 +1086,28 @@ contains
         where (m) var_dst = var_src
         if (present(mask2)) mask2 = m
     end subroutine identity_2D_int
+
+    logical function amount_norm(norm)
+        ! norm present and "dst" / "sum" (the coupler then supplies model areas)
+        character(len=*), intent(in), optional :: norm
+        amount_norm = .false.
+        if (present(norm)) amount_norm = trim(norm) == "dst" .or. trim(norm) == "sum"
+    end function amount_norm
+
+    subroutine identity_scale(cpl, name, norm, scale)
+        ! The identity remap's value scale: the model cell area for norm="sum"
+        ! (amount per cell); left unallocated (passed on as absent) otherwise.
+        type(coupler_class), intent(in) :: cpl
+        character(len=*),    intent(in) :: name
+        character(len=*), intent(in), optional :: norm
+        real(dp), allocatable, intent(out) :: scale(:,:)
+        integer :: ig
+        if (.not. present(norm)) return
+        if (trim(norm) /= "sum") return
+        ig = find_grid(cpl, name)
+        if (ig < 0) call fesm_error("remap", "norm='sum' needs grid '"//trim(name)//"' registered (its area).")
+        scale = cpl%grids(ig)%area
+    end subroutine identity_scale
 
     ! ----- destination sizing ----------------------------------------------------
 
