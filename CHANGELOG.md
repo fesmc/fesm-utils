@@ -51,6 +51,9 @@ All notable changes to fesm-utils are documented here.
   `par%time_units`, `par%calendar` (keys; `"clock"`: values as they stand), `par%time_name`.
 - **varslice**: `par%units_file`, the `units` attribute of the variable (`""` without);
   stored only.
+- **varslice**: `varslice_get(vs, var [, k])`, generic over `dp`/`sp` and 0-D to 3-D: a
+  copy of the slice at its natural rank (as `v1`/`v2`/`v3`) into the caller's array, shape
+  checked; storage stays `real(wp)`.
 
 ### Changed
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their

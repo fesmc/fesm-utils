@@ -84,6 +84,7 @@ The main object: parameters plus the loaded coordinates, time axis and data.
 | `varslice_update` | Read/slice the field to match a given time or time range |
 | `varslice_map_to_grid` | Remap a `varslice` field from a source grid to a target grid |
 | `vs%v1(k)` / `vs%v2(k)` / `vs%v3(k)` | Type-bound natural-rank accessors: copy-return the 1-D/2-D/3-D slice at trailing index `k` (default 1), e.g. `vs%v2(m)` for `var(:,:,m,1)` |
+| `varslice_get(vs, var [, k])` | Generic: a `dp` or `sp` copy of the slice at its natural rank into the caller's array (shape checked), at trailing index `k` (default 1): 0-D `var(k,1,1,1)`, 1-D `var(:,k,1,1)`, 2-D `var(:,:,k,1)`, 3-D `var(:,:,:,k)`; missing values as `mv`. Storage stays `real(wp)` |
 | `varslice_nsub` | The declared sub-annual period (`time_par(4)`) |
 | `varslice_sub_mean` | Mean of the current slice over its time-like axis (e.g. the sub-annual cycle), as an `(x,y,z)` field; axes the variable lacks are singleton, missing values are skipped |
 | `varslice_end` | Deallocate all data arrays in the object |

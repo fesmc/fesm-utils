@@ -124,6 +124,17 @@ module varslice
         module procedure axis_init_dp
     end interface
 
+    ! Copy of the current slice at its natural rank, dp or sp, at trailing
+    ! index k (default 1), into the caller's array (shape checked):
+    !   0-D var(k,1,1,1)  1-D var(:,k,1,1)  2-D var(:,:,k,1)  3-D var(:,:,:,k)
+    ! Storage stays real(wp); missing values come out as mv.
+    interface varslice_get
+        module procedure varslice_get_0d_dp, varslice_get_0d_sp
+        module procedure varslice_get_1d_dp, varslice_get_1d_sp
+        module procedure varslice_get_2d_dp, varslice_get_2d_sp
+        module procedure varslice_get_3d_dp, varslice_get_3d_sp
+    end interface
+
     private
     public :: varslice_param_class
     public :: varslice_class
@@ -135,6 +146,7 @@ module varslice
     public :: varslice_init_data
     public :: varslice_end 
     public :: varslice_time_decode
+    public :: varslice_get
 
     public :: varslice_map_to_grid
 
@@ -1739,6 +1751,119 @@ contains
         if (present(k)) kk = k
         v = vs%var(:,:,:,kk)
     end function varslice_v3
+
+    subroutine varslice_get_0d_dp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(dp),             intent(OUT) :: var
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 1, "0-D")
+        var = real(vs%var(kk,1,1,1), dp)
+    end subroutine varslice_get_0d_dp
+
+    subroutine varslice_get_1d_dp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(dp),             intent(OUT) :: var(:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 2, "1-D")
+        call get_shape(vs, [size(var,1), 1, 1], [size(vs%var,1), 1, 1], "1-D")
+        var = real(vs%var(:,kk,1,1), dp)
+    end subroutine varslice_get_1d_dp
+
+    subroutine varslice_get_2d_dp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(dp),             intent(OUT) :: var(:,:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 3, "2-D")
+        call get_shape(vs, [size(var,1), size(var,2), 1], [size(vs%var,1), size(vs%var,2), 1], "2-D")
+        var = real(vs%var(:,:,kk,1), dp)
+    end subroutine varslice_get_2d_dp
+
+    subroutine varslice_get_3d_dp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(dp),             intent(OUT) :: var(:,:,:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 4, "3-D")
+        call get_shape(vs, shape(var), [size(vs%var,1), size(vs%var,2), size(vs%var,3)], "3-D")
+        var = real(vs%var(:,:,:,kk), dp)
+    end subroutine varslice_get_3d_dp
+
+    subroutine varslice_get_0d_sp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(sp),             intent(OUT) :: var
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 1, "0-D")
+        var = real(vs%var(kk,1,1,1), sp)
+    end subroutine varslice_get_0d_sp
+
+    subroutine varslice_get_1d_sp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(sp),             intent(OUT) :: var(:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 2, "1-D")
+        call get_shape(vs, [size(var,1), 1, 1], [size(vs%var,1), 1, 1], "1-D")
+        var = real(vs%var(:,kk,1,1), sp)
+    end subroutine varslice_get_1d_sp
+
+    subroutine varslice_get_2d_sp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(sp),             intent(OUT) :: var(:,:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 3, "2-D")
+        call get_shape(vs, [size(var,1), size(var,2), 1], [size(vs%var,1), size(vs%var,2), 1], "2-D")
+        var = real(vs%var(:,:,kk,1), sp)
+    end subroutine varslice_get_2d_sp
+
+    subroutine varslice_get_3d_sp(vs, var, k)
+        type(varslice_class), intent(IN)  :: vs
+        real(sp),             intent(OUT) :: var(:,:,:)
+        integer, optional,    intent(IN)  :: k
+        integer :: kk
+        kk = get_k(vs, k, 4, "3-D")
+        call get_shape(vs, shape(var), [size(vs%var,1), size(vs%var,2), size(vs%var,3)], "3-D")
+        var = real(vs%var(:,:,:,kk), sp)
+    end subroutine varslice_get_3d_sp
+
+    integer function get_k(vs, k, dim, what) result(kk)
+        ! The trailing index of varslice_get (default 1), checked against
+        ! dimension dim of vs%var.
+        type(varslice_class), intent(IN) :: vs
+        integer, optional,    intent(IN) :: k
+        integer,              intent(IN) :: dim
+        character(len=*),     intent(IN) :: what
+        if (.not. allocated(vs%var)) then
+            call fesm_error("varslice_get", "no slice yet (call varslice_update first).", &
+                "name = "//trim(vs%par%name))
+        end if
+        kk = 1
+        if (present(k)) kk = k
+        if (kk .lt. 1 .or. kk .gt. size(vs%var,dim)) then
+            call fesm_error("varslice_get", "index out of range.", &
+                "name  = "//trim(vs%par%name)//new_line("a")// &
+                "rank  = "//what//new_line("a")// &
+                "k     = "//to_str(kk)//new_line("a")// &
+                "shape = "//to_str(shape(vs%var)))
+        end if
+    end function get_k
+
+    subroutine get_shape(vs, shp, shp_vs, what)
+        type(varslice_class), intent(IN) :: vs
+        integer,              intent(IN) :: shp(3), shp_vs(3)
+        character(len=*),     intent(IN) :: what
+        if (any(shp .ne. shp_vs)) then
+            call fesm_error("varslice_get", "shape mismatch.", &
+                "name   = "//trim(vs%par%name)//new_line("a")// &
+                "rank   = "//what//new_line("a")// &
+                "slice  = "//to_str(shp_vs)//new_line("a")// &
+                "given  = "//to_str(shp))
+        end if
+    end subroutine get_shape
 
     subroutine load_or_generate_axis(filename, varname, n, x)
         ! Allocate axis x to length n and populate it: read the coordinate
