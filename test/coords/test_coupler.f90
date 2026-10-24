@@ -227,13 +227,15 @@ program test_coupler
     block
         real(dp), allocatable :: fid(:,:), fk(:,:)
         logical,  allocatable :: m2(:,:), mp(:,:)
+        real(dp) :: f2id(11,11)
         integer :: nm0
 
         nm0 = cpl%nmaps
         fs(3,4) = mv_dp
         allocate(m2(11,11), mp(11,11))
-        call remap(cpl, fs, "coupler-coarse", fid, "coupler-coarse", method="con", mask2=m2)
-        if (any(fid /= fs) .or. any(m2 .neqv. (fs /= mv_dp)) .or. cpl%nmaps /= nm0) then
+        call remap(cpl, fs, "coupler-coarse", fid, "coupler-coarse", method="con", mask2=m2, frac2=f2id)
+        if (any(fid /= fs) .or. any(m2 .neqv. (fs /= mv_dp)) .or. cpl%nmaps /= nm0 .or. &
+            any(f2id /= merge(1.0_dp, 0.0_dp, m2))) then
             write(*,*) "FAIL: identity remap is not a copy (or built a map)"; fails = fails + 1
         end if
         ! unregistered name: no registration needed
@@ -265,16 +267,23 @@ program test_coupler
         type(map_class) :: mp_direct
         real(dp), allocatable :: fr(:,:), fd(:,:)
         logical,  allocatable :: m2r(:,:), m2d(:,:), mpk(:,:)
+        real(dp) :: f2r(21,21), f2d(21,21)
         allocate(m2r(21,21), m2d(21,21), mpk(21,21), fd(21,21))
         mpk = .true.; mpk(:,1:4) = .false.
         fs(5,5) = mv_dp
-        call remap(cpl, fs, "coupler-coarse", fr, "coupler-fine", method="con", mask2=m2r, mask_pack=mpk)
+        call remap(cpl, fs, "coupler-coarse", fr, "coupler-fine", method="con", mask2=m2r, mask_pack=mpk, &
+                   frac2=f2r)
         call map_init(mp_direct, gs, gt, method="con", fldr=fldr)
-        call map_field(mp_direct, "x", fs, fd, mask2=m2d, mask_pack=mpk)
-        if (any(fr /= fd) .or. any(m2r .neqv. m2d) .or. count(m2r) == size(m2r)) then
-            write(*,*) "FAIL: mask2/mask_pack pass-through differs from map_field"; fails = fails + 1
+        call map_field(mp_direct, "x", fs, fd, mask2=m2d, mask_pack=mpk, frac2=f2d)
+        if (any(fr /= fd) .or. any(m2r .neqv. m2d) .or. count(m2r) == size(m2r) .or. any(f2r /= f2d)) then
+            write(*,*) "FAIL: mask2/mask_pack/frac2 pass-through differs from map_field"; fails = fails + 1
         else
-            write(*,*) "mask2 pass-through ok (", count(m2r), " of", size(m2r), " mapped)"
+            write(*,*) "mask2/frac2 pass-through ok (", count(m2r), " of", size(m2r), " mapped)"
+        end if
+        call remap(cpl, fs, "coupler-coarse", fr, "coupler-fine", method="con", norm="dst")
+        call map_field(mp_direct, "x", fs, fd, norm="dst")
+        if (any(fr /= fd)) then
+            write(*,*) "FAIL: norm pass-through differs from map_field"; fails = fails + 1
         end if
         fs(5,5) = flin(gs%x(5,5), gs%y(5,5))
     end block

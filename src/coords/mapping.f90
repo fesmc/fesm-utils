@@ -47,6 +47,7 @@ module mapping
         logical :: is_same_map = .false.
         real(dp), allocatable :: x(:), y(:), lon(:), lat(:)   ! target coords (packed)
         type(weight_map_t) :: wm
+        character(len=512) :: file = ""        ! cache file (map_init grid -> grid), for messages
     end type
 
     interface map_init
@@ -217,6 +218,8 @@ contains
                     stop
             end select
         end if
+
+        map%file = filename
 
         ! Collapse the distance store into baked weights where it is safe
         ! (shepard/bilinear), moving per-apply weight construction to this
@@ -1065,7 +1068,8 @@ contains
     ! ----- map_field overloads ------------------------------------------------
 
     subroutine map_field_to_grid(map, name, v1, var2, stat, method, missing_value, radius, mask2, &
-                                 reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                                 reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                                 norm, frac2, area1, area2)
         ! Core 2D-target worker: the source is already flattened to the vector v1,
         ! so this serves both grid (2D) and points (1D) sources. It carries the
         ! full post-apply surface (matching the legacy map_scrip_field):
@@ -1080,6 +1084,12 @@ contains
         !   mask_pack   - only interpolate where .true.; others keep the reset value.
         !   fill_method - fill remaining missing target points ("weighted"/"nn"/"none").
         !   filt_method - smooth the result ("gaussian"/"gaussian-fast"/"poisson"/"none").
+        !   norm        - "frac" (default) | "dst" | "sum" (conservative maps; see
+        !                 weight_map_apply); area1 (flattened source) / area2 are
+        !                 the model cell areas.
+        !   frac2       - covered fraction in [0,1] (real(dp)); 0 outside mask_pack
+        !                 and where nothing is mapped. On a non-conservative map it
+        !                 is merge(1,0,mask2). Fill/filter do not change it.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
         real(dp),         intent(in)    :: v1(:)
@@ -1095,12 +1105,16 @@ contains
         character(len=*), optional, intent(in)  :: filt_method
         real(dp),         optional, intent(in)  :: filt_par(:)
         logical,          optional, intent(in)  :: verbose
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:,:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:,:)
 
         character(len=32) :: sta, knl
         real(dp) :: miss
         logical  :: reset_pts
         integer  :: n2, nx, ny
-        real(dp), allocatable :: v2(:), var2_save(:,:)
+        real(dp), allocatable :: v2(:), var2_save(:,:), f2v(:), a2v(:)
         logical,  allocatable :: m2(:), m2d(:,:), maskp2d(:,:)
 
         sta = "mean"
@@ -1126,10 +1140,17 @@ contains
         end if
 
         ! Apply the map over all targets, then restrict to the packing mask
+        ! (unallocated f2v / a2v are passed on as absent)
         allocate(v2(n2), m2(n2), m2d(nx,ny))
-        call map_apply_vec(map, v1, v2, knl, sta, miss, radius, m2)
+        if (present(frac2)) allocate(f2v(n2))
+        if (present(area2)) a2v = reshape(area2, [n2])
+        call map_apply_vec(map, v1, v2, knl, sta, miss, radius, m2, norm, f2v, area1, a2v)
         var2 = reshape(v2, [nx,ny])
         m2d  = reshape(m2, [nx,ny]) .and. maskp2d
+        if (present(frac2)) then
+            frac2 = reshape(f2v, [nx,ny])
+            where (.not. m2d) frac2 = 0.0_dp
+        end if
 
         if (reset_pts) then
             where (.not. m2d) var2 = miss
@@ -1149,7 +1170,7 @@ contains
     end subroutine map_field_to_grid
 
     subroutine map_field_to_points(map, name, v1, var2, stat, method, missing_value, radius, mask2, &
-                                   reset, mask_pack)
+                                   reset, mask_pack, norm, frac2, area1, area2)
         ! Core 1D-target worker: the source is already flattened to v1. 1D targets
         ! support reset/mask_pack only (fill/filter are inherently 2D grid ops):
         !   stat      - aggregation over each target's links ("mean"/"count"/"stdev").
@@ -1158,6 +1179,7 @@ contains
         !   reset     - .true. (default) blanks var2 to missing first; .false.
         !               leaves non-interpolated target points untouched.
         !   mask_pack - only interpolate where .true.; others keep the reset value.
+        !   norm, frac2, area1, area2 - as in map_field_to_grid.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
         real(dp),         intent(in)    :: v1(:)
@@ -1169,6 +1191,10 @@ contains
         logical,          optional, intent(out) :: mask2(:)
         logical,          optional, intent(in)  :: reset
         logical,          optional, intent(in)  :: mask_pack(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:)
 
         character(len=32) :: sta, knl
         real(dp) :: miss
@@ -1197,9 +1223,12 @@ contains
         end if
 
         allocate(v2(n2), m2(n2))
-        call map_apply_vec(map, v1, v2, knl, sta, miss, radius, m2)
+        call map_apply_vec(map, v1, v2, knl, sta, miss, radius, m2, norm, frac2, area1, area2)
         var2 = v2
         m2   = m2 .and. maskp
+        if (present(frac2)) then
+            where (.not. m2) frac2 = 0.0_dp
+        end if
 
         if (reset_pts) then
             where (.not. m2) var2 = miss
@@ -1214,7 +1243,8 @@ contains
     end subroutine map_field_to_points
 
     subroutine map_field_grid_grid(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                   reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                                   reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                                   norm, frac2, area1, area2)
         ! Map a 2D source field var1 onto the 2D target var2 (dp).
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1231,17 +1261,23 @@ contains
         character(len=*), optional, intent(in)  :: filt_method
         real(dp),         optional, intent(in)  :: filt_par(:)
         logical,          optional, intent(in)  :: verbose
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:,:)
+        real(dp),         optional, intent(in)  :: area1(:,:)
+        real(dp),         optional, intent(in)  :: area2(:,:)
 
-        real(dp), allocatable :: v1(:)
+        real(dp), allocatable :: v1(:), a1v(:)
         allocate(v1(size(var1)))
         v1 = reshape(var1, [size(var1)])
+        if (present(area1)) a1v = reshape(area1, [size(area1)])
         call map_field_to_grid(map, name, v1, var2, stat, method, missing_value, radius, mask2, &
-                               reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                               reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                               norm, frac2, a1v, area2)
         deallocate(v1)
     end subroutine map_field_grid_grid
 
     subroutine map_field_points_points(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                       reset, mask_pack)
+                                       reset, mask_pack, norm, frac2, area1, area2)
         ! source a point set (1D), target a point set (1D)
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1254,12 +1290,17 @@ contains
         logical,          optional, intent(out) :: mask2(:)
         logical,          optional, intent(in)  :: reset
         logical,          optional, intent(in)  :: mask_pack(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:)
         call map_field_to_points(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                 reset, mask_pack)
+                                 reset, mask_pack, norm, frac2, area1, area2)
     end subroutine map_field_points_points
 
     subroutine map_field_grid_grid_sp(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                      reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                                      reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                                      norm, frac2, area1, area2)
         ! Single-precision wrapper: accumulate in dp, store back in sp.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1276,6 +1317,10 @@ contains
         character(len=*), optional, intent(in)  :: filt_method
         real(sp),         optional, intent(in)  :: filt_par(:)
         logical,          optional, intent(in)  :: verbose
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:,:)
+        real(dp),         optional, intent(in)  :: area1(:,:)
+        real(dp),         optional, intent(in)  :: area2(:,:)
 
         real(dp), allocatable :: v1(:,:), v2(:,:), fpar(:)
         logical,  allocatable :: m2(:,:)
@@ -1299,7 +1344,8 @@ contains
 
         call map_field_grid_grid(map, name, v1, v2, stat=stat, method=method, missing_value=miss, radius=radius, &
                                  mask2=m2, reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
-                                 filt_method=filt_method, filt_par=fpar, verbose=verbose)
+                                 filt_method=filt_method, filt_par=fpar, verbose=verbose, &
+                                 norm=norm, frac2=frac2, area1=area1, area2=area2)
 
         var2 = real(v2, sp)
         if (present(mask2)) mask2 = m2
@@ -1423,7 +1469,7 @@ contains
     end subroutine map_postprocess
 
     subroutine map_field_grid_points(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                     reset, mask_pack)
+                                     reset, mask_pack, norm, frac2, area1, area2)
         ! source on a grid (2D), target a point set (1D)
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1436,16 +1482,22 @@ contains
         logical,          optional, intent(out) :: mask2(:)
         logical,          optional, intent(in)  :: reset
         logical,          optional, intent(in)  :: mask_pack(:)
-        real(dp), allocatable :: v1(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:)
+        real(dp),         optional, intent(in)  :: area1(:,:)
+        real(dp),         optional, intent(in)  :: area2(:)
+        real(dp), allocatable :: v1(:), a1v(:)
         allocate(v1(size(var1)))
         v1 = reshape(var1, [size(var1)])
+        if (present(area1)) a1v = reshape(area1, [size(area1)])
         call map_field_to_points(map, name, v1, var2, stat, method, missing_value, radius, mask2, &
-                                 reset, mask_pack)
+                                 reset, mask_pack, norm, frac2, a1v, area2)
         deallocate(v1)
     end subroutine map_field_grid_points
 
     subroutine map_field_points_grid(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                     reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                                     reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                                     norm, frac2, area1, area2)
         ! source a point set (1D), target on a grid (2D)
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1462,14 +1514,20 @@ contains
         character(len=*), optional, intent(in)  :: filt_method
         real(dp),         optional, intent(in)  :: filt_par(:)
         logical,          optional, intent(in)  :: verbose
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:,:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:,:)
         call map_field_to_grid(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                               reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                               reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                               norm, frac2, area1, area2)
     end subroutine map_field_points_grid
 
     ! ----- sp / integer wrappers for the points/grid combos (accumulate in dp) -
 
     subroutine map_field_points_grid_sp(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                        reset, mask_pack, fill_method, filt_method, filt_par, verbose)
+                                        reset, mask_pack, fill_method, filt_method, filt_par, verbose, &
+                                        norm, frac2, area1, area2)
         ! source a point set (1D), target on a grid (2D); sp store.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1486,6 +1544,10 @@ contains
         character(len=*), optional, intent(in)  :: filt_method
         real(sp),         optional, intent(in)  :: filt_par(:)
         logical,          optional, intent(in)  :: verbose
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:,:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:,:)
 
         real(dp), allocatable :: v1(:), v2(:,:), fpar(:)
         logical,  allocatable :: m2(:,:)
@@ -1509,7 +1571,8 @@ contains
 
         call map_field_to_grid(map, name, v1, v2, stat=stat, method=method, missing_value=miss, radius=radius, &
                                mask2=m2, reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
-                               filt_method=filt_method, filt_par=fpar, verbose=verbose)
+                               filt_method=filt_method, filt_par=fpar, verbose=verbose, &
+                               norm=norm, frac2=frac2, area1=area1, area2=area2)
 
         var2 = real(v2, sp)
         if (present(mask2)) mask2 = m2
@@ -1562,7 +1625,7 @@ contains
     end subroutine map_field_points_grid_int
 
     subroutine map_field_grid_points_sp(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                        reset, mask_pack)
+                                        reset, mask_pack, norm, frac2, area1, area2)
         ! source on a grid (2D), target a point set (1D); sp store.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1575,8 +1638,12 @@ contains
         logical,          optional, intent(out) :: mask2(:)
         logical,          optional, intent(in)  :: reset
         logical,          optional, intent(in)  :: mask_pack(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:)
+        real(dp),         optional, intent(in)  :: area1(:,:)
+        real(dp),         optional, intent(in)  :: area2(:)
 
-        real(dp), allocatable :: v1(:), v2(:)
+        real(dp), allocatable :: v1(:), v2(:), a1v(:)
         logical,  allocatable :: m2(:)
         real(dp) :: miss
 
@@ -1590,8 +1657,10 @@ contains
         miss = mv_dp
         if (present(missing_value)) miss = real(missing_value, dp)
 
+        if (present(area1)) a1v = reshape(area1, [size(area1)])
         call map_field_to_points(map, name, v1, v2, stat=stat, method=method, missing_value=miss, radius=radius, &
-                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+                                 mask2=m2, reset=reset, mask_pack=mask_pack, &
+                                 norm=norm, frac2=frac2, area1=a1v, area2=area2)
 
         var2 = real(v2, sp)
         if (present(mask2)) mask2 = m2
@@ -1636,7 +1705,7 @@ contains
     end subroutine map_field_grid_points_int
 
     subroutine map_field_points_points_sp(map, name, var1, var2, stat, method, missing_value, radius, mask2, &
-                                          reset, mask_pack)
+                                          reset, mask_pack, norm, frac2, area1, area2)
         ! source a point set (1D), target a point set (1D); sp store.
         type(map_class),  intent(in)    :: map
         character(len=*), intent(in)    :: name
@@ -1649,6 +1718,10 @@ contains
         logical,          optional, intent(out) :: mask2(:)
         logical,          optional, intent(in)  :: reset
         logical,          optional, intent(in)  :: mask_pack(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp),         optional, intent(out) :: frac2(:)
+        real(dp),         optional, intent(in)  :: area1(:)
+        real(dp),         optional, intent(in)  :: area2(:)
 
         real(dp), allocatable :: v1(:), v2(:)
         logical,  allocatable :: m2(:)
@@ -1665,7 +1738,8 @@ contains
         if (present(missing_value)) miss = real(missing_value, dp)
 
         call map_field_to_points(map, name, v1, v2, stat=stat, method=method, missing_value=miss, radius=radius, &
-                                 mask2=m2, reset=reset, mask_pack=mask_pack)
+                                 mask2=m2, reset=reset, mask_pack=mask_pack, &
+                                 norm=norm, frac2=frac2, area1=area1, area2=area2)
 
         var2 = real(v2, sp)
         if (present(mask2)) mask2 = m2
@@ -1711,11 +1785,61 @@ contains
 
     ! ----- apply dispatch (bilinear handled here; rest delegate to weight_map) -
 
-    subroutine map_apply_vec(map, var1, var2, kernel, stat, missing_value, radius, mask2)
+    subroutine map_apply_vec(map, var1, var2, kernel, stat, missing_value, radius, mask2, &
+                             norm, frac2, area1, area2)
         ! Apply the map. `kernel` is the (already resolved) interpolation kernel
         ! and `stat` the aggregation. A baked MAP_WEIGHT map applies its stored
         ! weights (kernel only validated, not re-applied); a MAP_DISTANCE map
         ! builds weights from `kernel` over its neighbor store.
+        ! norm /= "frac" and frac2 use the coverage payload of a conservative
+        ! map (coords generator); on a non-conservative map norm /= "frac" is an
+        ! error and frac2 is the indicator merge(1,0,mask2).
+        type(map_class),  intent(in)  :: map
+        real(dp),         intent(in)  :: var1(:)
+        real(dp),         intent(out) :: var2(:)
+        character(len=*), intent(in)  :: kernel
+        character(len=*), intent(in)  :: stat
+        real(dp), optional, intent(in)  :: missing_value
+        real(dp), optional, intent(in)  :: radius
+        logical,  optional, intent(out) :: mask2(:)
+        character(len=*), optional, intent(in)  :: norm
+        real(dp), optional, intent(out) :: frac2(:)
+        real(dp), optional, intent(in)  :: area1(:), area2(:)
+        character(len=32) :: nrm
+        logical, allocatable :: m2(:)
+
+        nrm = "frac"
+        if (present(norm)) nrm = trim(norm)
+        if (trim(nrm) /= "frac" .or. present(frac2)) then
+            if (map%wm%kind == MAP_WEIGHT .and. trim(map%method) == "con") then
+                if (.not. weight_map_has_coverage(map%wm)) &
+                    call fesm_error("map_field", "map "//trim(map%name1)//" -> "//trim(map%name2)// &
+                        " has no coverage data, needed for norm='"//trim(nrm)//"' / frac2.", &
+                        "file = "//trim(map%file)//new_line("a")// &
+                        "A cdo-generated map, or a cache file written before coverage was stored:"// &
+                        new_line("a")//"regenerate "//trim(map%file)//" (delete it; gen='coords').")
+                call weight_map_apply(map%wm, var1, var2, stat=stat, missing_value=missing_value, &
+                                      radius=radius, mask2=mask2, norm=norm, frac2=frac2, &
+                                      area1=area1, area2=area2)
+                return
+            end if
+            if (trim(nrm) /= "frac") &
+                call fesm_error("map_field", "norm='"//trim(nrm)//"' needs a conservative map ('con'); "// &
+                    "map "//trim(map%name1)//" -> "//trim(map%name2)//" has method '"//trim(map%method)//"'.")
+            ! frac2 on a non-conservative map: the mapped indicator
+            allocate(m2(size(var2)))
+            call map_apply_kernel(map, var1, var2, kernel, stat, missing_value, radius, m2)
+            frac2 = merge(1.0_dp, 0.0_dp, m2)
+            if (present(mask2)) mask2 = m2
+            return
+        end if
+
+        call map_apply_kernel(map, var1, var2, kernel, stat, missing_value, radius, mask2)
+    end subroutine map_apply_vec
+
+    subroutine map_apply_kernel(map, var1, var2, kernel, stat, missing_value, radius, mask2)
+        ! The plain apply (norm="frac"): baked weights, or the kernel on a
+        ! distance store.
         type(map_class),  intent(in)  :: map
         real(dp),         intent(in)  :: var1(:)
         real(dp),         intent(out) :: var2(:)
@@ -1738,7 +1862,7 @@ contains
                                       missing_value=missing_value, radius=radius, mask2=mask2)
             end if
         end if
-    end subroutine map_apply_vec
+    end subroutine map_apply_kernel
 
     function map_resolve_kernel(map, method) result(kernel)
         ! Resolve the effective interpolation kernel for an apply call: the

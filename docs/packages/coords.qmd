@@ -122,7 +122,11 @@ arguments to the grid→grid form:
   `shepard`/`bilinear` (default `.true.`); the on-disk cache stays
   distance-format either way.
 - `weight_cutoff` — relative cutoff for pruning sliver links from baked
-  (`con`/bilinear) maps before caching (default `1e-4`; `0.0` keeps all links).
+  (`con`/bilinear) maps before caching: per target, links below
+  `weight_cutoff·max(w)` are dropped (default `1e-4`; `0.0` keeps all links).
+  The largest link of a target always survives; the coverage removed is kept
+  (see *Normalisation and coverage*).
+- `on_mismatch`, `hash_names` — cache identity, see *CDO interop and map caching*.
 
 `map_field` is generic over the field element type (`integer`, `sp`, `dp`) and
 over grid/points sources and targets. Beyond `stat` it accepts `method` (kernel
@@ -130,6 +134,45 @@ override for distance maps), `missing_value`, `radius`, `mask2`, `reset`,
 `mask_pack`, and optional fill/filter post-processing (`fill_method`,
 `filt_method`, `filt_par`). The `stat` argument selects the reduction over each
 target's links: `"mean"` (default), `"count"` (weighted mode), or `"stdev"`.
+The 8 real specifics also take `norm`, `frac2`, `area1` and `area2` (below).
+
+### Normalisation and coverage
+
+A conservative map made by the coords generator carries, besides its link
+weights `w_jk` (overlap area in the map metric of the generator), the full cell
+areas of source and target (`wfull_src`, `wfull_dst`) and the link sums before
+pruning (`wcov_src`, `wcov_dst`), all in that metric; they are written to the
+cache as `mp_wfull_*`, `mp_wcov_*`. With them, for target `k` and its valid
+links `V_k` (`w > 0`, source value not missing), and
+`φ_jk = q_j·w_jk/wfull_src_j` the fraction of source cell `j` lying in `k`
+(`q`, `r` restore what pruning removed):
+
+| Argument | Value at target `k` |
+|---|---|
+| `frac2` (`real(dp)`, target shape) | covered fraction `min(1, r_k·Σ_V w / wfull_dst_k)`; 0 where nothing valid is linked, outside `mask_pack`, or not mapped |
+| `norm="frac"` (default) | `Σ_V w v / Σ_V w`: the covered mean (unchanged path) |
+| `norm="dst"` | `r_k·Σ_V w v / wfull_dst_k` = `frac2·mean` (map metric) |
+| `norm="dst"`, `area1` + `area2` | `Σ_V φ_jk·area1_j·v_j / area2_k`, exact in the model metric |
+| `norm="sum"` | `Σ_V φ_jk·α_j·v_j`, `α = area1` if present, else 1 (amount per target) |
+
+`area1` (source shape) and `area2` (target shape) are the model cell areas
+(`real(dp)`). With `norm="dst"` and both areas, `Σ_k area2_k·v2_k =
+Σ_j area1_j·v_j·Σ_k φ_jk` for any choice of areas: for a target that covers
+the source, the integral is preserved. Rules: `norm /= "frac"` needs
+`stat="mean"` and a conservative map (else an error); `frac2` on a
+non-conservative map is `merge(1,0,mask2)`; `area1` without `area2` (or the
+reverse) with `norm="dst"` is an error; fill/filter post-processing does not
+change `frac2`. A `con` map without coverage data (a `cdo` map, or a cache file
+written before coverage was stored) stops with "regenerate <file>" when `norm`
+or `frac2` is requested. The 4 `int` specifics take none of these.
+
+Limitation of `conservative_spherical` (projected source → lat-lon/Gauss
+target): the target cell polygon is concave along its poleward parallel edge
+(subsampled great-circle chords), and the Sutherland-Hodgman clip loses a
+sliver there (about 0.2 % of the cell at 70°S for 1° cells), so `Σ_k φ_jk` is
+slightly below 1 even for a global target. Projected source cells that
+straddle the 0/360 meridian are mis-built (corner longitudes interpolated the
+long way round).
 
 ## Remapping kernels
 
@@ -236,15 +279,16 @@ call remap(cpl, fs, "coarse", ft, "fine", method="bilin")
   disk" slot and reused. Registering a name that is already a from-disk slot
   is a no-op if the grids agree and an error otherwise.
 - `remap(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2,
-  reset, mask_pack, fill_method, filt_method, filt_par)` finds-or-builds the map
+  reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)` finds-or-builds the map
   for `(src, dst, method)`, allocates `var_dst` to the target size, and applies
   it with `map_field`, to which the optional arguments are passed unchanged. It
   is overloaded for `dp` / `sp` / `int` and 2D / 3D fields (the `int`
-  specifics take `missing_value, mask2, reset, mask_pack`; for 3D, `mask2` is
-  3D and the map is applied per layer). With `reset=.false.`, `var_dst` must
+  specifics take `missing_value, mask2, reset, mask_pack`; for 3D, `mask2` and
+  `frac2` are 3D and the map is applied per layer). With `reset=.false.`, `var_dst` must
   already be allocated at the target shape. `method` is part of the cache key;
   `stat` and the rest are forwarded per call and are not.
-- `method="auto"` resolves per call: `"bilin"` when the target is finer than
+- `method="auto"` resolves per call: `"con"` for `norm="dst"`/`"sum"`
+  (amounts are remapped conservatively both ways); otherwise `"bilin"` when the target is finer than
   the source (smaller median model cell area, i.e. refining) and `"con"` when
   it is coarser or equal. The model cell area is the plane `dx·dy` for a
   projected grid and `grid%area·xy_conv²` otherwise.

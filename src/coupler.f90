@@ -395,7 +395,7 @@ contains
     ! ----- remap: 2D ---------------------------------------------------------
 
     subroutine remap_2D_dp(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
-                           reset, mask_pack, fill_method, filt_method, filt_par)
+                           reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)
         type(coupler_class),   intent(inout) :: cpl
         real(dp),              intent(in)    :: var_src(:,:)
         character(len=*),      intent(in)    :: src, dst
@@ -407,23 +407,26 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(dp),         intent(in),  optional :: filt_par(:)
+        character(len=*), intent(in),  optional :: norm
+        real(dp),         intent(out), optional :: frac2(:,:)
         integer :: im
 
         if (trim(src) == trim(dst)) then
             call size_dst(size(var_src,1), size(var_src,2), 1, reset, var_dst_2D=var_dst)
             call identity_2D(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                             fill_method, filt_method, filt_par)
+                             fill_method, filt_method, filt_par, frac2)
             return
         end if
-        im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method))
+        im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method, norm))
         call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, 1, reset, var_dst_2D=var_dst)
         call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
                        missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
-                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par)
+                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                       norm=norm, frac2=frac2)
     end subroutine remap_2D_dp
 
     subroutine remap_2D_sp(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
-                           reset, mask_pack, fill_method, filt_method, filt_par)
+                           reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)
         type(coupler_class),   intent(inout) :: cpl
         real(sp),              intent(in)    :: var_src(:,:)
         character(len=*),      intent(in)    :: src, dst
@@ -435,19 +438,22 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(sp),         intent(in),  optional :: filt_par(:)
+        character(len=*), intent(in),  optional :: norm
+        real(dp),         intent(out), optional :: frac2(:,:)
         integer :: im
 
         if (trim(src) == trim(dst)) then
             call size_dst(size(var_src,1), size(var_src,2), 1, reset, var_dst_2D_sp=var_dst)
             call identity_2D_sp(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                                fill_method, filt_method, filt_par)
+                                fill_method, filt_method, filt_par, frac2)
             return
         end if
-        im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method))
+        im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method, norm))
         call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, 1, reset, var_dst_2D_sp=var_dst)
         call map_field(cpl%maps(im)%map, "coupler", var_src, var_dst, stat=stat, &
                        missing_value=missing_value, mask2=mask2, reset=reset, mask_pack=mask_pack, &
-                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par)
+                       fill_method=fill_method, filt_method=filt_method, filt_par=filt_par, &
+                       norm=norm, frac2=frac2)
     end subroutine remap_2D_sp
 
     subroutine remap_2D_int(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
@@ -475,9 +481,13 @@ contains
     end subroutine remap_2D_int
 
     ! ----- remap: 3D (the 2D map applied per layer) ------------------------------
+    !
+    ! Each layer goes through the 2D specific (one map lookup per layer, after
+    ! the first a cache hit); mask2 / frac2 are gathered per layer through 2D
+    ! work arrays (unallocated when absent, so they are passed on as absent).
 
     subroutine remap_3D_dp(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
-                           reset, mask_pack, fill_method, filt_method, filt_par)
+                           reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)
         type(coupler_class),   intent(inout) :: cpl
         real(dp),              intent(in)    :: var_src(:,:,:)
         character(len=*),      intent(in)    :: src, dst
@@ -489,40 +499,30 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(dp),         intent(in),  optional :: filt_par(:)
-        integer :: im, nz, k
-        logical :: identity
+        character(len=*), intent(in),  optional :: norm
+        real(dp),         intent(out), optional :: frac2(:,:,:)
+        integer :: nx, ny, nz, k
+        real(dp), allocatable :: v2(:,:), f2(:,:)
+        logical,  allocatable :: m2(:,:)
 
+        call target_shape(cpl, src, dst, size(var_src,1), size(var_src,2), method, norm, nx, ny)
         nz = size(var_src, 3)
-        identity = trim(src) == trim(dst)
-        if (identity) then
-            call size_dst(size(var_src,1), size(var_src,2), nz, reset, var_dst_3D=var_dst)
-        else
-            im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method))
-            call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, nz, reset, var_dst_3D=var_dst)
-        end if
+        call size_dst(nx, ny, nz, reset, var_dst_3D=var_dst)
+        allocate(v2(nx,ny))
+        if (present(mask2)) allocate(m2(nx,ny))
+        if (present(frac2)) allocate(f2(nx,ny))
         do k = 1, nz
-            if (identity .and. present(mask2)) then
-                call identity_2D(var_src(:,:,k), var_dst(:,:,k), stat, missing_value, mask2(:,:,k), &
-                                 reset, mask_pack, fill_method, filt_method, filt_par)
-            else if (identity) then
-                call identity_2D(var_src(:,:,k), var_dst(:,:,k), stat, missing_value, &
-                                 reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
-                                 filt_method=filt_method, filt_par=filt_par)
-            else if (present(mask2)) then
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, mask2=mask2(:,:,k), reset=reset, &
-                               mask_pack=mask_pack, fill_method=fill_method, filt_method=filt_method, &
-                               filt_par=filt_par)
-            else
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, reset=reset, mask_pack=mask_pack, &
-                               fill_method=fill_method, filt_method=filt_method, filt_par=filt_par)
-            end if
+            v2 = var_dst(:,:,k)
+            call remap_2D_dp(cpl, var_src(:,:,k), src, v2, dst, method, stat, missing_value, m2, &
+                             reset, mask_pack, fill_method, filt_method, filt_par, norm, f2)
+            var_dst(:,:,k) = v2
+            if (present(mask2)) mask2(:,:,k) = m2
+            if (present(frac2)) frac2(:,:,k) = f2
         end do
     end subroutine remap_3D_dp
 
     subroutine remap_3D_sp(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, &
-                           reset, mask_pack, fill_method, filt_method, filt_par)
+                           reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)
         type(coupler_class),   intent(inout) :: cpl
         real(sp),              intent(in)    :: var_src(:,:,:)
         character(len=*),      intent(in)    :: src, dst
@@ -534,35 +534,26 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(sp),         intent(in),  optional :: filt_par(:)
-        integer :: im, nz, k
-        logical :: identity
+        character(len=*), intent(in),  optional :: norm
+        real(dp),         intent(out), optional :: frac2(:,:,:)
+        integer :: nx, ny, nz, k
+        real(sp), allocatable :: v2(:,:)
+        real(dp), allocatable :: f2(:,:)
+        logical,  allocatable :: m2(:,:)
 
+        call target_shape(cpl, src, dst, size(var_src,1), size(var_src,2), method, norm, nx, ny)
         nz = size(var_src, 3)
-        identity = trim(src) == trim(dst)
-        if (identity) then
-            call size_dst(size(var_src,1), size(var_src,2), nz, reset, var_dst_3D_sp=var_dst)
-        else
-            im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method))
-            call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, nz, reset, var_dst_3D_sp=var_dst)
-        end if
+        call size_dst(nx, ny, nz, reset, var_dst_3D_sp=var_dst)
+        allocate(v2(nx,ny))
+        if (present(mask2)) allocate(m2(nx,ny))
+        if (present(frac2)) allocate(f2(nx,ny))
         do k = 1, nz
-            if (identity .and. present(mask2)) then
-                call identity_2D_sp(var_src(:,:,k), var_dst(:,:,k), stat, missing_value, mask2(:,:,k), &
-                                    reset, mask_pack, fill_method, filt_method, filt_par)
-            else if (identity) then
-                call identity_2D_sp(var_src(:,:,k), var_dst(:,:,k), stat, missing_value, &
-                                    reset=reset, mask_pack=mask_pack, fill_method=fill_method, &
-                                    filt_method=filt_method, filt_par=filt_par)
-            else if (present(mask2)) then
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, mask2=mask2(:,:,k), reset=reset, &
-                               mask_pack=mask_pack, fill_method=fill_method, filt_method=filt_method, &
-                               filt_par=filt_par)
-            else
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, reset=reset, mask_pack=mask_pack, &
-                               fill_method=fill_method, filt_method=filt_method, filt_par=filt_par)
-            end if
+            v2 = var_dst(:,:,k)
+            call remap_2D_sp(cpl, var_src(:,:,k), src, v2, dst, method, stat, missing_value, m2, &
+                             reset, mask_pack, fill_method, filt_method, filt_par, norm, f2)
+            var_dst(:,:,k) = v2
+            if (present(mask2)) mask2(:,:,k) = m2
+            if (present(frac2)) frac2(:,:,k) = f2
         end do
     end subroutine remap_3D_sp
 
@@ -577,43 +568,49 @@ contains
         logical,          intent(out), optional :: mask2(:,:,:)
         logical,          intent(in),  optional :: reset
         logical,          intent(in),  optional :: mask_pack(:,:)
-        integer :: im, nz, k
-        logical :: identity
+        integer :: nx, ny, nz, k
+        integer, allocatable :: v2(:,:)
+        logical, allocatable :: m2(:,:)
 
+        call target_shape(cpl, src, dst, size(var_src,1), size(var_src,2), method, nx=nx, ny=ny)
         nz = size(var_src, 3)
-        identity = trim(src) == trim(dst)
-        if (identity) then
-            call size_dst(size(var_src,1), size(var_src,2), nz, reset, var_dst_3D_int=var_dst)
-        else
-            im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method))
-            call size_dst(cpl%maps(im)%map%G%nx, cpl%maps(im)%map%G%ny, nz, reset, var_dst_3D_int=var_dst)
-        end if
+        call size_dst(nx, ny, nz, reset, var_dst_3D_int=var_dst)
+        allocate(v2(nx,ny))
+        if (present(mask2)) allocate(m2(nx,ny))
         do k = 1, nz
-            if (identity .and. present(mask2)) then
-                call identity_2D_int(var_src(:,:,k), var_dst(:,:,k), missing_value, mask2(:,:,k), &
-                                     reset, mask_pack)
-            else if (identity) then
-                call identity_2D_int(var_src(:,:,k), var_dst(:,:,k), missing_value, &
-                                     reset=reset, mask_pack=mask_pack)
-            else if (present(mask2)) then
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, mask2=mask2(:,:,k), reset=reset, &
-                               mask_pack=mask_pack)
-            else
-                call map_field(cpl%maps(im)%map, "coupler", var_src(:,:,k), var_dst(:,:,k), stat=stat, &
-                               missing_value=missing_value, reset=reset, mask_pack=mask_pack)
-            end if
+            v2 = var_dst(:,:,k)
+            call remap_2D_int(cpl, var_src(:,:,k), src, v2, dst, method, stat, missing_value, m2, &
+                              reset, mask_pack)
+            var_dst(:,:,k) = v2
+            if (present(mask2)) mask2(:,:,k) = m2
         end do
     end subroutine remap_3D_int
+
+    subroutine target_shape(cpl, src, dst, nxs, nys, method, norm, nx, ny)
+        ! Target shape of a remap: the source shape (nxs, nys) for src == dst,
+        ! else the target grid of the (src, dst, method) map (built if needed).
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: src, dst
+        integer,             intent(in)    :: nxs, nys
+        character(len=*), intent(in), optional :: method, norm
+        integer,             intent(out)   :: nx, ny
+        integer :: im
+        if (trim(src) == trim(dst)) then
+            nx = nxs; ny = nys
+        else
+            im = get_map(cpl, src, dst, resolve_method(cpl, src, dst, method, norm))
+            nx = cpl%maps(im)%map%G%nx; ny = cpl%maps(im)%map%G%ny
+        end if
+    end subroutine target_shape
 
     ! ----- identity shortcut (src == dst) --------------------------------------
 
     subroutine identity_2D(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                           fill_method, filt_method, filt_par)
+                           fill_method, filt_method, filt_par, frac2)
         ! remap of a grid onto itself: copy the valid values into var_dst
         ! (already sized). A self-map has one link per target, so mean and
         ! count are the value and stdev is 0. mask_pack, reset and the fill /
-        ! filter post-processing apply as in map_field.
+        ! filter post-processing apply as in map_field; frac2 = merge(1,0,mask2).
         real(dp),         intent(in)    :: var_src(:,:)
         real(dp),         intent(inout) :: var_dst(:,:)
         character(len=*), intent(in),  optional :: stat
@@ -623,6 +620,7 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(dp),         intent(in),  optional :: filt_par(:)
+        real(dp),         intent(out), optional :: frac2(:,:)
 
         real(dp) :: miss
         logical  :: reset_pts
@@ -648,6 +646,7 @@ contains
             end if
         end if
         if (present(mask2)) mask2 = m
+        if (present(frac2)) frac2 = merge(1.0_dp, 0.0_dp, m)
 
         if (present(fill_method) .or. present(filt_method)) &
             call map_postprocess(var_dst, miss, maskp, "coupler", fill_method=fill_method, &
@@ -655,7 +654,7 @@ contains
     end subroutine identity_2D
 
     subroutine identity_2D_sp(var_src, var_dst, stat, missing_value, mask2, reset, mask_pack, &
-                              fill_method, filt_method, filt_par)
+                              fill_method, filt_method, filt_par, frac2)
         ! sp identity: in dp, stored back in sp (as map_field's sp wrappers do).
         real(sp),         intent(in)    :: var_src(:,:)
         real(sp),         intent(inout) :: var_dst(:,:)
@@ -666,6 +665,7 @@ contains
         logical,          intent(in),  optional :: mask_pack(:,:)
         character(len=*), intent(in),  optional :: fill_method, filt_method
         real(sp),         intent(in),  optional :: filt_par(:)
+        real(dp),         intent(out), optional :: frac2(:,:)
 
         real(dp), allocatable :: v1(:,:), v2(:,:), miss, fpar(:)
 
@@ -678,7 +678,7 @@ contains
         if (present(missing_value)) miss = real(missing_value, dp)
         if (present(filt_par)) fpar = real(filt_par, dp)
         ! unallocated miss / fpar are passed on as absent
-        call identity_2D(v1, v2, stat, miss, mask2, reset, mask_pack, fill_method, filt_method, fpar)
+        call identity_2D(v1, v2, stat, miss, mask2, reset, mask_pack, fill_method, filt_method, fpar, frac2)
         var_dst = real(v2, sp)
     end subroutine identity_2D_sp
 

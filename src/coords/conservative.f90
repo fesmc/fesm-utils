@@ -159,6 +159,7 @@ contains
         integer,  allocatable :: cidx(:)
         real(dp), allocatable :: cd2(:)
         logical,  allocatable :: need(:)                    ! source cell is a candidate of some target
+        real(dp), allocatable :: wfull_src(:)               ! full source-cell area in the target plane
         type(link_buf), allocatable :: bufs(:)
 
         same_sys   = compare_coord(grid1, grid2) .and. grid2%cs%is_cartesian
@@ -193,7 +194,8 @@ contains
         else
             nsv = 4
         end if
-        allocate(scornx(nsv, n1), scorny(nsv, n1))
+        allocate(scornx(nsv, n1), scorny(nsv, n1), wfull_src(n1))
+        wfull_src = 0.0_dp
         if (same_sys) then
             allocate(emb(2, n1))
         else
@@ -206,6 +208,7 @@ contains
                 if (same_sys) then
                     call cell_corners_grid(grid1, ic, jc, lx, ly)
                     scornx(:,cs) = lx; scorny(:,cs) = ly
+                    wfull_src(cs) = polygon_area(lx, ly)
                     emb(1,cs) = grid1%x(ic,jc); emb(2,cs) = grid1%y(ic,jc)
                     d = sqrt((maxval(scornx(:,cs))-minval(scornx(:,cs)))**2 &
                            + (maxval(scorny(:,cs))-minval(scorny(:,cs)))**2)
@@ -290,6 +293,7 @@ contains
                             scornx(k,cs) = px/xyc; scorny(k,cs) = py/xyc
                         end do
                     end do
+                    wfull_src(cs) = polygon_area(scornx(:,cs), scorny(:,cs))
                 end do
             end do
             deallocate(need)
@@ -333,8 +337,19 @@ contains
 
         call bufs_to_wm(wm, bufs, n1, n2)
 
+        ! Coverage payload: full cell areas in the target plane (the map metric)
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        wm%wfull_src = wfull_src
+        do j = 1, ny2
+            do i = 1, nx2
+                call cell_corners_grid(grid2, i, j, tcx, tcy)
+                wm%wfull_dst((j-1)*nx2 + i) = polygon_area(tcx, tcy)
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         call kdtree_free(tree)
-        deallocate(emb, scornx, scorny, bufs)
+        deallocate(emb, scornx, scorny, bufs, wfull_src)
     end subroutine conservative_planar
 
     subroutine conservative_spherical(wm, grid1, grid2)
@@ -356,6 +371,7 @@ contains
         real(dp), allocatable :: sv(:,:), cv(:,:), ov(:,:)
         real(dp) :: olon(64), olat(64)
         type(link_buf), allocatable :: bufs(:)
+        logical,  allocatable :: linked(:)
         real(dp) :: cx, cy, cz
 
         nx1 = grid1%G%nx; ny1 = grid1%G%ny; n1 = nx1*ny1
@@ -433,9 +449,45 @@ contains
 
         call bufs_to_wm(wm, bufs, n1, n2)
 
+        ! Coverage payload: full cell areas (planet_area of the same great-circle
+        ! polygons that are clipped; the map metric). Sources only where linked.
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2), linked(n1))
+        wm%wfull_src = 0.0_dp
+        linked = .false.
+        linked(wm%src(1:wm%n_links)) = .true.
+        !$omp parallel do default(shared) schedule(guided) private(cs, ic, jc, sv)
+        do cs = 1, n1
+            if (.not. linked(cs)) cycle
+            ic = mod(cs-1, nx1) + 1; jc = (cs-1)/nx1 + 1
+            call build_sphere_poly(slon(:,cs), slat(:,cs), grid1%lon(ic,jc), grid1%lat(ic,jc), sv)
+            wm%wfull_src(cs) = sphere_poly_area(sv, a, f)
+        end do
+        !$omp end parallel do
+        !$omp parallel do default(shared) schedule(guided) collapse(2) private(i, j, tlon, tlat, cv)
+        do j = 1, ny2
+            do i = 1, nx2
+                call cell_corners_lonlat(grid2, i, j, tlon, tlat)
+                call build_sphere_poly(tlon, tlat, grid2%lon(i,j), grid2%lat(i,j), cv)
+                wm%wfull_dst((j-1)*nx2 + i) = sphere_poly_area(cv, a, f)
+            end do
+        end do
+        !$omp end parallel do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         call kdtree_free(tree)
-        deallocate(emb, slon, slat, bufs)
+        deallocate(emb, slon, slat, bufs, linked)
     end subroutine conservative_spherical
+
+    real(dp) function sphere_poly_area(verts, a, f) result(area)
+        ! Area on the planet (a, f) of a polygon given as unit vectors.
+        real(dp), intent(in) :: verts(:,:), a, f
+        real(dp) :: plon(size(verts,2)), plat(size(verts,2))
+        integer  :: nv
+        do nv = 1, size(verts,2)
+            call xyz_to_lonlat(verts(1,nv), verts(2,nv), verts(3,nv), plon(nv), plat(nv))
+        end do
+        area = planet_area(a, f, plon, plat)
+    end function sphere_poly_area
 
     subroutine lon_edges(grid, xe)
         ! Longitude cell edges (0:nx) of a lat-lon / Gaussian grid for the
@@ -586,6 +638,21 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
+
+        ! Coverage payload: full cells in the same metric (deg * sin-band)
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        do j1 = 1, ny1
+            do i1 = 1, nx1
+                wm%wfull_src((j1-1)*nx1 + i1) = abs(sxe(i1) - sxe(i1-1))*abs(ssin(j1) - ssin(j1-1))
+            end do
+        end do
+        do j2 = 1, ny2
+            do i2 = 1, nx2
+                wm%wfull_dst((j2-1)*nx2 + i2) = abs(txe(i2) - txe(i2-1))*abs(tsin(j2) - tsin(j2-1))
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         deallocate(sxe, sye, txe, tye, ssin, tsin, bufs)
         deallocate(lon_off, lon_i1, lon_w, lat_off, lat_j1, lat_w)
     end subroutine conservative_latlon
@@ -705,6 +772,21 @@ contains
         !$omp end parallel
 
         call bufs_to_wm(wm, bufs, n1, n2)
+
+        ! Coverage payload: full cell areas in the shared plane
+        allocate(wm%wfull_src(n1), wm%wfull_dst(n2))
+        do j1 = 1, ny1
+            do i1 = 1, nx1
+                wm%wfull_src((j1-1)*nx1 + i1) = abs(sxe(i1) - sxe(i1-1))*abs(sye(j1) - sye(j1-1))
+            end do
+        end do
+        do j2 = 1, ny2
+            do i2 = 1, nx2
+                wm%wfull_dst((j2-1)*nx2 + i2) = abs(txe(i2) - txe(i2-1))*abs(tye(j2) - tye(j2-1))
+            end do
+        end do
+        call weight_map_coverage(wm, set_cov=.true.)
+
         deallocate(sxe, sye, txe, tye, bufs)
         deallocate(x_off, x_i1, x_w, y_off, y_j1, y_w)
     end subroutine conservative_planar_reg

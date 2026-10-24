@@ -26,10 +26,22 @@ All notable changes to fesm-utils are documented here.
   not match the grids. Opt-in `hash_names=.true.` (`map_init`, `coupler_init`) tags the
   file names with `grid_hash8`. New module `grid_signature` (`grid_signature_str`,
   `grid_signature_match`, `grid_hash8`). `make check` runs `test_grid_signature`.
+- **coords**: normalisation and coverage for conservative maps. The coords generator
+  stores the full cell areas and pre-prune link sums (`wfull_src/dst`, `wcov_src/dst` in
+  `weight_map_t`, `mp_wfull_*`/`mp_wcov_*` in the cache). `weight_map_apply` and the 8 real
+  `map_field` specifics take `norm` (`"frac"` default | `"dst"` | `"sum"`), `frac2`
+  (covered fraction, `real(dp)`), `area1`, `area2` (model cell areas). Default paths are
+  unchanged. `coupler::remap` (dp/sp) passes `norm` and `frac2` through; `method="auto"`
+  resolves to `con` for `norm /= "frac"`. `make check` runs `test_coupler_global`.
 - **test**: `test_coupler_bitident` + `test/coords/bitident.sh <ref-commit>`, a bit-identity
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **coords**: `weight_map_prune` drops links below `cutoff·max(w)` of their target (was
+  `cutoff·Σw`, which drops every link of a target with more than `1/cutoff` near-equal
+  links). Changes newly generated `con`/bilinear maps where slivers were dropped (in the
+  bit-identity harness: the lat-lon <-> polar-stereographic `con` maps and a polar-
+  stereographic -> lat-lon `bilin` map); existing cache files load unchanged.
 - **coupler**: no fixed capacity (`GRID_MAX`/`MAP_MAX` removed); grids and maps live in
   slot arrays that grow by moving their components, and maps are built from the
   registered grids without copying them. A grid read from `grid_<name>.txt` is read once.

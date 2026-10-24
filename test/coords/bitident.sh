@@ -12,7 +12,11 @@
 #   gen    - both runs start from an empty map folder (maps generated);
 #   cached - both runs load the map cache that the reference run generated
 #            (the apply path on identical map files).
-# Exit status 0 when every stream is identical in both comparisons.
+# Exit status 0 when every stream is identical in the compared modes.
+# BITIDENT_MODES selects them (default "gen cached"). Across a change that
+# alters newly generated maps by design (the prune criterion fix, see
+# docs/dev/coupler-global-design.md 1.2), only "cached" is expected identical
+# against a reference before it: BITIDENT_MODES=cached.
 # Set BITIDENT_KEEP=1 to keep the scratch directory.
 
 set -euo pipefail
@@ -92,7 +96,8 @@ run "$scratch/head.x" "$scratch/head_gen"
 run "$scratch/head.x" "$scratch/head_cached" "$scratch/ref_gen/bitident_maps"
 
 rc=0
-compare gen    "$scratch/ref_gen"    "$scratch/head_gen"    || rc=1
-compare cached "$scratch/ref_cached" "$scratch/head_cached" || rc=1
+for mode in ${BITIDENT_MODES:-gen cached}; do
+    compare "$mode" "$scratch/ref_$mode" "$scratch/head_$mode" || rc=1
+done
 [ $rc -eq 0 ] && echo "bitident: PASS" || echo "bitident: FAIL"
 exit $rc
