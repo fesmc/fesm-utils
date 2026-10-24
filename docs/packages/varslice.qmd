@@ -69,6 +69,7 @@ The main object: parameters plus the loaded coordinates, time axis and data.
 | `dim(:)` | `integer`, alloc. | Size of each dimension of the variable |
 | `x(:)`, `y(:)`, `z(:)` | `real(wp)`, alloc. | Spatial coordinate axes |
 | `time(:)`, `time_sub(:)` | `real(dp)`/`real(wp)`, alloc. | Full time axis and sub-annual index |
+| `time_bnds(:,:)` | `real(dp)`, alloc. | `(2,nt)`: the CF bounds of a time axis from the file, when every file has them |
 | `idx(:)` | `integer`, alloc. | Indices selected on the last update |
 | `var(:,:,:,:)` | `real(wp)`, alloc. | The sliced data field `(x,y,z,time)` |
 
@@ -145,7 +146,16 @@ subroutine varslice_update(vs, time, method, fill, rep, print_summary)
   of bounds.
 - `"range_mean"`, `"range_min"`, `"range_max"`, `"range_sd"`, `"range_sum"` —
   a single slice computed as the mean / min / max / standard deviation / sum
-  over `[t0,t1]`.
+  over `[t0,t1]`: equal weights over the samples in the closed range (both ends
+  counted); it fails when none is inside.
+- `"interval_mean"` — the overlap-weighted mean over `[t0,t1]` of the file's
+  piecewise representation: cell means over the CF time bounds (`time_bnds`,
+  when the time variable has a `bounds` attribute), else the linear
+  interpolant between the samples, with partial segments at both ends. The part
+  of `[t0,t1]` outside the axis holds the first or last sample. A single time
+  gives the value there. With `rep = n_sub` each sub-annual step is averaged
+  over the years, a year's step standing for `[year, year+1)` (so a calendar
+  year gives exactly its cycle). Missing values are left out of the weights.
 
 **`rep`** (stored as `range_rep`) is the frequency at which a range method is
 applied. `rep=1` reduces the whole range to one value; `rep=12` applies the

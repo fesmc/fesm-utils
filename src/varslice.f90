@@ -96,6 +96,7 @@ module varslice
         real(wp), allocatable :: z(:)  
         real(dp), allocatable :: time(:)
         real(dp), allocatable :: time_sub(:)
+        real(dp), allocatable :: time_bnds(:,:)   ! (2,nt): CF bounds of a file axis, if any
         integer, allocatable  :: idx(:)
         integer, allocatable  :: nt_files(:)   ! per-file time length (cached at init)
 
@@ -479,6 +480,12 @@ contains
         ! "range_*" methods return one time slice with the method applied to the data within the 
         ! range given by `time`. The range must lie within the time axis of the file, else
         ! an error is raised.
+        ! "interval_mean" returns the overlap-weighted mean over [t0,t1] of the file's
+        ! piecewise representation: cell means over the CF time bounds (time_bnds) when the
+        ! file has them, else the linear interpolant between the samples, with partial
+        ! segments at both ends; the part of [t0,t1] outside the axis holds the first or
+        ! last sample. With rep = nsub (> 1) each sub-annual step is averaged over the years,
+        ! a year's step standing for [year, year+1). A single time t: the value at t.
 
         ! rep: frequency to apply slice_method over time. If rep=1, then calculation (mean/sd/etc)
         ! will be applied to each time index, returning a field with no time dimension. 
@@ -584,7 +591,8 @@ contains
         ! or a typo'd rep that would silently reshape the time axis.
         if (with_time) then
             select case(trim(slice_method))
-                case("interp","extrap","range_mean","range_sd","range_min","range_max","range_sum")
+                case("interp","extrap","range_mean","range_sd","range_min","range_max","range_sum", &
+                     "interval_mean")
                     nsub = max(1, nint(par%time_par(4)))
                     if (range_rep .ne. 1 .and. range_rep .ne. nsub) then
                         call fesm_error("varslice_update", &
@@ -691,6 +699,12 @@ contains
                     vs%var(:,:,:,1) = clim_mean
                 end if
 
+            else if (trim(slice_method) .eq. "interval_mean") then
+                ! Overlap-weighted mean over [t0,t1] of the file's piecewise
+                ! representation (rep = 1 or nsub)
+
+                call interval_mean_read(vs, time_range, range_rep)
+
             else 
                 ! Cases with a time dimension (more complicated)
 
@@ -759,51 +773,7 @@ contains
                         ! write(*,*) "      ", vs%time(k0), vs%time(k1)
                     end if
 
-                    select case(par%ndim)
-
-                        case(1)
-
-                            ! Allocate local var to the right size 
-                            allocate(var(nt_tot,1,1,1))
-
-                            ! 0D (point) variable plus time dimension
-                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[k0],count=[nt_tot],nt_files=vs%nt_files)
-
-                        case(2)
-
-                            ! Allocate local var to the right size 
-                            allocate(var(vs%dim(1),nt_tot,1,1))
-
-                            ! 1D variable plus time dimension
-                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,k0],count=[vs%dim(1),nt_tot],nt_files=vs%nt_files)
-
-                        case(3)
-        
-                            ! Allocate local var to the right size 
-                            allocate(var(vs%dim(1),vs%dim(2),nt_tot,1))
-
-                            ! 2D variable plus time dimension
-                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,1,k0],count=[vs%dim(1),vs%dim(2),nt_tot],nt_files=vs%nt_files)
-
-                        case(4)
-
-                            ! Allocate local var to the right size 
-                            allocate(var(vs%dim(1),vs%dim(2),vs%dim(3),nt_tot))
-
-                            ! 3D variable plus time dimension
-                            call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
-                                    start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot],nt_files=vs%nt_files)
-
-                        case DEFAULT 
-
-                            call fesm_error("varslice_update", &
-                                "ndim > 4 with time dimension not allowed.", &
-                                "ndim = "//to_str(par%ndim))
-
-                    end select
+                    call read_slab(vs, k0, nt_tot, var)
 
                     ! At this point, the local var variable has been defined 
                     ! with data from the file for the appropriate time indices 
@@ -1002,6 +972,245 @@ contains
         return 
 
     end subroutine varslice_update
+
+    subroutine read_slab(vs, k0, nt_tot, var)
+        ! Read time steps k0 .. k0+nt_tot-1 of the variable (over all files)
+        ! into var, at its natural rank with the time in slot ndim.
+
+        implicit none
+
+        type(varslice_class),  intent(IN)  :: vs
+        integer,               intent(IN)  :: k0, nt_tot
+        real(wp), allocatable, intent(OUT) :: var(:,:,:,:)
+
+        associate(par => vs%par)
+
+            select case(par%ndim)
+
+                case(1)
+                    ! 0D (point) variable plus time dimension
+                    allocate(var(nt_tot,1,1,1))
+                    call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
+                            start=[k0],count=[nt_tot],nt_files=vs%nt_files)
+
+                case(2)
+                    ! 1D variable plus time dimension
+                    allocate(var(vs%dim(1),nt_tot,1,1))
+                    call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
+                            start=[1,k0],count=[vs%dim(1),nt_tot],nt_files=vs%nt_files)
+
+                case(3)
+                    ! 2D variable plus time dimension
+                    allocate(var(vs%dim(1),vs%dim(2),nt_tot,1))
+                    call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
+                            start=[1,1,k0],count=[vs%dim(1),vs%dim(2),nt_tot],nt_files=vs%nt_files)
+
+                case(4)
+                    ! 3D variable plus time dimension
+                    allocate(var(vs%dim(1),vs%dim(2),vs%dim(3),nt_tot))
+                    call nc_read_multifile(par%filenames,par%name,var,missing_value=mv, &
+                            start=[1,1,1,k0],count=[vs%dim(1),vs%dim(2),vs%dim(3),nt_tot],nt_files=vs%nt_files)
+
+                case DEFAULT
+                    call fesm_error("varslice_update", &
+                        "ndim > 4 with time dimension not allowed.", &
+                        "ndim = "//to_str(par%ndim))
+
+            end select
+
+        end associate
+
+    end subroutine read_slab
+
+    subroutine interval_mean_read(vs, tr, rep)
+        ! vs%var = the overlap-weighted mean over [tr(1),tr(2)] (see
+        ! varslice_update), before scaling, remap and fill. rep = 1: one
+        ! field; rep = nsub: one per sub-annual step.
+
+        implicit none
+
+        type(varslice_class), target, intent(INOUT) :: vs
+        real(dp),             intent(IN)    :: tr(2)
+        integer,              intent(IN)    :: rep
+
+        real(dp), allocatable :: w(:), b(:,:), wg(:)
+        integer,  allocatable :: grp(:), kk(:)
+        real(wp), allocatable, target :: var(:,:,:,:)
+        real(wp), allocatable :: wt(:)
+        real(wp), pointer, contiguous :: src2d(:,:), dst2d(:,:)
+        integer :: nt, k, k0, k1, o, nsp, s, nk
+
+        nt = size(vs%time)
+        allocate(w(nt), grp(nt))
+        w = 0.0_dp
+
+        if (rep .le. 1) then
+            grp = 1
+            if (allocated(vs%time_bnds)) then
+                call cell_weights(vs%time_bnds, tr(1), tr(2), w)
+            else
+                call linear_weights(vs%time, tr(1), tr(2), w)
+            end if
+        else
+            ! Per sub-annual step: the years as cells [y, y+1)
+            grp = nint(vs%time_sub)
+            do o = 1, rep
+                kk = pack([(k, k=1,nt)], grp .eq. o)
+                nk = size(kk)
+                if (nk .eq. 0) cycle
+                allocate(b(2,nk), wg(nk))
+                b(1,:) = real(floor(vs%time(kk)), dp)
+                b(2,:) = b(1,:) + 1.0_dp
+                wg = 0.0_dp
+                call cell_weights(b, tr(1), tr(2), wg)
+                w(kk) = wg
+                deallocate(b, wg)
+            end do
+        end if
+
+        ! The steps with weight, read at once
+        k0 = 0
+        k1 = 0
+        do k = 1, nt
+            if (w(k) .gt. 0.0_dp) then
+                if (k0 .eq. 0) k0 = k
+                k1 = k
+            end if
+        end do
+        if (k0 .eq. 0) then
+            call fesm_error("varslice_update", "interval_mean: no time step has weight.", &
+                "name  = "//trim(vs%par%name)//new_line("a")// &
+                "range = "//to_str(tr))
+        end if
+
+        call read_slab(vs, k0, k1-k0+1, var)
+
+        call alloc_var(vs%var, shape(var), vs%par%ndim, max(rep,1))
+        nsp = size(var) / (k1-k0+1)
+        src2d(1:nsp,1:k1-k0+1) => var
+        dst2d(1:nsp,1:max(rep,1)) => vs%var
+
+        do o = 1, max(rep,1)
+            kk = pack([(k, k=1,k1-k0+1)], grp(k0:k1) .eq. o .and. w(k0:k1) .gt. 0.0_dp)
+            wt = real(w(k0-1+kk), wp)
+            do s = 1, nsp
+                call calc_vec_value(dst2d(s,o), src2d(s,kk), "mean", mv, wt=wt)
+            end do
+        end do
+
+        return
+
+    end subroutine interval_mean_read
+
+    subroutine linear_weights(t, t0, t1, w)
+        ! Weights of the samples t in the mean over [t0,t1] of their linear
+        ! interpolant, held constant outside the axis; t0 = t1: the
+        ! interpolation weights at t0.
+
+        implicit none
+
+        real(dp), intent(IN)    :: t(:), t0, t1
+        real(dp), intent(INOUT) :: w(:)
+
+        integer  :: n, k
+        real(dp) :: a, b, h, lam
+
+        n = size(t)
+        if (n .eq. 1) then
+            w(1) = 1.0_dp
+            return
+        end if
+
+        if (t1 .le. t0) then
+            if (t0 .le. t(1)) then
+                w(1) = 1.0_dp
+            else if (t0 .ge. t(n)) then
+                w(n) = 1.0_dp
+            else
+                do k = 1, n-1
+                    if (t0 .ge. t(k) .and. t0 .lt. t(k+1)) then
+                        lam = (t0 - t(k))/(t(k+1) - t(k))
+                        w(k)   = w(k)   + (1.0_dp - lam)
+                        w(k+1) = w(k+1) + lam
+                        exit
+                    end if
+                end do
+            end if
+            return
+        end if
+
+        if (t0 .lt. t(1)) w(1) = w(1) + (min(t1, t(1)) - t0)
+        if (t1 .gt. t(n)) w(n) = w(n) + (t1 - max(t0, t(n)))
+
+        do k = 1, n-1
+            a = max(t0, t(k))
+            b = min(t1, t(k+1))
+            if (b .gt. a) then
+                h   = t(k+1) - t(k)
+                lam = (0.5_dp*(a + b) - t(k))/h
+                w(k)   = w(k)   + (b - a)*(1.0_dp - lam)
+                w(k+1) = w(k+1) + (b - a)*lam
+            end if
+        end do
+
+    end subroutine linear_weights
+
+    subroutine cell_weights(bnd, t0, t1, w)
+        ! Weights of cells [bnd(1,k), bnd(2,k)] (cell means) in the mean over
+        ! [t0,t1]: their overlap; the part before the first or after the last
+        ! cell holds that cell; t0 = t1, or an interval in a gap between
+        ! cells: the cell containing, else nearest to, the midpoint.
+
+        implicit none
+
+        real(dp), intent(IN)    :: bnd(:,:), t0, t1
+        real(dp), intent(INOUT) :: w(:)
+
+        integer  :: n, k, kn
+        real(dp) :: a, b, tm, d, dn
+        logical  :: any_w
+
+        n  = size(bnd,2)
+        tm = 0.5_dp*(t0 + t1)
+        any_w = .false.
+
+        if (t1 .gt. t0) then
+            if (t0 .lt. bnd(1,1)) then
+                w(1) = w(1) + (min(t1, bnd(1,1)) - t0)
+                any_w = .true.
+            end if
+            if (t1 .gt. bnd(2,n)) then
+                w(n) = w(n) + (t1 - max(t0, bnd(2,n)))
+                any_w = .true.
+            end if
+            do k = 1, n
+                a = max(t0, bnd(1,k))
+                b = min(t1, bnd(2,k))
+                if (b .gt. a) then
+                    w(k) = w(k) + (b - a)
+                    any_w = .true.
+                end if
+            end do
+        end if
+
+        if (.not. any_w) then
+            kn = 1
+            dn = huge(1.0_dp)
+            do k = 1, n
+                if (tm .ge. bnd(1,k) .and. tm .lt. bnd(2,k)) then
+                    kn = k
+                    exit
+                end if
+                d = min(abs(tm - bnd(1,k)), abs(tm - bnd(2,k)))
+                if (d .lt. dn) then
+                    dn = d
+                    kn = k
+                end if
+            end do
+            w(kn) = 1.0_dp
+        end if
+
+    end subroutine cell_weights
 
     subroutine get_indices(idx, x, xrange, slice_method, with_sub)
         ! Get indices in range x0 <= x <= x1
@@ -1482,10 +1691,10 @@ contains
         integer, allocatable :: dim_now(:)
         character(len=1024)  :: filename_dims
         character(len=:), allocatable :: fnames
-        real(dp), allocatable :: t_file(:)
+        real(dp), allocatable :: t_file(:), tb_file(:,:)
 
         ! A time axis from the file: resolve the mode and read the axis
-        if (vs%par%time_from_file) call file_time_axis(vs%par, t_file)
+        if (vs%par%time_from_file) call file_time_axis(vs%par, t_file, tb_file)
 
         ! Local shortcut
         with_time       = vs%par%with_time 
@@ -1524,6 +1733,7 @@ contains
             ! The axis of the file(s); with a sub-annual cycle, the position
             ! of each step within its year
             vs%time = t_file
+            if (allocated(tb_file)) vs%time_bnds = tb_file
             allocate(vs%time_sub(size(vs%time)))
             vs%time_sub = 1.0_dp
             if (with_time_sub) then
@@ -1889,7 +2099,7 @@ contains
 
     end subroutine load_or_generate_axis
 
-    subroutine file_time_axis(par, t)
+    subroutine file_time_axis(par, t, tb)
         ! A time axis from the file. The mode (auto | static | clim |
         ! transient) is resolved from the variable's last dimension: a time
         ! axis if its coordinate variable exists and is named time, has
@@ -1899,17 +2109,21 @@ contains
         ! (varslice_time_decode) minus time_ref, concatenated, strictly
         ! increasing; nsub = steps per year when every year holds the same
         ! number of them (> 1), else 1. clim: the last dimension is the
-        ! cycle, nsub = its length.
+        ! cycle, nsub = its length. tb: the CF bounds of the axis (the time
+        ! variable's bounds attribute), decoded alike, when every file has
+        ! them.
 
         implicit none
 
         type(varslice_param_class), intent(INOUT) :: par
         real(dp), allocatable,      intent(OUT)   :: t(:)
+        real(dp), allocatable,      intent(OUT)   :: tb(:,:)
 
         character(len=56), allocatable :: dn(:)
         integer,  allocatable :: dl(:), cnt(:)
-        real(dp), allocatable :: tf(:), yf(:), y(:)
-        character(len=256) :: units, cal, att
+        real(dp), allocatable :: tf(:), yf(:), y(:), bf(:,:), yb(:), tbf(:,:)
+        character(len=256) :: units, cal, att, bname
+        logical  :: with_bnds
         character(len=:), allocatable :: fnames
         logical  :: has_coord, is_time, is_clim
         integer  :: nd, i, n0, nt, k, stat, nsub, ny0
@@ -1974,7 +2188,8 @@ contains
         end select
 
         ! transient: decode and concatenate the axis of every file
-        allocate(t(0))
+        allocate(t(0), tbf(2,0))
+        with_bnds = .true.
         fnames = ""
         do i = 1, size(par%filenames)
             nt = nc_size(par%filenames(i), trim(par%time_name))
@@ -2015,6 +2230,28 @@ contains
                 yf = yf - par%time_ref
             end if
 
+            ! CF bounds, decoded alike
+            bname = ""
+            if (nc_exists_attr(par%filenames(i), trim(par%time_name), "bounds")) &
+                call nc_read_attr(par%filenames(i), trim(par%time_name), "bounds", bname)
+            if (with_bnds .and. len_trim(bname) .gt. 0) then
+                with_bnds = nc_exists_var(par%filenames(i), trim(bname))
+            else
+                with_bnds = .false.
+            end if
+            if (with_bnds) then
+                allocate(bf(2,nt))
+                call nc_read(par%filenames(i), trim(bname), bf)
+                if (trim(units) .eq. "clock") then
+                    tbf = reshape([reshape(tbf,[size(tbf)]), reshape(bf,[2*nt])], [2, size(tbf,2)+nt])
+                else
+                    call varslice_time_decode(reshape(bf,[2*nt]), units, cal, yb)
+                    yb = yb - par%time_ref
+                    tbf = reshape([reshape(tbf,[size(tbf)]), yb], [2, size(tbf,2)+nt])
+                end if
+                deallocate(bf)
+            end if
+
             t = [t, yf]
             deallocate(yf)
             fnames = fnames//new_line("a")//"  "//trim(par%filenames(i))//" ["//to_str(nt)//"]"
@@ -2043,7 +2280,7 @@ contains
             n0 = cnt(1)
             if (n0 .gt. 1 .and. all(cnt .eq. n0)) nsub = n0
         end if
-        if (nsub .gt. 1 .and. par%time_ref .ne. real(nint(par%time_ref), dp)) then
+        if (nsub .gt. 1 .and. abs(par%time_ref - anint(par%time_ref)) .gt. 0.0_dp) then
             call fesm_error("varslice_init_data", &
                 "a sub-annual axis needs time_ref in whole years.", &
                 "name     = "//trim(par%name)//new_line("a")// &
@@ -2059,6 +2296,15 @@ contains
         par%with_time     = .true.
         par%with_time_sub = (nsub .gt. 1)
         par%time_par      = [t(1), t(nt), dx, real(nsub, dp)]
+
+        if (with_bnds) then
+            if (any(tbf(2,:) .lt. tbf(1,:))) then
+                call fesm_error("varslice_init_data", &
+                    "time bounds with an upper bound below the lower one.", &
+                    "name = "//trim(par%name)//new_line("a")//"files:"//fnames)
+            end if
+            tb = tbf
+        end if
 
     contains
 
@@ -2099,7 +2345,7 @@ contains
 
         character(len=256) :: u, word, date
         character(len=32)  :: cal
-        integer  :: p, yr0, mo0, dy0, ios, k, yy
+        integer  :: p, yr0, mo0, dy0, k, yy
         real(dp) :: sec0, fac, ref, a, ystart, ylen
         logical  :: ok, loud
 
@@ -2423,6 +2669,7 @@ contains
         if (allocated(vs%z))            deallocate(vs%z)
         if (allocated(vs%time))         deallocate(vs%time)
         if (allocated(vs%time_sub))     deallocate(vs%time_sub)
+        if (allocated(vs%time_bnds))    deallocate(vs%time_bnds)
         if (allocated(vs%idx))          deallocate(vs%idx)
         if (allocated(vs%nt_files))     deallocate(vs%nt_files)
         if (allocated(vs%var))          deallocate(vs%var)

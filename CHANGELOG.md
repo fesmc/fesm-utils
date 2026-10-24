@@ -54,6 +54,12 @@ All notable changes to fesm-utils are documented here.
 - **varslice**: `varslice_get(vs, var [, k])`, generic over `dp`/`sp` and 0-D to 3-D: a
   copy of the slice at its natural rank (as `v1`/`v2`/`v3`) into the caller's array, shape
   checked; storage stays `real(wp)`.
+- **varslice**: `method = "interval_mean"`, the overlap-weighted mean over `[t0,t1]` of the
+  piecewise representation of the file (cell means over CF `time_bnds`, read into
+  `vs%time_bnds`, else the linear interpolant; partial segments at both ends; the first or
+  last sample held outside the axis); `rep = n_sub` averages each sub-annual step over the
+  years. `range_mean` is unchanged. The slab read of `varslice_update` is now one helper
+  (`read_slab`) shared by both.
 
 ### Changed
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their
