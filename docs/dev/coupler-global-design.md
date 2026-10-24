@@ -527,3 +527,11 @@ so each target's links are in ascending source order for any thread count
 `bench_conservative`, mean of 3): before 3.77 s serial, 2.69 s on 4 threads,
 1.60 s on 10; after 4.32 s, 1.31 s, 0.81 s. The serial +15 % is the NSUB
 inverse projections per edge (~150 ns each).
+
+Also fixed: `polar_stereographic` on a spherical planet was centred at `phi`
+(the spherical oblique formulas take `phi_M` as the centre), while the
+ellipsoidal branch and the cdo/CF description centre it at the pole with `phi`
+the standard parallel. `projection_init` now sets `phi_M` to the pole for it.
+This changes the coordinates of spherical polar-stereographic grids with
+`|phi| < 90` (none in the harness; the one in `test_gauss_bounds` has
+`phi = -90`; WGS84 grids are unchanged).

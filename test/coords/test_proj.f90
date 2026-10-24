@@ -1,6 +1,8 @@
 program test_proj
     ! Projection check — define a polar-stereographic point set (Bamber corners)
-    ! and inverse-project x/y to lon/lat via the coords/oblimap machinery.
+    ! and inverse-project x/y to lon/lat via the coords/oblimap machinery;
+    ! transverse Mercator against pyproj; spherical polar stereographic against
+    ! the polar formulas.
 
     use coords
 
@@ -26,6 +28,9 @@ program test_proj
     ! Transverse Mercator (UTM zone 18S, WGS84): forward and inverse against
     ! pyproj (EPSG:4326 -> EPSG:32718) reference values [m].
     call check_utm18s()
+    ! Polar stereographic on a sphere: centred at the pole, phi the standard
+    ! parallel (as on the ellipsoid and in the cdo/CF description).
+    call check_polar_sphere()
 
     write(*,*) "PASS: test_proj"
 
@@ -63,5 +68,40 @@ contains
             stop 1
         end if
     end subroutine check_utm18s
+
+    subroutine check_polar_sphere()
+        ! Spherical polar stereographic (phi = -71 standard parallel) against
+        ! the polar formulas, the e -> 0 limit of the ellipsoidal branch:
+        ! rho = R (1 + cos alpha) tan(pi/4 + lat/2), x = rho sin(lon - lambda),
+        ! y = rho cos(lon - lambda) (south pole aspect, alpha = 90 - |phi|).
+        type(points_class) :: p_ll, p_xy
+        real(dp), parameter :: lon_ref(4) = [0.d0, 45.d0, 200.d0, 330.d0]
+        real(dp), parameter :: lat_ref(4) = [-89.d0, -71.d0, -60.d0, -50.d0]
+        real(dp) :: d2r, rho, x_ref(4), y_ref(4), err_xy, err_ll, R
+        integer  :: k
+        d2r = acos(-1.d0)/180.d0
+        call points_init(p_ll, name="ps-sphere-ll", mtype="polar_stereographic", units="meters", &
+                         planet="Spherical Earth", lambda=0.d0, phi=-71.d0, &
+                         x=lon_ref, y=lat_ref, latlon=.TRUE., lon180=.FALSE.)
+        R = p_ll%cs%planet%R
+        do k = 1, 4
+            rho = R*(1.d0 + cos(19.d0*d2r))*tan(0.25d0*acos(-1.d0) + 0.5d0*lat_ref(k)*d2r)
+            x_ref(k) = rho*sin(lon_ref(k)*d2r)
+            y_ref(k) = rho*cos(lon_ref(k)*d2r)
+        end do
+        err_xy = max(maxval(abs(p_ll%x - x_ref)), maxval(abs(p_ll%y - y_ref)))
+        ! inverse, plus the projection origin (0,0), which must be the pole
+        call points_init(p_xy, name="ps-sphere-xy", mtype="polar_stereographic", units="meters", &
+                         planet="Spherical Earth", lambda=0.d0, phi=-71.d0, &
+                         x=[x_ref, 0.d0], y=[y_ref, 0.d0], lon180=.FALSE.)
+        err_ll = max(maxval(abs(modulo(p_xy%lon(1:4) - lon_ref + 180.d0, 360.d0) - 180.d0)), &
+                     maxval(abs(p_xy%lat(1:4) - lat_ref)))
+        write(*,"(a,es10.2,a,es10.2,a,f8.3)") " polar_stereographic (sphere) vs polar formula: |dxy| = ", &
+            err_xy, " m, |dlonlat| = ", err_ll, " deg; lat at (0,0) = ", p_xy%lat(5)
+        if (err_xy > 1.d-3 .or. err_ll > 1.d-8 .or. abs(p_xy%lat(5) + 90.d0) > 1.d-10) then
+            write(*,*) "FAIL: spherical polar_stereographic is not centred at the pole"
+            stop 1
+        end if
+    end subroutine check_polar_sphere
 
 end program test_proj

@@ -237,6 +237,16 @@ contains
     proj%lambda_M            = degrees_to_radians * proj%lambda
     proj%alpha_stereographic = degrees_to_radians * proj%alpha
 
+    ! polar_stereographic: phi is the standard parallel (CF standard_parallel,
+    ! alpha = 90 - |phi| sets the scale), and the projection is centred at the
+    ! pole on its side, as in the ellipsoidal polar formulas (Snyder 1987,
+    ! p. 161, which use phi_M only for that side) and the cdo/CF description
+    ! (latitude_of_projection_origin = +-90). The spherical oblique formulas
+    ! (Reerink et al. 2010) take phi_M as the centre, so it is set to the pole.
+    if (trim(proj%name) .eq. "polar_stereographic" .and. proj%is_sphere) then
+        proj%phi_M = sign(0.5_dp*pi, proj%phi)
+    end if
+
     ! See equations (14-15) and (21-27) on page 160 in Snyder (1987), akm corresponds with 2a*k0*m_1 in Snyder:
     proj%am     = proj%a * (COS(proj%phi_M) / DSQRT(1._dp - (proj%e * SIN(proj%phi_M))**2))
     proj%akm    = (1._dp + COS(proj%alpha_stereographic)) * proj%am

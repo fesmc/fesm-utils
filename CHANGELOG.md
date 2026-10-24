@@ -165,6 +165,10 @@ All notable changes to fesm-utils are documented here.
   grid built from 0..360 centres) and latitude bounds are clamped to +-90. Changes the
   same newly generated maps as the previous entry. ANT-16KM -> T64: 3.8 s -> 4.3 s
   serial, 1.6 s -> 0.8 s on 10 threads.
+- **coords**: `polar_stereographic` on a spherical planet is centred at the pole (with
+  `phi` the standard parallel), as on the ellipsoid and in the cdo/CF description; it was
+  centred at `phi`. Changes the coordinates of spherical polar-stereographic grids with
+  `|phi| < 90`, and every map that uses them; WGS84 grids are unchanged.
 
 ## [v1.4] - 2026-10-23
 
