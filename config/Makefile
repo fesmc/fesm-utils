@@ -330,6 +330,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_desclat.x $(testdir)/coords/test_conservative_desclat.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_rotated.x $(testdir)/coords/test_conservative_rotated.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_init_con.x $(testdir)/coords/test_map_init_con.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_map_cache.x $(testdir)/coords/test_map_cache.f90 \
@@ -512,6 +514,96 @@ bench-apply : fesmutils-static
 
 ###############################################
 ##
+## Test suite: make check
+##
+## `make check` builds each self-contained test program (via the test-*
+## targets above) and runs it from the repo root, failing on a non-zero exit.
+## One PASS/FAIL/SKIP line per test; full output in logs/check/<test>.log.
+## A group runs all its tests before failing; `make -k check` also continues
+## past a failing group. The cdo-based tests (test_map_cdo, test_map_con_proj)
+## report SKIP when cdo is not on PATH. Tests that need ../ice_data run under
+## `make check-data` instead. Benchmarks and demos are not run.
+##
+###############################################
+
+CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_rotated \
+               test_kdtree test_weightmap test_mapinit test_bilinear test_ccsm3_grl \
+               test_mapio test_polygons test_conservative test_conservative_xsys \
+               test_conservative_sphere test_conservative_desclat test_conservative_rotated \
+               test_map_init_con test_map_cache test_map_cdo test_map_con_proj \
+               test_lon180_wrap test_varslice_map test_ncio_interp test_parity \
+               test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
+               test_coupler test_grid_cf_read
+CHECK_DATA   = test_regions test_topodata test_htopo
+ICE_DATA     = ../ice_data/v2/NorthTest
+
+# $(call check_run,<tests>): run each $(bindir)/<test>.x, log its output and
+# print one summary line; exit non-zero if any test did. A test that exits 0
+# after printing "SKIP: <test> (<reason>)" (a missing optional tool) is
+# reported as skipped.
+check_run = mkdir -p logs/check; nfail=0; \
+	for t in $(1); do \
+		log=logs/check/$$t.log; ./$(bindir)/$$t.x > $$log 2>&1; rc=$$?; \
+		if [ $$rc -ne 0 ]; then \
+			echo "  FAIL  $$t (exit $$rc, log: $$log)"; tail -n 20 $$log; nfail=$$((nfail+1)); \
+		elif grep -q 'SKIP:' $$log; then \
+			echo "  SKIP  $$(grep -m1 'SKIP:' $$log | sed 's/.*SKIP: *//')"; \
+		else \
+			echo "  PASS  $$t"; \
+		fi; \
+	done; \
+	[ $$nfail -eq 0 ]
+
+.PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
+         check-var-io check-series check-varslice check-multitopo check-units \
+         check-varslice-clim check-tsgen check-zremap check-log
+
+check : check-coords check-phys-constants check-root check-ncio check-var-io \
+        check-series check-varslice check-multitopo check-units check-varslice-clim \
+        check-tsgen check-zremap check-log
+		@echo " "
+		@echo "    make check: all tests passed (data tests: make check-data)."
+		@echo " "
+
+check-coords : test-coords
+		@$(call check_run,$(CHECK_COORDS))
+check-phys-constants : test-phys-constants
+		@$(call check_run,test_phys_constants)
+check-root : test-root
+		@$(call check_run,test_roots)
+check-ncio : test-ncio
+		@$(call check_run,test_ncio_precision)
+check-var-io : test-var-io
+		@$(call check_run,test_var_io)
+check-series : test-series
+		@$(call check_run,test_series)
+check-varslice : test-varslice
+		@$(call check_run,test_varslice)
+check-multitopo : test-multitopo
+		@$(call check_run,test_multitopo)
+check-units : test-units
+		@$(call check_run,test_units)
+check-varslice-clim : test-varslice-clim
+		@$(call check_run,test_varslice_clim)
+check-tsgen : test-tsgen
+		@$(call check_run,test_tsgen)
+check-zremap : test-zremap
+		@$(call check_run,test_zremap)
+check-log : test-log
+		@$(call check_run,test_log)
+
+# FesmData tests on the NorthTest grids; need ice_data checked out next to
+# fesm-utils (not available in CI).
+check-data :
+		@if [ -d $(ICE_DATA) ]; then \
+			$(MAKE) --no-print-directory test-regions test-topodata test-htopo && \
+			$(call check_run,$(CHECK_DATA)); \
+		else \
+			echo "  SKIP  $(CHECK_DATA) (needs $(ICE_DATA), not found)"; \
+		fi
+
+###############################################
+##
 ## External libraries: FFTW, LIS, SHTns
 ##
 ## Each target runs the vendored package's own autotools build
@@ -582,6 +674,9 @@ usage:
 	@echo " make test-htopo       : compiles the htopo test program"
 	@echo " make test-units       : compiles the fesmdata units test program"
 	@echo " make test-varslice-clim : compiles the varslice climatology test program"
+	@echo " make check            : builds and runs the self-contained tests (fails on any failure)"
+	@echo " make check-<group>    : one group, e.g. check-coords, check-ncio, check-zremap"
+	@echo " make check-data       : runs the FesmData tests that need ../ice_data"
 	@echo " make ncio-gen         : regenerates src/ncio.f90 from src/ncio.fypp (devs only)"
 	@echo " make clean            : cleans object files"
 	@echo ""

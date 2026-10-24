@@ -66,6 +66,21 @@ Notes:
   library builds and netCDF autodetection use the environment already loaded in
   your shell.
 
+## Testing
+
+```bash
+make check openmp=0        # build and run the self-contained tests
+make check-coords          # one group (also check-ncio, check-zremap, ...)
+make -k check              # keep going past a failing group
+make check-data            # FesmData tests; need ../ice_data next to fesm-utils
+```
+
+`make check` builds each test program in `test/`, runs it from the repo root and
+fails if any exits non-zero, printing one `PASS`/`FAIL`/`SKIP` line per test
+(full output in `logs/check/<test>.log`). The cdo-based tests report `SKIP`
+when `cdo` is not on `PATH`. CI (`.github/workflows/check.yml`) runs it with
+gfortran + netCDF on Ubuntu for `openmp=0` and `openmp=1`.
+
 ## Machine configuration
 
 Two kinds of build config, both selected by machine/compiler:

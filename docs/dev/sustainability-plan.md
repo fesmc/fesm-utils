@@ -151,8 +151,9 @@ Step 3. `nml`'s `VERBOSE` could later map onto the log level.
 
 - fypp / include-file templating of `ncio.f90` (~3500 lines of hand-rolled
   type×rank variants) and `mapping.f90` precision wrappers (~300 lines).
-- `make check` target that *runs* the test `.x` binaries and asserts exit codes,
-  plus GitHub Actions CI (gfortran + netCDF).
+- ~~`make check` target that *runs* the test `.x` binaries and asserts exit codes,
+  plus GitHub Actions CI (gfortran + netCDF).~~ *Done:* `make check` (+ `check-<group>`,
+  `check-data`) and `.github/workflows/check.yml` (Ubuntu, gfortran, openmp=0/1).
 - `fpm.toml` (and/or CMake) for general installability.
 - Slim vendored upstream trees (submodules / fetch-on-build) — 4235 tracked files.
 - Split large modules via F2008 submodules; unify the two remap apply paths onto

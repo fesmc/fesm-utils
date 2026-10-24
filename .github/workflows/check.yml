@@ -1,0 +1,61 @@
+name: Check
+
+# Build libfesmutils.a and run the self-contained test suite (`make check`)
+# with gfortran + system netCDF, serial and OpenMP. The vendored FFTW/LIS/SHTns
+# are not built (no checked test needs them); the ../ice_data tests
+# (`make check-data`) and the cdo-based tests (report SKIP) are not run.
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: gfortran openmp=${{ matrix.openmp }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openmp: [0, 1]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install gfortran and netCDF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gfortran libnetcdf-dev libnetcdff-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install configme
+        run: pip install git+https://github.com/fesmc/configme
+
+      - name: Configure (generate Makefile)
+        run: configme config fesm-utils -m linux -c gfortran
+
+      # Serial make: the object dependency list is incomplete for -j.
+      - name: Build libfesmutils.a
+        run: make fesmutils-static openmp=${{ matrix.openmp }}
+
+      - name: Run tests
+        run: make check openmp=${{ matrix.openmp }}
+
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-logs-openmp${{ matrix.openmp }}
+          path: logs/check/
