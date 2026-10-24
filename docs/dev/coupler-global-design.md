@@ -512,7 +512,10 @@ On a spherical planet `Σ_k φ_jk = 1` to rounding (ANT-100KM -> spherical T64:
 the pieces have great-circle edges, and their geodesic areas on the ellipsoid
 add up to the cell's only to O(f·L²/R). A spherical-excess area metric would
 close to rounding and be cheaper than the Karney area, but changes the map
-metric; not done. `bench_conservative`'s `max|co-cdo|` for ANT-16KM -> T64
+metric; not done. **Decided (2026-10-24, Alex): keep the Karney (ellipsoidal)
+area.** A coverage residual of ~1e-8 on WGS84 is far below what any ice load
+or sea-level budget needs, and changing the metric would alter every generated
+conservative map. Revisit only if a consumer needs closure below 1e-8. `bench_conservative`'s `max|co-cdo|` for ANT-16KM -> T64
 (1.7, in the polar row) comes from cdo: on the target cells inside the domain
 (86–50°S) coords is within 4.4e-3 of the cell-centre value of the linear test
 field, cdo off by up to 0.8.
