@@ -171,6 +171,10 @@ All notable changes to fesm-utils are documented here.
   for write plus read; now 1 each). Same variables, attributes, values and dimension order
   (`h5diff` finds no difference); only the order in which HDF5 lists a variable's attributes
   differs. `fields_restart_write` checks the dimension lengths before creating the file.
+- **fesm_fields**: the finiteness check of `fields_put` is `abs(x) <= huge(x)` (same
+  classification: NaN and +-Inf fail) instead of `ieee_is_finite`, which ifx calls out of
+  line per value (3.3 vs 0.56 ns). `make check-fields` covers NaN, +-Inf, +-huge, +-0 and
+  subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
 - **coords**: `conservative_spherical` builds each source cell polygon by sampling its

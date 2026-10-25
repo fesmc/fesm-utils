@@ -37,7 +37,6 @@ module fesm_fields
     !   * Every misuse stops through fesm_error with the owner and the field
     !     in the message; there are no stat arguments.
 
-    use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
     use precision, only : sp, dp
     use fesm_log,  only : LOG_INFO, log_msg, fesm_error, to_str
     use ncio,      only : nc_create, nc_open, nc_close, nc_write_dim, nc_write, nc_write_attr, &
@@ -569,7 +568,9 @@ contains
     subroutine put_copy_dp(f, nx, ny, nz, var, t0, t1, valid, nbad, ibad)
         ! The copy (INSTANT) or accumulation (MEAN, ACCUM) with the
         ! finiteness check fused in. nbad: non-finite values at valid cells,
-        ! ibad: the first of them.
+        ! ibad: the first of them. Finite is abs(x) <= huge(x): NaN fails
+        ! (a comparison with NaN is false), +-Inf exceed huge. Not
+        ! ieee_is_finite, which ifx calls out of line for every value.
 
         type(field_t), intent(inout) :: f
         integer,  intent(in)  :: nx, ny, nz
@@ -590,7 +591,7 @@ contains
             do i = 1, nx
                 x = var(i,j,k)
                 f%v(i,j,k) = x
-                if (.not. ieee_is_finite(x)) then
+                if (.not. (abs(x) <= huge(x))) then
                     if (present(valid)) then
                         if (.not. valid(i,j)) cycle
                     end if
@@ -610,7 +611,7 @@ contains
                     if (.not. valid(i,j)) cycle
                 end if
                 x = var(i,j,k)
-                if (.not. ieee_is_finite(x)) then
+                if (.not. (abs(x) <= huge(x))) then
                     nbad = nbad + 1
                     if (nbad == 1) ibad = [i, j, k]
                     cycle
@@ -625,7 +626,8 @@ contains
     end subroutine put_copy_dp
 
     subroutine put_copy_sp(f, nx, ny, nz, var, t0, t1, valid, nbad, ibad)
-        ! As put_copy_dp, widening each value with real(var, dp).
+        ! As put_copy_dp, widening each value with real(var, dp) (every finite
+        ! sp value is finite in dp, Inf and NaN stay so).
 
         type(field_t), intent(inout) :: f
         integer,  intent(in)  :: nx, ny, nz
@@ -646,7 +648,7 @@ contains
             do i = 1, nx
                 x = real(var(i,j,k), dp)
                 f%v(i,j,k) = x
-                if (.not. ieee_is_finite(x)) then
+                if (.not. (abs(x) <= huge(x))) then
                     if (present(valid)) then
                         if (.not. valid(i,j)) cycle
                     end if
@@ -666,7 +668,7 @@ contains
                     if (.not. valid(i,j)) cycle
                 end if
                 x = real(var(i,j,k), dp)
-                if (.not. ieee_is_finite(x)) then
+                if (.not. (abs(x) <= huge(x))) then
                     nbad = nbad + 1
                     if (nbad == 1) ibad = [i, j, k]
                     cycle
