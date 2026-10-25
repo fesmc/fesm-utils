@@ -165,6 +165,12 @@ All notable changes to fesm-utils are documented here.
   `nc_exists_attr` and `nc_size_attr` accept `(filename, ncid, [varname,] name, ...)`
   (`filename` is only for messages; the file stays open, in data mode); `nc_exists_var`
   and `nc_dims` take an optional `ncid`. The calls without `ncid` are unchanged.
+- **fesm_fields, fesm_clock**: `fields_restart_write`/`_read`, `clock_restart_write` and
+  `cadence_restart_write` open the file once and write or read through that handle (they
+  opened and closed it for every variable and attribute: 81 opens for a 6-field state, 205
+  for write plus read; now 1 each). Same variables, attributes, values and dimension order
+  (`h5diff` finds no difference); only the order in which HDF5 lists a variable's attributes
+  differs. `fields_restart_write` checks the dimension lengths before creating the file.
 
 ### Fixed
 - **coords**: `conservative_spherical` builds each source cell polygon by sampling its

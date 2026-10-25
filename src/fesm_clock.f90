@@ -23,7 +23,7 @@ module fesm_clock
     use precision,      only : dp
     use fesm_log,       only : LOG_INFO, log_msg, fesm_warn, fesm_error, to_str
     use nml,            only : nml_read, nml_has_param
-    use ncio,           only : nc_create, nc_write, nc_read, nc_write_attr, nc_read_attr, &
+    use ncio,           only : nc_create, nc_open, nc_close, nc_write, nc_read, nc_write_attr, nc_read_attr, &
                                nc_exists_var, nc_exists_attr
     use phys_constants, only : sec_year_360d, sec_year_365d, sec_year_julian, &
                                sec_year_gregorian, sec_year_tropical
@@ -700,13 +700,20 @@ contains
         type(clock_t),    intent(in) :: clk
         character(len=*), intent(in) :: filename
 
+        integer :: ncid
+
         call ensure_file(filename)
-        call nc_write(filename, "clock_ticks_per_year", real(clk%tpy, dp), long_name="ticks per year")
-        call nc_write(filename, "clock_n",        real(clk%n, dp),        units="ticks", long_name="model time")
+        call nc_open(filename, ncid, writable=.true.)
+        call nc_write(filename, "clock_ticks_per_year", real(clk%tpy, dp), long_name="ticks per year", &
+                      ncid=ncid)
+        call nc_write(filename, "clock_n",        real(clk%n, dp),        units="ticks", long_name="model time", &
+                      ncid=ncid)
         call nc_write(filename, "clock_n_origin", real(clk%n_origin, dp), units="ticks", &
-                      long_name="experiment start")
-        call nc_write(filename, "clock_dtt",      real(clk%dt, dp),       units="ticks", long_name="time step")
-        call nc_write_attr(filename, "clock_method", trim(clk%method))
+                      long_name="experiment start", ncid=ncid)
+        call nc_write(filename, "clock_dtt",      real(clk%dt, dp),       units="ticks", long_name="time step", &
+                      ncid=ncid)
+        call nc_write_attr(filename, ncid, "clock_method", trim(clk%method))
+        call nc_close(ncid)
 
     end subroutine clock_restart_write
 
@@ -934,12 +941,15 @@ contains
         character(len=*), intent(in) :: filename
 
         character(len=:), allocatable :: base
+        integer :: ncid
 
         base = "cadence_"//trim(c%name)
         call ensure_file(filename)
-        call nc_write(filename, base//"_n_last", real(c%n_last, dp), units="ticks")
-        call nc_write(filename, base//"_dt",     real(dt_code(c), dp), units="ticks")
-        call nc_write(filename, base//"_phase",  real(c%phase, dp), units="ticks")
+        call nc_open(filename, ncid, writable=.true.)
+        call nc_write(filename, base//"_n_last", real(c%n_last, dp), units="ticks", ncid=ncid)
+        call nc_write(filename, base//"_dt",     real(dt_code(c), dp), units="ticks", ncid=ncid)
+        call nc_write(filename, base//"_phase",  real(c%phase, dp), units="ticks", ncid=ncid)
+        call nc_close(ncid)
 
     end subroutine cadence_restart_write
 

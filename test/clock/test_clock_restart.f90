@@ -5,9 +5,13 @@ program test_clock_restart
     !   * branch (time_init = 50): n_origin and n_last reset to time_init;
     !   * a bundle written at N = 1800 read at N = 36000 (converted exactly);
     !   * a bundle at N = 7 holding 1/7 yr: not convertible to N = 36000, rejected.
+    ! The layout of a bundle (clock and cadence variables and units, the
+    ! attribute clock_method, the cadence appended to the clock's file) is
+    ! checked with ncio.
     ! Writes logs/clock/restart_*.nc (run from the repo root).
 
     use precision,  only : dp
+    use ncio,       only : nc_exists_var, nc_read_attr, nc_read
     use fesm_clock
 
     implicit none
@@ -18,12 +22,36 @@ program test_clock_restart
     type(clock_t)   :: clk
     type(cadence_t) :: c_geo
     integer :: nfail, stat
+    character(len=32) :: str
+    real(dp) :: x
 
     nfail = 0
     call execute_command_line("mkdir -p logs/clock && rm -f "//fa//" "//fb//" "//fc)
 
     ! ----- write at 100 ----------------------------------------------------------
     call run_and_write(0.0_dp, 100.0_dp, 1.0_dp, 36000, fa)
+
+    ! ----- layout of the bundle ----------------------------------------------------
+    call check("bundle holds the clock and the cadence variables", &
+               nc_exists_var(fa, "clock_ticks_per_year") .and. nc_exists_var(fa, "clock_n") .and. &
+               nc_exists_var(fa, "clock_n_origin") .and. nc_exists_var(fa, "clock_dtt") .and. &
+               nc_exists_var(fa, "cadence_geo_n_last") .and. nc_exists_var(fa, "cadence_geo_dt") .and. &
+               nc_exists_var(fa, "cadence_geo_phase"))
+    str = ""
+    call nc_read_attr(fa, "clock_n", "units", str)
+    call check("clock_n: units = ticks", trim(str) == "ticks")
+    str = ""
+    call nc_read_attr(fa, "clock_ticks_per_year", "long_name", str)
+    call check("clock_ticks_per_year: long_name", trim(str) == "ticks per year")
+    str = ""
+    call nc_read_attr(fa, "clock_method", str)
+    call check("global clock_method = rel", trim(str) == "rel")
+    call nc_read(fa, "clock_ticks_per_year", x)
+    call check("clock_ticks_per_year = 36000", x == 36000.0_dp)
+    call nc_read(fa, "clock_n", x)
+    call check("clock_n = 100 yr in ticks", x == 100.0_dp*36000.0_dp)
+    call nc_read(fa, "cadence_geo_dt", x)
+    call check("cadence_geo_dt = 10 yr in ticks", x == 10.0_dp*36000.0_dp)
 
     ! ----- continuation ------------------------------------------------------------
     call clock_init(clk, 100.0_dp, 200.0_dp, 0.5_dp, "365_day", "tropical")

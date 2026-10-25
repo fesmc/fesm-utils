@@ -40,7 +40,7 @@ module fesm_fields
     use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
     use precision, only : sp, dp
     use fesm_log,  only : LOG_INFO, log_msg, fesm_error, to_str
-    use ncio,      only : nc_create, nc_write_dim, nc_write, nc_write_attr, &
+    use ncio,      only : nc_create, nc_open, nc_close, nc_write_dim, nc_write, nc_write_attr, &
                           nc_read, nc_read_attr, nc_exists_var, nc_exists_attr, nc_dims
 
     implicit none
@@ -1113,7 +1113,9 @@ contains
     ! the length-1 dimension `one`. Global attributes: fesm_fields_owner,
     ! fesm_fields_n and fesm_fields_names (the declared names, comma
     ! separated), against which fields_restart_read detects a renamed,
-    ! dropped or added field.
+    ! dropped or added field. Each call opens the file once and does all its
+    ! reads or writes through that handle (every open and close is a file
+    ! system round trip, slow on a parallel file system).
 
     subroutine fields_restart_write(st, filename)
         ! Write the whole state to `filename` (created or overwritten).
@@ -1125,7 +1127,7 @@ contains
         character(len=FIELD_GRID_LEN+2), allocatable :: dname(:)
         integer, allocatable :: dlen(:)
         character(len=FIELD_GRID_LEN+2) :: dn(3)
-        integer :: h, nd, k, q
+        integer :: h, nd, k, q, ncid
 
         if (.not. st%locked) then
             call fesm_error(proc, "state is not locked", "owner = '"//trim(st%owner)//"'"// &
@@ -1134,12 +1136,7 @@ contains
 
         call check_restart_names(st, filename)
 
-        call nc_create(filename)
-        call nc_write_attr(filename, "fesm_fields_owner", trim(st%owner))
-        call nc_write_attr(filename, "fesm_fields_n", st%n)
-        if (st%n > 0) call nc_write_attr(filename, "fesm_fields_names", declared_names(st, ","))
-
-        ! Dimensions, each written once; a name used with two lengths is an error.
+        ! Dimensions, each once; a name used with two lengths is an error.
         allocate(dname(3*st%n), dlen(3*st%n))
         nd = 0
         do h = 1, st%n
@@ -1158,37 +1155,48 @@ contains
                     nd = nd + 1
                     dname(nd) = dn(k)
                     dlen(nd)  = dim_len(st%f(h), k)
-                    call nc_write_dim(filename, trim(dname(nd)), 1.0_dp, dx=1.0_dp, nx=dlen(nd))
                 end if
             end do
+        end do
+
+        call nc_create(filename)
+        call nc_open(filename, ncid, writable=.true.)
+        call nc_write_attr(filename, ncid, "fesm_fields_owner", trim(st%owner))
+        call nc_write_attr(filename, ncid, "fesm_fields_n", st%n)
+        if (st%n > 0) call nc_write_attr(filename, ncid, "fesm_fields_names", declared_names(st, ","))
+
+        do q = 1, nd
+            call nc_write_dim(filename, trim(dname(q)), 1.0_dp, dx=1.0_dp, nx=dlen(q), ncid=ncid)
         end do
 
         do h = 1, st%n
             associate (f => st%f(h))
                 call restart_dims(f, dn)
-                call write_real(filename, trim(f%name), f, f%v, dn)
-                if (f%tsem /= FIELD_INSTANT) call write_real(filename, trim(f%name)//"_acc", f, f%acc, dn)
+                call write_real(filename, ncid, trim(f%name), f, f%v, dn)
+                if (f%tsem /= FIELD_INSTANT) call write_real(filename, ncid, trim(f%name)//"_acc", f, f%acc, dn)
                 if (f%masked) then
                     call nc_write(filename, trim(f%name)//"_valid", f%valid, &
-                                  dim1=trim(dn(1)), dim2=trim(dn(2)))
+                                  dim1=trim(dn(1)), dim2=trim(dn(2)), ncid=ncid)
                     if (f%tsem /= FIELD_INSTANT) &
                         call nc_write(filename, trim(f%name)//"_acc_valid", f%acc_valid, &
-                                      dim1=trim(dn(1)), dim2=trim(dn(2)))
+                                      dim1=trim(dn(1)), dim2=trim(dn(2)), ncid=ncid)
                 end if
 
-                call nc_write_attr(filename, trim(f%name), "units", trim(f%units))
-                call nc_write_attr(filename, trim(f%name), "tsem",  f%tsem)
-                call nc_write_attr(filename, trim(f%name), "cons",  f%cons)
-                if (f%rank >= 2) call nc_write_attr(filename, trim(f%name), "grid", trim(f%grid))
-                if (f%rank == 3) call nc_write_attr(filename, trim(f%name), "zdim", trim(f%zdim))
-                call nc_write_attr(filename, trim(f%name), "published", merge(1, 0, f%published))
-                call nc_write_attr(filename, trim(f%name), "t0",   f%t0)
-                call nc_write_attr(filename, trim(f%name), "t1",   f%t1)
-                call nc_write_attr(filename, trim(f%name), "ta0",  f%ta0)
-                call nc_write_attr(filename, trim(f%name), "ta1",  f%ta1)
-                call nc_write_attr(filename, trim(f%name), "wsum", f%wsum)
+                call nc_write_attr(filename, ncid, trim(f%name), "units", trim(f%units))
+                call nc_write_attr(filename, ncid, trim(f%name), "tsem",  f%tsem)
+                call nc_write_attr(filename, ncid, trim(f%name), "cons",  f%cons)
+                if (f%rank >= 2) call nc_write_attr(filename, ncid, trim(f%name), "grid", trim(f%grid))
+                if (f%rank == 3) call nc_write_attr(filename, ncid, trim(f%name), "zdim", trim(f%zdim))
+                call nc_write_attr(filename, ncid, trim(f%name), "published", merge(1, 0, f%published))
+                call nc_write_attr(filename, ncid, trim(f%name), "t0",   f%t0)
+                call nc_write_attr(filename, ncid, trim(f%name), "t1",   f%t1)
+                call nc_write_attr(filename, ncid, trim(f%name), "ta0",  f%ta0)
+                call nc_write_attr(filename, ncid, trim(f%name), "ta1",  f%ta1)
+                call nc_write_attr(filename, ncid, trim(f%name), "wsum", f%wsum)
             end associate
         end do
+
+        call nc_close(ncid)
 
     end subroutine fields_restart_write
 
@@ -1210,7 +1218,7 @@ contains
         character(len=4096) :: buf
         character(len=256)  :: ustr
         integer, allocatable :: dl(:)
-        integer :: h, nfile, ival
+        integer :: h, nfile, ival, ncid
         logical :: exists
 
         if (.not. st%locked) then
@@ -1224,18 +1232,20 @@ contains
                 new_line("a")//"file  = "//trim(filename))
         end if
 
+        call nc_open(filename, ncid, writable=.false.)
+
         ! --- The set of fields ------------------------------------------------
-        if (.not. nc_exists_attr(filename, "fesm_fields_n")) then
+        if (.not. nc_exists_attr(filename, ncid, "fesm_fields_n")) then
             call mismatch(0, "global attribute fesm_fields_n", "a fesm_fields restart file", "absent")
         end if
-        call nc_read_attr(filename, "fesm_fields_n", nfile)
+        call nc_read_attr(filename, ncid, "fesm_fields_n", nfile)
         names_file = ""
         if (nfile > 0) then
-            if (.not. nc_exists_attr(filename, "fesm_fields_names")) then
+            if (.not. nc_exists_attr(filename, ncid, "fesm_fields_names")) then
                 call mismatch(0, "global attribute fesm_fields_names", "present", "absent")
             end if
             buf = ""
-            call nc_read_attr(filename, "fesm_fields_names", buf)
+            call nc_read_attr(filename, ncid, "fesm_fields_names", buf)
             names_file = trim(buf)
         end if
         if (nfile /= st%n) then
@@ -1252,18 +1262,18 @@ contains
         do h = 1, st%n
             associate (f => st%f(h))
 
-                if (.not. nc_exists_var(filename, trim(f%name))) then
+                if (.not. nc_exists_var(filename, trim(f%name), ncid=ncid)) then
                     call mismatch(h, "variable '"//trim(f%name)//"'", "present", "absent")
                 end if
 
-                call nc_dims(filename, trim(f%name), dims=dl)
+                call nc_dims(filename, trim(f%name), dims=dl, ncid=ncid)
                 if (.not. same_shape(f, dl)) then
                     call mismatch(h, "shape", shape_str(f), "["//to_str(dl)//"]")
                 end if
 
                 ustr = ""
-                if (nc_exists_attr(filename, trim(f%name), "units")) &
-                    call nc_read_attr(filename, trim(f%name), "units", ustr)
+                if (nc_exists_attr(filename, ncid, trim(f%name), "units")) &
+                    call nc_read_attr(filename, ncid, trim(f%name), "units", ustr)
                 if (units_canonical(ustr) /= f%ukey) then
                     call mismatch(h, "units key", "'"//trim(f%ukey)//"' ('"//trim(f%units)//"')", &
                         "'"//trim(units_canonical(ustr))//"' ('"//trim(ustr)//"')")
@@ -1289,24 +1299,26 @@ contains
         do h = 1, st%n
             associate (f => st%f(h))
 
-                call read_real(filename, trim(f%name), f, f%v)
-                if (f%tsem /= FIELD_INSTANT) call read_real(filename, trim(f%name)//"_acc", f, f%acc)
+                call read_real(filename, ncid, trim(f%name), f, f%v)
+                if (f%tsem /= FIELD_INSTANT) call read_real(filename, ncid, trim(f%name)//"_acc", f, f%acc)
                 if (f%masked) then
-                    call nc_read(filename, trim(f%name)//"_valid", f%valid)
+                    call nc_read(filename, trim(f%name)//"_valid", f%valid, ncid=ncid)
                     if (f%tsem /= FIELD_INSTANT) &
-                        call nc_read(filename, trim(f%name)//"_acc_valid", f%acc_valid)
+                        call nc_read(filename, trim(f%name)//"_acc_valid", f%acc_valid, ncid=ncid)
                 end if
 
                 call read_int_attr(h, "published", ival)
                 f%published = (ival /= 0)
-                call nc_read_attr(filename, trim(f%name), "t0",   f%t0)
-                call nc_read_attr(filename, trim(f%name), "t1",   f%t1)
-                call nc_read_attr(filename, trim(f%name), "ta0",  f%ta0)
-                call nc_read_attr(filename, trim(f%name), "ta1",  f%ta1)
-                call nc_read_attr(filename, trim(f%name), "wsum", f%wsum)
+                call nc_read_attr(filename, ncid, trim(f%name), "t0",   f%t0)
+                call nc_read_attr(filename, ncid, trim(f%name), "t1",   f%t1)
+                call nc_read_attr(filename, ncid, trim(f%name), "ta0",  f%ta0)
+                call nc_read_attr(filename, ncid, trim(f%name), "ta1",  f%ta1)
+                call nc_read_attr(filename, ncid, trim(f%name), "wsum", f%wsum)
 
             end associate
         end do
+
+        call nc_close(ncid)
 
     contains
 
@@ -1334,10 +1346,10 @@ contains
             character(len=*), intent(in)  :: att
             integer,          intent(out) :: val
 
-            if (.not. nc_exists_attr(filename, trim(st%f(hh)%name), att)) then
+            if (.not. nc_exists_attr(filename, ncid, trim(st%f(hh)%name), att)) then
                 call mismatch(hh, "attribute '"//att//"'", "present", "absent")
             end if
-            call nc_read_attr(filename, trim(st%f(hh)%name), att, val)
+            call nc_read_attr(filename, ncid, trim(st%f(hh)%name), att, val)
 
         end subroutine read_int_attr
 
@@ -1348,7 +1360,7 @@ contains
 
             logical :: found
 
-            found = nc_exists_var(filename, vname)
+            found = nc_exists_var(filename, vname, ncid=ncid)
             if (found .neqv. wanted) then
                 call mismatch(hh, "variable '"//vname//"'", &
                     merge("present", "absent ", wanted), merge("present", "absent ", found))
@@ -1477,37 +1489,39 @@ contains
 
     end function same_shape
 
-    subroutine write_real(filename, vname, f, a, dn)
+    subroutine write_real(filename, ncid, vname, f, a, dn)
         ! One (nx,ny,nz) buffer of f, written with the rank of the field.
         character(len=*), intent(in) :: filename, vname
+        integer,          intent(in) :: ncid
         type(field_t),    intent(in) :: f
         real(dp),         intent(in) :: a(:,:,:)
         character(len=*), intent(in) :: dn(3)
 
         select case (f%rank)
             case (0)
-                call nc_write(filename, vname, a(:,1,1), dim1=trim(dn(1)))
+                call nc_write(filename, vname, a(:,1,1), dim1=trim(dn(1)), ncid=ncid)
             case (2)
-                call nc_write(filename, vname, a(:,:,1), dim1=trim(dn(1)), dim2=trim(dn(2)))
+                call nc_write(filename, vname, a(:,:,1), dim1=trim(dn(1)), dim2=trim(dn(2)), ncid=ncid)
             case default
-                call nc_write(filename, vname, a, dim1=trim(dn(1)), dim2=trim(dn(2)), dim3=trim(dn(3)))
+                call nc_write(filename, vname, a, dim1=trim(dn(1)), dim2=trim(dn(2)), dim3=trim(dn(3)), ncid=ncid)
         end select
 
     end subroutine write_real
 
-    subroutine read_real(filename, vname, f, a)
+    subroutine read_real(filename, ncid, vname, f, a)
         ! Read into an existing (nx,ny,nz) buffer, with the rank of the field.
         character(len=*), intent(in)    :: filename, vname
+        integer,          intent(in)    :: ncid
         type(field_t),    intent(in)    :: f
         real(dp),         intent(inout) :: a(:,:,:)
 
         select case (f%rank)
             case (0)
-                call nc_read(filename, vname, a(:,1,1))
+                call nc_read(filename, vname, a(:,1,1), ncid=ncid)
             case (2)
-                call nc_read(filename, vname, a(:,:,1))
+                call nc_read(filename, vname, a(:,:,1), ncid=ncid)
             case default
-                call nc_read(filename, vname, a)
+                call nc_read(filename, vname, a, ncid=ncid)
         end select
 
     end subroutine read_real
