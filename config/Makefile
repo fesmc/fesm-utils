@@ -432,12 +432,14 @@ bench-coords : fesmutils-static
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
 		@echo " "
 
-# ncio precision (bit rounding in nc_write) test program
+# ncio test programs: precision (bit rounding in nc_write), attributes on an open file (ncid)
 test-ncio : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_precision.x $(testdir)/ncio/test_ncio_precision.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_attr_ncid.x $(testdir)/ncio/test_ncio_attr_ncid.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
-		@echo "    ncio precision test program ready: $(bindir)/test_ncio_precision.x"
+		@echo "    ncio test programs ready: $(bindir)/test_ncio_precision.x, $(bindir)/test_ncio_attr_ncid.x"
 		@echo " "
 
 # variable_io (variable tables, var_io_write) test program
@@ -731,7 +733,7 @@ check-phys-constants : test-phys-constants
 check-root : test-root
 		@$(call check_run,test_roots)
 check-ncio : test-ncio
-		@$(call check_run,test_ncio_precision)
+		@$(call check_run,test_ncio_precision test_ncio_attr_ncid)
 check-var-io : test-var-io
 		@$(call check_run,test_var_io)
 check-series : test-series
@@ -854,7 +856,7 @@ usage:
 	@echo " make libs             : builds fftw + lis + shtns (openmp=0|1)"
 	@echo " make test-coords      : compiles the coords test programs"
 	@echo " make test-root        : compiles the root_finder test program"
-	@echo " make test-ncio        : compiles the ncio precision test program"
+	@echo " make test-ncio        : compiles the ncio test programs"
 	@echo " make test-var-io      : compiles the variable_io test program"
 	@echo " make test-regions     : compiles the regions test program"
 	@echo " make test-topodata    : compiles the topodata test program"

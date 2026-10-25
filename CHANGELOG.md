@@ -161,6 +161,10 @@ All notable changes to fesm-utils are documented here.
   `fesm_error`; the private `*_error`/`to_str` helpers are removed. The frame header is now
   `fesm:: error in <proc>`. `coupler`, `htopo` and `zremap` errors now go to `error_unit`
   (were stdout); `coupler` stops with `error stop 1` (was `stop 1`).
+- **ncio**: attribute routines on an open file: `nc_write_attr`, `nc_read_attr`,
+  `nc_exists_attr` and `nc_size_attr` accept `(filename, ncid, [varname,] name, ...)`
+  (`filename` is only for messages; the file stays open, in data mode); `nc_exists_var`
+  and `nc_dims` take an optional `ncid`. The calls without `ncid` are unchanged.
 
 ### Fixed
 - **coords**: `conservative_spherical` builds each source cell polygon by sampling its
