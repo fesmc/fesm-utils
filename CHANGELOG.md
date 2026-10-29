@@ -129,6 +129,11 @@ All notable changes to fesm-utils are documented here.
   (and `ka ago`, `kyr ago`) are equivalent to `years BP` etc.: positive values are before
   present, year = 1950 - t (model time -t with `time_ref = 1950`). Reads e.g. FesmData
   `GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc` (`years ago`).
+- **htopo**: `htopo_write_step(htopo, filename, time [, prec])` takes the precisions of the
+  written fields from the caller: `prec` (`htopo_write_prec_t`, one `htopo_prec_t(prec_abs,
+  prec_rel)` per field `z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl`; 0 = lossless). The defaults
+  are the former fixed values (1e-3 absolute, 1e-4 for `f_grnd`); without `prec` the file is
+  byte-identical to before. `make check-htopo-write`.
 - **coords**: optional sphere radius `radius` [m] for `grid_init_gaussian` and `grid_init` (opts form), e.g.
   `radius = 6371000.0_dp` (VILMA2, CLIMBER-X) instead of the table's 6.371221E6; areas and the cache
   signature use it (unchanged for a given radius). The radius is a field of the planet

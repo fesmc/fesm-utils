@@ -72,7 +72,24 @@ module htopo
         real(wp), allocatable :: z_sl(:,:)      ! [m] sea-surface / sea-level height
     end type
 
+    ! Rounding of the fields written by htopo_write_step (see nc_write, prec_abs and
+    ! prec_rel): one pair per field, of the kind of the fields (wp); 0 = off. The defaults are
+    ! the library's values.
+    type htopo_prec_t
+        real(wp) :: prec_abs = 0.0_wp     ! absolute precision, in the units of the field
+        real(wp) :: prec_rel = 0.0_wp     ! relative precision
+    end type
+
+    type htopo_write_prec_t
+        type(htopo_prec_t) :: z_bed  = htopo_prec_t(1.0e-3_wp, 0.0_wp)
+        type(htopo_prec_t) :: H_ice  = htopo_prec_t(1.0e-3_wp, 0.0_wp)
+        type(htopo_prec_t) :: z_srf  = htopo_prec_t(1.0e-3_wp, 0.0_wp)
+        type(htopo_prec_t) :: f_grnd = htopo_prec_t(1.0e-4_wp, 0.0_wp)
+        type(htopo_prec_t) :: z_sl   = htopo_prec_t(1.0e-3_wp, 0.0_wp)
+    end type
+
     public :: htopo_par_class, htopo_class
+    public :: htopo_prec_t, htopo_write_prec_t
     public :: htopo_init, htopo_update, htopo_basins
     public :: htopo_write_init, htopo_write_step
 
@@ -336,14 +353,20 @@ contains
                       start=[1,1], long_name="Basin ("//trim(htopo%par%basins)//")", units="1")
     end subroutine htopo_write_init
 
-    subroutine htopo_write_step(htopo, filename, time)
-        ! Append the dynamic hi-res geometry at `time` (rounded to the precision
-        ! given per field, see nc_write prec_abs).
-        type(htopo_class), intent(in) :: htopo
-        character(len=*),  intent(in) :: filename
-        real(dp),          intent(in) :: time
+    subroutine htopo_write_step(htopo, filename, time, prec)
+        ! Append the dynamic hi-res geometry at `time`, rounded to the precision
+        ! of each field: `prec` (htopo_write_prec_t, one prec_abs/prec_rel pair
+        ! per field, kind wp like the fields; without it the defaults, 1e-3 for z_bed, H_ice, z_srf and
+        ! z_sl, 1e-4 for f_grnd, absolute).
+        type(htopo_class),        intent(in)           :: htopo
+        character(len=*),         intent(in)           :: filename
+        real(dp),                 intent(in)           :: time
+        type(htopo_write_prec_t), intent(in), optional :: prec
 
+        type(htopo_write_prec_t) :: p
         integer :: ncid, n
+
+        if (present(prec)) p = prec
 
         call nc_open(filename, ncid, writable=.TRUE.)
         n = nc_time_index(filename, "time", time, ncid)
@@ -351,19 +374,24 @@ contains
 
         call nc_write(filename, "z_bed", htopo%z_bed, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Bedrock elevation", prec_abs=1e-3_wp)
+                      long_name="Bedrock elevation", &
+                      prec_abs=p%z_bed%prec_abs, prec_rel=p%z_bed%prec_rel)
         call nc_write(filename, "H_ice", htopo%H_ice, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Ice thickness", prec_abs=1e-3_wp)
+                      long_name="Ice thickness", &
+                      prec_abs=p%H_ice%prec_abs, prec_rel=p%H_ice%prec_rel)
         call nc_write(filename, "z_srf", htopo%z_srf, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Surface elevation", prec_abs=1e-3_wp)
+                      long_name="Surface elevation", &
+                      prec_abs=p%z_srf%prec_abs, prec_rel=p%z_srf%prec_rel)
         call nc_write(filename, "f_grnd", htopo%f_grnd, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="1", &
-                      long_name="Grounded-ice fraction", prec_abs=1e-4_wp)
+                      long_name="Grounded-ice fraction", &
+                      prec_abs=p%f_grnd%prec_abs, prec_rel=p%f_grnd%prec_rel)
         call nc_write(filename, "z_sl", htopo%z_sl, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[htopo%nx,htopo%ny,1], ncid=ncid, units="m", &
-                      long_name="Sea-surface height", prec_abs=1e-3_wp)
+                      long_name="Sea-surface height", &
+                      prec_abs=p%z_sl%prec_abs, prec_rel=p%z_sl%prec_rel)
         call nc_close(ncid)
     end subroutine htopo_write_step
 

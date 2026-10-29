@@ -501,6 +501,14 @@ test-topoprep : fesmutils-static
 		@echo "    topoprep test program ready: $(bindir)/test_topoprep.x"
 		@echo " "
 
+# htopo_write_step precisions from the caller (synthetic fields, no files needed)
+test-htopo-write : fesmutils-static
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_htopo_write.x $(testdir)/fesmdata/test_htopo_write.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		@echo " "
+		@echo "    htopo_write_step test program ready: $(bindir)/test_htopo_write.x"
+		@echo " "
+
 # htopo (hi-res geometry hub) test program
 test-htopo : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_htopo.x $(testdir)/fesmdata/test_htopo.f90 \
@@ -719,12 +727,12 @@ check_abort = mkdir -p logs/check; nfail=0; \
 .PHONY : check check-data check-coords check-phys-constants check-root check-ncio \
          check-var-io check-series check-varslice check-multitopo check-units \
          check-varslice-clim check-tsgen check-zremap check-log check-clock check-fields \
-         check-datasrc check-nml check-nml-compat check-topoprep
+         check-datasrc check-nml check-nml-compat check-topoprep check-htopo-write
 
 check : check-coords check-phys-constants check-root check-ncio check-var-io \
         check-series check-varslice check-multitopo check-units check-varslice-clim \
         check-tsgen check-zremap check-log check-clock check-fields check-datasrc \
-        check-nml check-topoprep
+        check-nml check-topoprep check-htopo-write
 		@echo " "
 		@echo "    make check: all tests passed (data tests: make check-data)."
 		@echo " "
@@ -757,6 +765,8 @@ check-log : test-log
 		@$(call check_run,test_log)
 check-topoprep : test-topoprep
 		@$(call check_run,test_topoprep)
+check-htopo-write : test-htopo-write
+		@$(call check_run,test_htopo_write)
 check-clock : test-clock
 		@$(call check_run,$(CHECK_CLOCK))
 check-fields : test-fields
@@ -865,6 +875,7 @@ usage:
 	@echo " make test-topodata    : compiles the topodata test program"
 	@echo " make test-htopo       : compiles the htopo test program"
 	@echo " make test-topoprep   : compiles the topography preparation test program"
+	@echo " make test-htopo-write : compiles the htopo_write_step precision test program"
 	@echo " make test-units       : compiles the units test programs (fesmdata, fesm_units)"
 	@echo " make test-varslice-clim : compiles the varslice climatology test program"
 	@echo " make test-datasrc     : compiles the fesm_datasrc test programs (with its nml/varslice steps)"
