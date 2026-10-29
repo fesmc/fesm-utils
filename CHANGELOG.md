@@ -190,6 +190,9 @@ All notable changes to fesm-utils are documented here.
   subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
+- **coupler**: `coupler_merge_end` logs the double-counted amount only for coverage above
+  `1 + 1e-9` (it logged at INFO for round-off such as 1.0000000000000107); the hard error above
+  `overlap_tol` is unchanged.
 - **coords**: `conservative_spherical` builds each source cell polygon by sampling its
   edges in the source grid's plane (NSUB = 8 per edge) and inverse-projecting every
   sample; it interpolated the 4 inverse-projected corners in lon/lat, so projected cells

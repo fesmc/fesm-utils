@@ -21,7 +21,8 @@ program test_coupler_global
     !   (c) two overlapping regional grids (polar stereographic + regional
     !       lon-lat), owners from coupler_owner_reduce: merged integral =
     !       background part + owned regional integrals; merge(A,B) == merge(B,A)
-    !       bit for bit; without owners max(frac_tot) > 1 + 1e-2.
+    !       bit for bit; without owners max(frac_tot) > 1 + 1e-2. The merge logs the
+    !       double-counted amount only for coverage above 1 + 1e-9 (not round-off).
     !   (d) an intensive merge of a constant returns the constant to 1e-14.
     !   (e) split with var_src == ref_src returns ref_dst exactly.
     ! Pole and seam geometry (check_pole_seam), "con" to both global grids:
@@ -34,6 +35,7 @@ program test_coupler_global
 
     use coords
     use coupler
+    use fesm_log, only : log_set_unit
 
     implicit none
 
@@ -269,11 +271,19 @@ contains
         if (abs(i_merged - i_bg - i_own) > 1.0e-12_dp*abs(i_merged)) then
             write(*,*) "FAIL: (c) merged integral /= background + owned integrals"; fails = fails + 1
         end if
+        ! the log threshold: coverage up to 1 + 1e-12 (round-off) is not logged, 1 + 1e-6 is
+        call merge_log_case(cpl, acc, va, oa, bg, 1.0_dp + 1.0e-12_dp, .false.)
+        call merge_log_case(cpl, acc, va, oa, bg, 1.0_dp + 1.0e-6_dp, .true.)
         ! without owners the domains double-count
         call coupler_merge_begin(acc, cpl, "glob-ll1")
         call coupler_merge_add(acc, cpl, "glob-ant", va)
         call coupler_merge_add(acc, cpl, "glob-box", vb)
+        call log_to_file("test_cg_merge_log.txt")
         call coupler_merge_end(acc, cpl, bg, v2, frac_tot=ftot, overlap_tol=10.0_dp)
+        call log_to_file("")
+        if (.not. file_has("test_cg_merge_log.txt", "double-counted amount")) then
+            write(*,*) "FAIL: (c) coupler_merge_end does not log a real overlap"; fails = fails + 1
+        end if
         write(*,*) "(c) without owners: max frac_tot =", maxval(ftot)
         if (maxval(ftot) <= 1.01_dp) then
             write(*,*) "FAIL: (c) overlapping domains without owners not detected"; fails = fails + 1
@@ -301,6 +311,64 @@ contains
             write(*,*) "(e) split(var_src == ref_src) == ref_dst"
         end if
     end subroutine check_coupler
+
+    subroutine merge_log_case(cpl, acc, va, oa, bg, scale, expect_log)
+        ! A single domain with owner weights scale*oa (cells inside the disk then
+        ! cover scale): coupler_merge_end logs the overlap only above 1 + 1e-9.
+        type(coupler_class),   intent(inout) :: cpl
+        type(coupler_merge_t), intent(inout) :: acc
+        real(dp), intent(in) :: va(:,:), oa(:,:), bg(:,:)
+        real(dp), intent(in) :: scale
+        logical,  intent(in) :: expect_log
+        real(dp), allocatable :: m(:,:), f1(:,:)
+        allocate(f1(size(bg,1), size(bg,2)))
+        call log_to_file("test_cg_merge_log.txt")
+        call coupler_merge_begin(acc, cpl, "glob-ll1")
+        call coupler_merge_add(acc, cpl, "glob-ant", va, owner=scale*oa)
+        call coupler_merge_end(acc, cpl, bg, m, frac_tot=f1)
+        call log_to_file("")
+        write(*,*) "(c) merge log: max frac_tot - 1 =", maxval(f1) - 1.0_dp, "  logged:", &
+                   file_has("test_cg_merge_log.txt", "coverage up to")
+        if (maxval(f1) - 1.0_dp < 0.5_dp*(scale - 1.0_dp)) then
+            write(*,*) "FAIL: (c) merge log case does not reach the intended coverage"; fails = fails + 1
+        end if
+        if (file_has("test_cg_merge_log.txt", "coverage up to") .neqv. expect_log) then
+            write(*,*) "FAIL: (c) coupler_merge_end log threshold at coverage 1 +", scale - 1.0_dp; fails = fails + 1
+        end if
+    end subroutine merge_log_case
+
+    subroutine log_to_file(fname)
+        ! Send the log (INFO) output to fname; "" restores standard output.
+        use, intrinsic :: iso_fortran_env, only : output_unit
+        character(len=*), intent(in) :: fname
+        integer, save :: u
+        logical, save :: is_open = .false.
+        if (is_open) then
+            close(u); is_open = .false.
+        end if
+        if (len_trim(fname) == 0) then
+            call log_set_unit(output_unit)
+        else
+            open(newunit=u, file=fname, status="replace", action="write")
+            is_open = .true.
+            call log_set_unit(u)
+        end if
+    end subroutine log_to_file
+
+    logical function file_has(fname, text) result(found)
+        character(len=*), intent(in) :: fname, text
+        character(len=512) :: line
+        integer :: u, ios
+        found = .false.
+        open(newunit=u, file=fname, status="old", action="read", iostat=ios)
+        if (ios /= 0) return
+        do
+            read(u, "(a)", iostat=ios) line
+            if (ios /= 0) exit
+            if (index(line, text) > 0) found = .true.
+        end do
+        close(u)
+    end function file_has
 
     real(dp) function close_tol(g2) result(tol)
         ! Closure tolerance of sum_k phi_jk = 1 on the target planet of g2.

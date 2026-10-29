@@ -28,6 +28,7 @@ test_units.nc
 test_fields_*.nc
 test_varslice_clim.nc
 test_ds_*
+test_cg_*.txt
 /test_nml_*
 docs/figures/zremap/zremap_grl.nc
 maps/

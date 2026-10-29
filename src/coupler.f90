@@ -44,6 +44,7 @@ module coupler
     implicit none
     private
 
+    real(dp), parameter :: MERGE_LOG_TOL = 1.0e-9_dp  ! coverage above 1 + this is logged by coupler_merge_end (round-off is not)
     integer, parameter :: SLOTS_INIT = 8   ! initial slot-array size (doubles on growth)
 
     type grid_slot
@@ -378,7 +379,8 @@ contains
         ! in the order of their names, so the result does not depend on the
         ! order of coupler_merge_add calls. max(F) > 1 + overlap_tol (default
         ! 1e-2) stops, naming the overlapping domains (they need owner weights);
-        ! a smaller excess is accepted and the double-counted amount logged.
+        ! a smaller excess is accepted, and logged with the double-counted amount
+        ! when it exceeds 1e-9 (round-off in the sum of the coverages is not logged).
         type(coupler_merge_t),  intent(inout) :: acc
         type(coupler_class),    intent(inout) :: cpl
         real(dp),               intent(in)    :: background(:,:)
@@ -418,7 +420,7 @@ contains
                 "' (max coverage "//to_str(maxval(ftot))//" > 1 + overlap_tol): give them owner weights.", &
                 "overlapping domains:"//who)
         end if
-        if (maxval(ftot) > 1.0_dp) then
+        if (maxval(ftot) > 1.0_dp + MERGE_LOG_TOL) then
             id = find_grid(cpl, acc%dst)
             dbl = 0.0_dp
             do j = 1, ny
