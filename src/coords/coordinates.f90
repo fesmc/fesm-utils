@@ -280,8 +280,8 @@ contains
         ! ellipsoid (the cell areas are then the authalic zone areas, not R^2*dlon*w_j).
         ! radius [m]: optional sphere radius replacing the table value (e.g. 6371000
         ! as in VILMA2 / CLIMBER-X); the areas and the signature use it. Spherical
-        ! planets only. It is carried in the planet name ("<name> R=<radius>"), so
-        ! grids derived from this one keep it.
+        ! planets only. It is a field of the planet (grid%cs%planet), so grids
+        ! derived from this one keep it.
         type(grid_class),           intent(inout) :: grid
         character(len=*),           intent(in)    :: name
         integer,                    intent(in)    :: nlon, nlat
@@ -295,7 +295,6 @@ contains
 
         planet_name = "Spherical Earth"
         if (present(planet)) planet_name = trim(planet)
-        if (present(radius)) planet_name = planet_name_with_radius(planet_name, radius)
 
         call gaussian_latitudes_calc(nlat, lat, wts)
         ! Cumulative sum from the south pole (Neumaier-compensated), mirrored
@@ -321,7 +320,7 @@ contains
         if (present(x0)) lon0 = x0
         dlon = 360.0_dp/real(nlon, dp)
         call grid_init_from_opts(grid, name, mtype="gaussian", units="degrees", planet=trim(planet_name), &
-                                 lon180=lon180, x0=lon0, dx=dlon, nx=nlon, y=lat, y_bnds=yb)
+                                 lon180=lon180, x0=lon0, dx=dlon, nx=nlon, y=lat, y_bnds=yb, radius=radius)
     end subroutine grid_init_gaussian
 
     subroutine axis_midpoint_bounds(x, xb, dx)
@@ -368,13 +367,16 @@ contains
         character(len=*)   :: name  
         integer, optional  :: nx, ny
         real(dp), optional :: x(:), y(:), x0, dx, y0, dy
+        real(dp), allocatable :: radius   ! only a sphere's radius is passed on (else absent)
+
+        if (grid0%cs%planet%is_sphere) radius = grid0%cs%planet%R
         
         call grid_init_from_opts(grid,name,mtype=grid0%cs%mtype,units=grid0%cs%units, &
                                  planet=grid0%cs%planet%name,lon180=grid0%cs%is_lon180, &
                                  x=x,y=y,x0=x0,dx=dx,nx=nx,y0=y0,dy=dy,ny=ny, &
                                  lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
                                  alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
-                                 k0=grid0%cs%proj%k0)
+                                 k0=grid0%cs%proj%k0,radius=radius)
 
         return
 
@@ -391,13 +393,16 @@ contains
         character(len=*)   :: name  
         integer, optional  :: nx, ny
         real(dp), optional :: x(:), y(:), x0, dx, y0, dy
+        real(dp), allocatable :: radius   ! only a sphere's radius is passed on (else absent)
+
+        if (pts0%cs%planet%is_sphere) radius = pts0%cs%planet%R
         
         call grid_init_from_opts(grid,name,mtype=pts0%cs%mtype,units=pts0%cs%units, &
                                  planet=pts0%cs%planet%name,lon180=pts0%cs%is_lon180, &
                                  x=x,y=y,x0=x0,dx=dx,nx=nx,y0=y0,dy=dy,ny=ny, &
                                  lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
                                  alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
-                                 k0=pts0%cs%proj%k0)
+                                 k0=pts0%cs%proj%k0,radius=radius)
 
         return
 
@@ -416,17 +421,21 @@ contains
         character(len=256)   :: planet  
         logical              :: lon180
         real(dp)             :: lambda, phi, alpha, x_e, y_n, k0
+        real(dp)             :: planet_radius   ! [m], spherical planets; unset = the table radius
+        real(dp), allocatable :: radius
 
         namelist /map/ name, mtype, units, planet, lon180, &
-                       lambda, phi, alpha, x_e, y_n, k0
+                       lambda, phi, alpha, x_e, y_n, k0, planet_radius
 
         k0 = 1.0_dp
+        planet_radius = -huge(1.0_dp)
         open(7,file=trim(filename))
         read(7,nml=map)
         close(7)
+        if (planet_radius /= -huge(1.0_dp)) radius = planet_radius
 
         call grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
-                       x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0)
+                       x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0,radius=radius)
 
         return
 
@@ -650,7 +659,6 @@ contains
         real(dp), optional :: k0                 ! scale factor (transverse_mercator)
         real(dp), optional :: x_bnds(:), y_bnds(:)
         real(dp), optional :: radius
-        character(len=256) :: planet_in
         real(dp) :: tmp1, tmp2
         integer :: i, j 
         real(dp), allocatable :: tmpvec1(:), tmpvec2(:) 
@@ -724,12 +732,9 @@ contains
         end do 
 
         ! Initialize data as points, then convert back to grid using axis info
-        planet_in = "WGS84"       ! (as points_init_from_opts)
-        if (present(planet)) planet_in = trim(planet)
-        if (present(radius)) planet_in = planet_name_with_radius(planet_in, radius)
-        call points_init_from_opts(pts,name,mtype,units,trim(planet_in),lon180,reshape(grid%x,[grid%npts]),&
+        call points_init_from_opts(pts,name,mtype,units,planet,lon180,reshape(grid%x,[grid%npts]),&
                          reshape(grid%y,[grid%npts]),lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n, &
-                         k0=k0)
+                         k0=k0,radius=radius)
         call points_to_grid(pts,grid)
 
         ! Cell edges of the axes as given (before any lon180 shift below):
@@ -846,6 +851,9 @@ contains
         real(dp), optional :: x(:), y(:), dx(:), dy(:)
         logical, optional  :: latlon
         integer, optional  :: skip 
+        real(dp), allocatable :: radius   ! only a sphere's radius is passed on (else absent)
+
+        if (pts0%cs%planet%is_sphere) radius = pts0%cs%planet%R
 
         if (present(filename)) then 
             call points_init_from_file(pts,name,mtype=pts0%cs%mtype,units=pts0%cs%units, &
@@ -853,7 +861,7 @@ contains
                                        lon180=pts0%cs%is_lon180, &
                                        lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
                                        alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
-                                 k0=pts0%cs%proj%k0, &
+                                 k0=pts0%cs%proj%k0, radius=radius, &
                                        latlon=latlon,skip=skip)
 
         else
@@ -861,7 +869,7 @@ contains
                                      planet=pts0%cs%planet%name,lon180=pts0%cs%is_lon180,x=x,y=y,dx=dx,dy=dy, &
                                      lambda=pts0%cs%proj%lambda,phi=pts0%cs%proj%phi, &
                                      alpha=pts0%cs%proj%alpha,x_e=pts0%cs%proj%x_e,y_n=pts0%cs%proj%y_n, &
-                                 k0=pts0%cs%proj%k0, &
+                                 k0=pts0%cs%proj%k0, radius=radius, &
                                      latlon=latlon)
         end if 
 
@@ -880,6 +888,9 @@ contains
         real(dp), optional :: x(:), y(:), dx(:), dy(:)
         logical, optional  :: latlon 
         integer, optional  :: skip 
+        real(dp), allocatable :: radius   ! only a sphere's radius is passed on (else absent)
+
+        if (grid0%cs%planet%is_sphere) radius = grid0%cs%planet%R
 
         if (present(filename)) then 
             call points_init_from_file(pts,name,mtype=grid0%cs%mtype,units=grid0%cs%units, &
@@ -887,7 +898,7 @@ contains
                                        dx=grid0%G%dx,dy=grid0%G%dy,lon180=grid0%cs%is_lon180, &
                                        lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
                                        alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
-                                 k0=grid0%cs%proj%k0, &
+                                 k0=grid0%cs%proj%k0, radius=radius, &
                                        latlon=latlon,skip=skip)
 
         else
@@ -895,7 +906,7 @@ contains
                                        planet=grid0%cs%planet%name,lon180=grid0%cs%is_lon180,x=x,y=y,dx=dx,dy=dy, &
                                        lambda=grid0%cs%proj%lambda,phi=grid0%cs%proj%phi, &
                                        alpha=grid0%cs%proj%alpha,x_e=grid0%cs%proj%x_e,y_n=grid0%cs%proj%y_n, &
-                                 k0=grid0%cs%proj%k0, &
+                                 k0=grid0%cs%proj%k0, radius=radius, &
                                        latlon=latlon)
         end if
 
@@ -917,24 +928,28 @@ contains
         character(len=256)   :: planet  
         logical              :: lon180
         real(dp)             :: lambda, phi, alpha, x_e, y_n, k0
+        real(dp)             :: planet_radius   ! [m], spherical planets; unset = the table radius
+        real(dp), allocatable :: radius
 
         namelist /map/ name, mtype, units, planet, lon180, &
-                       lambda, phi, alpha, x_e, y_n, k0
+                       lambda, phi, alpha, x_e, y_n, k0, planet_radius
 
         k0 = 1.0_dp
+        planet_radius = -huge(1.0_dp)
         open(7,file=trim(filename))
         read(7,nml=map)
         close(7)
+        if (planet_radius /= -huge(1.0_dp)) radius = planet_radius
 
         call points_init_from_opts(pts,name,mtype,units,planet,lon180, &
-                         x,y,dx,dy,lambda,phi,alpha,x_e,y_n,latlon,k0=k0)
+                         x,y,dx,dy,lambda,phi,alpha,x_e,y_n,latlon,k0=k0,radius=radius)
 
         return
 
     end subroutine points_init_from_par
 
     subroutine points_init_from_file(pts,name,mtype,units,filename,planet,dx,dy,lon180, &
-                                     lambda,phi,alpha,x_e,y_n,latlon,skip,k0)
+                                     lambda,phi,alpha,x_e,y_n,latlon,skip,k0,radius)
 
 
         implicit none
@@ -949,6 +964,7 @@ contains
         logical,  optional :: latlon 
         integer,  optional :: skip 
         real(dp), optional :: k0
+        real(dp), optional :: radius
 
         integer :: i, io, n, nskip   
         integer, parameter :: nmax = 1000000
@@ -989,7 +1005,7 @@ contains
         if (present(dy)) dy_vec = dy 
          
         call points_init_from_opts(pts,name,mtype,units,planet,lon180, &
-                         x,y,dx_vec,dy_vec,lambda,phi,alpha,x_e,y_n,latlon,k0=k0)
+                         x,y,dx_vec,dy_vec,lambda,phi,alpha,x_e,y_n,latlon,k0=k0,radius=radius)
 
         write(*,*) "points_init_from_file: ", minval(pts%lon), maxval(pts%lon)
         write(*,*) "points_init_from_file: ", minval(pts%lat), maxval(pts%lat)
@@ -999,7 +1015,7 @@ contains
     end subroutine points_init_from_file
 
     subroutine points_init_from_opts(pts,name,mtype,units,planet,lon180,x,y,dx,dy, &
-                                     lambda,phi,alpha,x_e,y_n,latlon,verbose,k0)
+                                     lambda,phi,alpha,x_e,y_n,latlon,verbose,k0,radius)
 
         use oblimap_projection_module 
 
@@ -1016,6 +1032,7 @@ contains
         logical, optional :: latlon 
         logical, optional :: verbose 
         real(dp), optional :: k0                 ! scale factor (transverse_mercator)
+        real(dp), optional :: radius             ! sphere radius [m] (see planet_init)
         
         ! Local variables 
         logical :: latlon_in 
@@ -1135,7 +1152,7 @@ contains
         ! Initialize planetary reference information
         planet_name = "WGS84"
         if (present(planet)) planet_name = trim(planet)
-        call planet_init(pts%cs%planet,planet_name)
+        call planet_init(pts%cs%planet,planet_name,radius=radius)
 
         ! If cartesian grid is a projection, calculate the corresponding latlon points
         ! Note: xy points not needed for a latlon grid except during mapping

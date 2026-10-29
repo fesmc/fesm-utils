@@ -35,6 +35,7 @@ contains
         character(len=32)  :: xunits, yunits
         real(dp) :: phi_proj_orig
         character(len=128) :: ellps
+        character(len=32)  :: txt
 
         ! Determine grid type to write
         select case(trim(grid%cs%mtype))
@@ -75,6 +76,10 @@ contains
         write(fnum,"(a)")    "# mtype  = "//trim(grid%cs%mtype)
         write(fnum,"(a)")    "# units  = "//trim(grid%cs%units)
         write(fnum,"(a)")    "# planet = "//trim(grid%cs%planet%name)
+        if (grid%cs%planet%is_sphere) then
+            write(txt,"(es24.16e3)") grid%cs%planet%R
+            write(fnum,"(a)")    "# planet_radius = "//trim(adjustl(txt))
+        end if
         write(fnum,"(a,l1)") "# lon180 = ", grid%cs%is_lon180
         write(fnum,"(a,g0)") "# lambda = ", grid%cs%proj%lambda
         write(fnum,"(a,g0)") "# phi    = ", grid%cs%proj%phi
@@ -201,6 +206,7 @@ contains
         character(len=256) :: mtype, units, planet
         logical  :: lon180
         real(dp) :: lambda, phi, alpha, x_e, y_n, k0
+        real(dp), allocatable :: radius      ! sphere radius from the header (else absent)
 
         ! Axis definition (cdo body)
         integer  :: nx, ny
@@ -251,6 +257,7 @@ contains
                 case ("mtype");  mtype  = trim(val); has_mtype  = .true.
                 case ("units");  units  = trim(val); has_units  = .true.
                 case ("planet"); planet = trim(val)
+                case ("planet_radius"); radius = 0.0_dp; read(val,*) radius
                 case ("lon180"); lon180 = (val(1:1) == "T" .or. val(1:1) == "t")
                 case ("lambda"); read(val,*) lambda; has_lambda = .true.
                 case ("phi");    read(val,*) phi;    has_phi    = .true.
@@ -338,13 +345,13 @@ contains
         ! Reconstruct the grid (axes + coordinate system) in one call
         if (is_gaussian) then
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
-                           planet=planet, lon180=lon180, &
+                           planet=planet, radius=radius, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y=yvals, &
                            lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0, &
                            x_bnds=xb, y_bnds=yb)
         else
             call grid_init(grid, name=trim(name), mtype=mtype, units=units, &
-                           planet=planet, lon180=lon180, &
+                           planet=planet, radius=radius, lon180=lon180, &
                            x0=x0, dx=dx, nx=nx, y0=y0, dy=dy, ny=ny, &
                            lambda=lambda, phi=phi, alpha=alpha, x_e=x_e, y_n=y_n, k0=k0, &
                            x_bnds=xb, y_bnds=yb)
