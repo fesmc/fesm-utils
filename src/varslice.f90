@@ -2330,6 +2330,9 @@ contains
         !   months since <date>: 360_day only
         !   years since <date>, common_years since <date>: year of date + t
         !   yr BP, a BP, years BP, ka BP, kyr BP: 1950 - t*{1, 1000}
+        !   (equivalent: yr ago, a ago, years ago, ka ago, kyr ago, yr before present,
+        !   years before present; positive values are before present, so with
+        !   time_ref = 1950 the model time is -t)
         !   yr CE, years CE, AD: t
         !   yr, years, ka (no reference): error (set time_units)
         ! Errors stop, or with stat present set stat = 1 and return (quiet:
@@ -2362,9 +2365,10 @@ contains
         p = index(u, " since ")
         if (p .eq. 0) then
             select case(trim(squeeze(u)))
-                case("yr bp", "a bp", "years bp")
+                case("yr bp", "a bp", "years bp", "yr ago", "a ago", "years ago", &
+                     "yr before present", "years before present")
                     y = 1950.0_dp - t
-                case("ka bp", "kyr bp")
+                case("ka bp", "kyr bp", "ka ago", "kyr ago")
                     y = 1950.0_dp - 1000.0_dp*t
                 case("yr ce", "years ce", "ad")
                     y = t

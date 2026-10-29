@@ -125,6 +125,10 @@ All notable changes to fesm-utils are documented here.
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **varslice**: time units `years ago`, `yr ago`, `a ago`, `years before present`, `yr before present`
+  (and `ka ago`, `kyr ago`) are equivalent to `years BP` etc.: positive values are before
+  present, year = 1950 - t (model time -t with `time_ref = 1950`). Reads e.g. FesmData
+  `GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc` (`years ago`).
 - **coords**: optional sphere radius `radius` [m] for `grid_init_gaussian` and `grid_init` (opts form), e.g.
   `radius = 6371000.0_dp` (VILMA2, CLIMBER-X) instead of the table's 6.371221E6; areas and the cache
   signature use it. The radius is carried in the planet name, `"Spherical Earth R=<radius>"`

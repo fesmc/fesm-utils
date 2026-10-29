@@ -21,6 +21,9 @@ program test_time_axis
     real(dp), allocatable :: y(:)
     real(dp) :: t9(9), tm(24)
     integer :: nfail, stat, k
+    character(len=*), parameter :: ago_grp(3)   = ["ago_a", "ago_b", "ago_c"]
+    character(len=*), parameter :: ago_units(3) = ["years ago           ", "years BP            ", &
+                                                   "years before present"]
 
     nfail = 0
 
@@ -46,6 +49,14 @@ program test_time_axis
     call dec("a BP", "",                                     [0.0_dp], [1950.0_dp])
     call dec("years BP", "",                                 [100.0_dp], [1850.0_dp])
     call dec("ka BP", "",                                    [21.0_dp], [-19050.0_dp])
+    call dec("years ago", "",                                [80000.0_dp, 0.0_dp], [-78050.0_dp, 1950.0_dp])
+    call dec("Years Ago", "",                                [100.0_dp], [1850.0_dp])
+    call dec("yr ago", "",                                   [21000.0_dp], [-19050.0_dp])
+    call dec("a ago", "",                                    [0.0_dp], [1950.0_dp])
+    call dec("years before present", "",                     [100.0_dp], [1850.0_dp])
+    call dec("yr before present", "",                        [21000.0_dp], [-19050.0_dp])
+    call dec("ka ago", "",                                   [21.0_dp], [-19050.0_dp])
+    call dec("kyr ago", "",                                  [0.5_dp], [1450.0_dp])
     call dec("kyr BP", "",                                   [0.5_dp], [1450.0_dp])
     call dec("yr CE", "",                                    [1850.0_dp], [1850.0_dp])
     call dec("years CE", "",                                 [-500.0_dp], [-500.0_dp])
@@ -102,6 +113,17 @@ program test_time_axis
     call varslice_update(vs, [-25500.0_dp], method="interp")
     call check("irregular: interp in a 1 kyr step", abs(vs%var(2,1,1,1) - real(lin(-25500.0_dp), wp)) .lt. 1e-3_wp)
     call varslice_end(vs)
+
+    ! "years ago", "years BP", "years before present": the same axis, model time = -value
+    do k = 1, size(ago_grp)
+        call varslice_init_nml(vs, fnml, trim(ago_grp(k)), verbose=.false., time_ref=1950.0_dp)
+        call check("'"//trim(ago_units(k))//"': model time = -value", size(vs%time) .eq. 5 .and. &
+                   all(abs(vs%time - [-80000.0_dp, -60000.0_dp, -40000.0_dp, -20000.0_dp, 0.0_dp]) .lt. tol))
+        call varslice_update(vs, [-30000.0_dp], method="interp")
+        call check("'"//trim(ago_units(k))//"': interp at 30000 years ago", &
+                   abs(vs%var(1,1,1,1) - 25.0_wp) .lt. 1e-3_wp)
+        call varslice_end(vs)
+    end do
 
     ! Monthly axis (days since 2000-01-01, noleap, mid-month): nsub = 12
     call varslice_init_nml(vs, fnml, "monthly", verbose=.false.)
@@ -192,6 +214,15 @@ contains
         end do
         call ncfile("test_ds_taxis_ice6g.nc", v(:,:,1:9), tt(1:9), "ka BP", "")
 
+        ! "Years ago" axes, 80000 ... 0 (as GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc): value = 40 - t/2000
+        tt(1:5) = [80000.0_dp, 60000.0_dp, 40000.0_dp, 20000.0_dp, 0.0_dp]
+        do k = 1, 5
+            v(:,:,k) = real(40.0_dp - tt(k)/2000.0_dp, wp)          ! 0, 10, ..., 40
+        end do
+        do k = 1, 3
+            call ncfile("test_ds_taxis_"//ago_grp(k)//".nc", v(:,:,1:5), tt(1:5), trim(ago_units(k)), "")
+        end do
+
         ! Monthly, two years, mid-month days since 2000-01-01 (noleap);
         ! value = 100 + 12*(year-2000) + month
         do k = 1, 24
@@ -246,6 +277,9 @@ contains
         call grp(u, "reg_nokey",  "test_ds_taxis_reg.nc", "")
         call grp(u, "multi",      "test_ds_taxis_mf_*.nc", "time = -1 0 0 0 0")
         call grp(u, "ice6g",      "test_ds_taxis_ice6g.nc", "time = -1 0 0 0 0")
+        do k = 1, 3
+            call grp(u, ago_grp(k), "test_ds_taxis_"//ago_grp(k)//".nc", "time = -1 0 0 0 0")
+        end do
         call grp(u, "monthly",    "test_ds_taxis_mon.nc", "time = -1 0 0 0 0")
         call grp(u, "clock",      "test_ds_taxis_clock.nc", 'time = -1 0 0 0 0'//new_line("a")// &
                                   '    time_units = "clock"')
