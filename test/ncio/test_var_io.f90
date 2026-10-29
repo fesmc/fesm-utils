@@ -5,7 +5,9 @@ program test_var_io
     !   * var_io_write of float/double/integer, 1D-3D, over time records,
     !     with the dims/missing_value/grid_mapping overrides;
     !   * precision_abs/precision_rel attributes as in the table, none
-    !     with var_io_lossless, and the lossless values bit-identical.
+    !     with var_io_lossless, and the lossless values bit-identical;
+    !   * a bad prec string aborts with a non-zero exit status (checked in a
+    !     child process: this program run with --bad-prec).
     ! All files are written by the test itself, then removed.
 
     use ncio
@@ -17,13 +19,22 @@ program test_var_io
     double precision, parameter :: mv = -9999.d0
     character(len=*), parameter :: ftab5 = "test_var_io_5col.md"
     character(len=*), parameter :: ftab6 = "test_var_io_6col.md"
+    character(len=*), parameter :: fbad  = "test_var_io_badprec.md"
+    character(len=*), parameter :: fbadlog = "test_var_io_badprec.log"
     character(len=*), parameter :: fnc   = "test_var_io.nc"
     character(len=*), parameter :: fnc_ll = "test_var_io_lossless.nc"
     integer :: nfail
+    character(len=256) :: arg
 
     type(var_io_type), allocatable :: t5(:), t6(:)
 
     nfail = 0
+
+    ! Child mode: load a table with a bad prec entry (must abort, never return)
+    if (command_argument_count() >= 1) then
+        call get_command_argument(1, arg)
+        if (trim(arg) .eq. "--bad-prec") call child_bad_prec()
+    end if
 
     write(*,*) "==================================================="
     write(*,*) " variable_io test suite"
@@ -38,6 +49,7 @@ program test_var_io
 
     call test_tables()
     call test_write()
+    call test_bad_prec()
 
     call delete_file(ftab5)
     call delete_file(ftab6)
@@ -80,6 +92,51 @@ contains
         write(u,"(a)") "|  5 | smb_col  | column       | m/yr  | Column mass balance| 1e-4r, 1e-3|"
         close(u)
     end subroutine write_tables
+
+    subroutine child_bad_prec()
+        ! Not reached past load_var_io_table when the library aborts as it should.
+        type(var_io_type), allocatable :: t(:)
+        integer :: u
+        open(newunit=u, file=fbad, status="replace", action="write")
+        write(u,"(a)") "| id | variable | dimensions | units | long_name     | prec  |"
+        write(u,"(a)") "|----|----------|------------|-------|---------------|-------|"
+        write(u,"(a)") "|  1 | H_ice    | xc, yc     | m     | Ice thickness | 1e-3x |"
+        close(u)
+        call load_var_io_table(t, fbad)
+        write(*,*) "child_bad_prec: the table was loaded (no abort)"
+        stop 0
+    end subroutine child_bad_prec
+
+    subroutine test_bad_prec()
+        ! A bad prec string must stop the program with a non-zero exit status
+        ! and say what is wrong (error_unit, collected with the output).
+        character(len=512) :: self, line
+        integer :: es, cs, u, ios, nbad
+        logical :: msg
+
+        nbad = 0
+        call get_command_argument(0, self)
+        call execute_command_line('"'//trim(self)//'" --bad-prec > '//fbadlog//' 2>&1', &
+                                  exitstat=es, cmdstat=cs)
+        if (cs .ne. 0 .or. es .eq. 0) nbad = nbad + 1
+
+        msg = .false.
+        open(newunit=u, file=fbadlog, status="old", action="read", iostat=ios)
+        if (ios .eq. 0) then
+            do
+                read(u,"(a)",iostat=ios) line
+                if (ios .ne. 0) exit
+                if (index(line, "bad prec entry") .gt. 0) msg = .true.
+            end do
+            close(u)
+        end if
+        if (.not. msg) nbad = nbad + 1
+
+        call delete_file(fbad)
+        call delete_file(fbadlog)
+        write(*,"(a,i0,a,i0,a)") "  bad prec string aborts:        bad = ", nbad, "  (child exit status ", es, ")"
+        nfail = nfail + nbad
+    end subroutine test_bad_prec
 
     subroutine test_tables()
         type(var_io_type) :: vl

@@ -191,6 +191,9 @@ All notable changes to fesm-utils are documented here.
   subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
+- **variable_io**: a bad `prec` string (and the other table errors, an unknown variable, a
+  rank/dims mismatch in `var_io_write`) stopped with exit status 0 (bare `stop`); they now `error stop 1`.
+  `test_var_io` checks the exit status of a child process.
 - **coupler**: `coupler_merge_end` logs the double-counted amount only for coverage above
   `1 + 1e-9` (it logged at INFO for round-off such as 1.0000000000000107); the hard error above
   `overlap_tol` is unchanged.

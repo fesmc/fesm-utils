@@ -87,7 +87,7 @@ contains
             if (with_error) then
                 write(error_unit,*) "find_var_io_in_table:: Error: variable not found in variable table."
                 write(error_unit,*) "varname = ", trim(varname)
-                stop
+                error stop 1
             end if
         end if
 
@@ -137,7 +137,7 @@ contains
                     write(error_unit,*) "filename = ", trim(filename)
                     write(error_unit,*) "Last line read in: "
                     write(error_unit,*) trim(line)
-                    stop
+                    error stop 1
                 end if
 
                 ntot = ntot+1
@@ -204,7 +204,7 @@ contains
             write(error_unit,*) "variable_io:: parse_line_to_variable:: Error: a table row must have &
             &5 columns (id, variable, dimensions, units, long_name) or 6 (+ prec)."
             write(error_unit,*) "line = ", trim(line)
-            stop
+            error stop 1
         end if
 
         ! Extract id
@@ -214,7 +214,7 @@ contains
             if (ios .ne. 0) then
                 write(error_unit,*) "variable_io:: parse_line_to_variable:: Error: id must be an integer."
                 write(error_unit,*) "id = ", trim(col(1))
-                stop
+                error stop 1
             end if
         else
             var%id = 0
@@ -319,7 +319,7 @@ contains
             write(error_unit,*) "  syntax: - (lossless), 1e-3 (absolute), 1e-4r (relative), 1e-3,1e-4r (both)"
             write(error_unit,*) "  prec = ", trim(str)
             write(error_unit,*) "  line = ", trim(line)
-            stop
+            error stop 1
 
         end subroutine parse_prec_error
 
@@ -688,7 +688,7 @@ contains
                 &dimension plus time."
                 write(error_unit,*) "varname = ", trim(v%varname)
                 write(error_unit,*) "rank(dat) = ", nd, ", size(dims) = ", size(dims)
-                stop
+                error stop 1
             end if
             dims_out = dims
         else
@@ -698,7 +698,7 @@ contains
                 &the dimensions of the variable table."
                 write(error_unit,*) "varname = ", trim(v%varname)
                 write(error_unit,*) "rank(dat) = ", nd, ", dimensions = ", trim(v%dimnames)
-                stop
+                error stop 1
             end if
             dims_out(1:nd) = v%dims
             dims_out(nd+1) = "time"
