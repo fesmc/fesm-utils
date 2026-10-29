@@ -115,8 +115,8 @@ ellipsoid); grids with default bounds keep the 4-corner area.
 global Gaussian grid (`mtype="gaussian"`) whose latitude bounds come from the
 Gauss weights, `sin φ_{j+1/2} = sin φ_{j-1/2} + w_j` from -1 to +1: the bands
 reach the poles, each node lies inside its band, and the cell area is the
-quadrature weight `R²·Δλ·w_j`. Use `planet="Spherical Earth"` for a spectral
-model (SHTns is spherical). A lat-lon → Gauss `con` map then integrates exactly
+quadrature weight `R²·Δλ·w_j`. `planet` defaults to `"Spherical Earth"` here
+(spectral models, SHTns, are spherical); other grids default to WGS84. A lat-lon → Gauss `con` map then integrates exactly
 in the quadrature: `Σ_k Δλ·w_j·v_k` equals the band-metric source integral, with
 no rescaling. `grid_cdo_write_desc_short` writes the bounds of such a grid as
 cdo `xbounds`/`ybounds`, and `grid_cdo_read_desc` reads them back (only from

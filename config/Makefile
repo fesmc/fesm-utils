@@ -402,6 +402,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_gauss_bounds.x $(testdir)/coords/test_gauss_bounds.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_latlon_area.x $(testdir)/coords/test_latlon_area.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
 		@echo "    coords test programs ready in $(bindir)/."
 		@echo " "
@@ -659,7 +661,7 @@ CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_r
                test_lon180_wrap test_varslice_map test_ncio_interp test_parity \
                test_grid_cdo_rw test_map_init_names test_pole_fill test_regional_drop \
                test_coupler test_grid_cf_read test_coupler_bitident test_grid_signature \
-               test_coupler_global test_gauss_bounds
+               test_coupler_global test_gauss_bounds test_latlon_area
 CHECK_DATA   = test_regions test_topodata test_htopo
 CHECK_CLOCK  = test_clock_exact test_clock_chunks test_clock_reject test_clock_restart \
                test_clock_forcing test_clock_negative test_clock_schedule test_clock_calendar \

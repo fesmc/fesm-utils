@@ -125,6 +125,10 @@ All notable changes to fesm-utils are documented here.
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **coords**: `grid_init_gaussian` defaults to `planet = "Spherical Earth"` (it was WGS84, against its
+  documentation), so Gauss cell areas are `R^2*dlon*w_j`. Other grids still default to WGS84;
+  pass `planet = "Spherical Earth"` for spherical models (lon-lat areas differ by -0.45% at the
+  equator to +0.89% at the poles). Cached maps from such grids must be regenerated.
 - **nml**: string vectors split at blanks outside quotes, so quoted elements keep their
   blanks: `units = "kg m-2 yr-1" "mm d-1"` gives `kg m-2 yr-1`, `mm d-1` (before, every
   quote was removed first and the value split at each blank: `kg`, `m-2`). Unquoted and

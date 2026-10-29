@@ -275,8 +275,9 @@ contains
         ! sin(lat_{j-1/2}) + w_j, from -1 (last edge set to +1). The nodes
         ! interlace with the cumulative weights, so each lies inside its band,
         ! and the cell area is the band area R^2*dlon*w_j (the quadrature
-        ! weight). mtype "gaussian". Use planet="Spherical Earth" for a
-        ! spectral (SHTns) model.
+        ! weight). mtype "gaussian". planet defaults to "Spherical Earth"
+        ! (spectral models, SHTns, are spherical); pass planet="WGS84" for an
+        ! ellipsoid (the cell areas are then the authalic zone areas, not R^2*dlon*w_j).
         type(grid_class),           intent(inout) :: grid
         character(len=*),           intent(in)    :: name
         integer,                    intent(in)    :: nlon, nlat
@@ -286,6 +287,10 @@ contains
         real(dp) :: lat(nlat), wts(nlat), yb(0:nlat), lon0, dlon
         real(dp) :: s, c, t
         integer  :: j
+        character(len=56) :: planet_name
+
+        planet_name = "Spherical Earth"
+        if (present(planet)) planet_name = trim(planet)
 
         call gaussian_latitudes_calc(nlat, lat, wts)
         ! Cumulative sum from the south pole (Neumaier-compensated), mirrored
@@ -310,7 +315,7 @@ contains
         lon0 = 0.0_dp
         if (present(x0)) lon0 = x0
         dlon = 360.0_dp/real(nlon, dp)
-        call grid_init_from_opts(grid, name, mtype="gaussian", units="degrees", planet=planet, &
+        call grid_init_from_opts(grid, name, mtype="gaussian", units="degrees", planet=trim(planet_name), &
                                  lon180=lon180, x0=lon0, dx=dlon, nx=nlon, y=lat, y_bnds=yb)
     end subroutine grid_init_gaussian
 
