@@ -268,7 +268,7 @@ contains
         end do
     end subroutine axis_bounds_check
 
-    subroutine grid_init_gaussian(grid, name, nlon, nlat, planet, lon180, x0)
+    subroutine grid_init_gaussian(grid, name, nlon, nlat, planet, lon180, x0, radius)
         ! A global Gaussian grid with nlat Gauss-Legendre latitudes and nlon
         ! equally spaced longitudes starting at x0 (default 0), with explicit
         ! latitude bounds from the Gauss weights: sin(lat_{j+1/2}) =
@@ -278,19 +278,24 @@ contains
         ! weight). mtype "gaussian". planet defaults to "Spherical Earth"
         ! (spectral models, SHTns, are spherical); pass planet="WGS84" for an
         ! ellipsoid (the cell areas are then the authalic zone areas, not R^2*dlon*w_j).
+        ! radius [m]: optional sphere radius replacing the table value (e.g. 6371000
+        ! as in VILMA2 / CLIMBER-X); the areas and the signature use it. Spherical
+        ! planets only. It is carried in the planet name ("<name> R=<radius>"), so
+        ! grids derived from this one keep it.
         type(grid_class),           intent(inout) :: grid
         character(len=*),           intent(in)    :: name
         integer,                    intent(in)    :: nlon, nlat
         character(len=*), optional, intent(in)    :: planet
         logical,          optional, intent(in)    :: lon180
-        real(dp),         optional, intent(in)    :: x0
+        real(dp),         optional, intent(in)    :: x0, radius
         real(dp) :: lat(nlat), wts(nlat), yb(0:nlat), lon0, dlon
         real(dp) :: s, c, t
         integer  :: j
-        character(len=56) :: planet_name
+        character(len=256) :: planet_name
 
         planet_name = "Spherical Earth"
         if (present(planet)) planet_name = trim(planet)
+        if (present(radius)) planet_name = planet_name_with_radius(planet_name, radius)
 
         call gaussian_latitudes_calc(nlat, lat, wts)
         ! Cumulative sum from the south pole (Neumaier-compensated), mirrored
@@ -627,9 +632,10 @@ contains
 
     subroutine grid_init_from_opts(grid,name,mtype,units,planet,lon180, &
                                    x,y,x0,dx,nx,y0,dy,ny,lambda,phi,alpha,x_e,y_n,k0, &
-                                   x_bnds,y_bnds)
+                                   x_bnds,y_bnds,radius)
         ! x_bnds(0:nx), y_bnds(0:ny): optional explicit cell bounds (validated:
         ! strictly monotonic, each centre inside its cell); see grid_axis_class.
+        ! radius [m]: optional sphere radius for a spherical planet (see grid_init_gaussian).
 
         implicit none 
 
@@ -643,6 +649,8 @@ contains
         real(dp), optional :: lambda, phi, alpha, x_e, y_n 
         real(dp), optional :: k0                 ! scale factor (transverse_mercator)
         real(dp), optional :: x_bnds(:), y_bnds(:)
+        real(dp), optional :: radius
+        character(len=256) :: planet_in
         real(dp) :: tmp1, tmp2
         integer :: i, j 
         real(dp), allocatable :: tmpvec1(:), tmpvec2(:) 
@@ -716,7 +724,10 @@ contains
         end do 
 
         ! Initialize data as points, then convert back to grid using axis info
-        call points_init_from_opts(pts,name,mtype,units,planet,lon180,reshape(grid%x,[grid%npts]),&
+        planet_in = "WGS84"       ! (as points_init_from_opts)
+        if (present(planet)) planet_in = trim(planet)
+        if (present(radius)) planet_in = planet_name_with_radius(planet_in, radius)
+        call points_init_from_opts(pts,name,mtype,units,trim(planet_in),lon180,reshape(grid%x,[grid%npts]),&
                          reshape(grid%y,[grid%npts]),lambda=lambda,phi=phi,alpha=alpha,x_e=x_e,y_n=y_n, &
                          k0=k0)
         call points_to_grid(pts,grid)

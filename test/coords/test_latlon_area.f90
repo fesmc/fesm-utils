@@ -16,6 +16,7 @@ program test_latlon_area
     call check_area("Spherical Earth", 2.0_dp)
     call check_map("Spherical Earth")
     call check_gauss_default()
+    call check_gauss_radius()
     if (fails > 0) then
         write(*,*) "FAILED:", fails
         error stop 1
@@ -67,6 +68,46 @@ contains
         write(*,'(a,es10.2)') "grid_init_gaussian default planet: max |area/(R2 dlon w) - 1| =", emax
         if (emax > 1.0e-12_dp) then; write(*,*) "FAIL: Gauss default area"; fails = fails + 1; end if
     end subroutine check_gauss_default
+
+    subroutine check_gauss_radius()
+        ! radius override: Gaussian grid with R = 6371000 (VILMA2, CLIMBER-X)
+        type(grid_class) :: g, g0, gd
+        real(dp), parameter :: R = 6371000.0_dp
+        real(dp) :: lat(48), w(48), emax, dlon
+        integer :: j
+        logical :: same
+        character(len=256) :: why
+        call grid_init_gaussian(g, "gauss-R", nlon=96, nlat=48, radius=R)
+        call grid_init_gaussian(g0, "gauss-R0", nlon=96, nlat=48)
+        call gaussian_latitudes_calc(48, lat, w)
+        dlon = 2.0_dp*pi/96.0_dp
+        emax = 0.0_dp
+        do j = 1, 48
+            emax = max(emax, abs(g%area(1,j)/(R*R*dlon*w(j)) - 1.0_dp))
+        end do
+        write(*,'(a,es10.2)') "grid_init_gaussian radius=6371000: max |area/(R2 dlon w) - 1| =", emax
+        if (emax > 1.0e-12_dp) then; write(*,*) "FAIL: radius area"; fails = fails + 1; end if
+        if (abs(sum(g%area)/(4.0_dp*pi*R*R) - 1.0_dp) > 1.0e-12_dp) then
+            write(*,*) "FAIL: radius total area"; fails = fails + 1
+        end if
+        if (g%cs%planet%a /= R .or. g%cs%planet%R /= R .or. g%cs%planet%f /= 0.0_dp .or. .not. g%cs%planet%is_sphere) then
+            write(*,*) "FAIL: planet a/R/f"; fails = fails + 1
+        end if
+        ! default unchanged
+        if (g0%cs%planet%a /= 6.371221E6_dp) then; write(*,*) "FAIL: default radius changed"; fails = fails + 1; end if
+        ! the cache signature distinguishes the radius
+        same = grid_signature_match(grid_signature_str(g), grid_signature_str(g0), why)
+        if (same) then; write(*,*) "FAIL: signature ignores radius"; fails = fails + 1; end if
+        ! a grid derived from it keeps the radius; the planet-name form works for grid_init
+        call grid_init(gd, g, "derived", nx=10, ny=5, x0=0.0_dp, dx=36.0_dp, y0=-80.0_dp, dy=32.0_dp)
+        if (gd%cs%planet%a /= R) then; write(*,*) "FAIL: derived grid lost the radius"; fails = fails + 1; end if
+        call grid_init(gd, "named", mtype="latlon", units="degrees", planet="Spherical Earth", radius=R, &
+                       x0=0.0_dp, dx=10.0_dp, nx=36, y0=-85.0_dp, dy=10.0_dp, ny=18)
+        if (gd%cs%planet%a /= R) then; write(*,*) "FAIL: grid_init radius"; fails = fails + 1; end if
+        if (abs(sum(gd%area)/(4.0_dp*pi*R*R) - 1.0_dp) > 1.0e-12_dp) then
+            write(*,*) "FAIL: grid_init radius total area"; fails = fails + 1
+        end if
+    end subroutine check_gauss_radius
 
     subroutine check_map(planet)
         character(len=*), intent(in) :: planet

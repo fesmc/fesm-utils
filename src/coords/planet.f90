@@ -41,7 +41,7 @@ module planet
     end interface 
     
     private
-    public :: planet_class, planet_init, planet_print 
+    public :: planet_class, planet_init, planet_print, planet_name_with_radius
     public :: planet_distance, cartesian_distance, weighted_ave_shepard, weighted_ave
     public :: planet_area, cartesian_area 
     public :: spherical_distance, quadrant_latlon, quadrant_cartesian
@@ -54,7 +54,8 @@ contains
 
         type(planet_class) :: now
         character(len=*) name
-        integer :: i, idx
+        integer :: i, idx, ios
+        real(dp) :: radius
 
         now%name = trim(name)
 
@@ -66,6 +67,26 @@ contains
                 exit
             end if
         end do
+
+        ! A sphere with its own radius: "<sphere name> R=<radius in m>"
+        ! (see planet_name_with_radius); the name carries the radius, so
+        ! grids derived from this one by name keep it.
+        radius = -1.0_dp
+        if (idx == 0) then
+            do i = 1, size(PLANETS)
+                if (.not. PLANETS(i)%is_sphere) cycle
+                if (index(now%name, trim(PLANETS(i)%name)//" R=") == 1) then
+                    read(now%name(len_trim(PLANETS(i)%name)+4:), *, iostat=ios) radius
+                    if (ios /= 0 .or. .not. radius > 0.0_dp) then
+                        write(*,"(a,a)") "planet:: planet_init: ", &
+                                       "error: invalid sphere radius in: "//trim(now%name)
+                        stop
+                    end if
+                    idx = i
+                    exit
+                end if
+            end do
+        end if
 
         if (idx == 0) then
             write(*,"(a,a)") "planet:: planet_init: ", &
@@ -83,6 +104,10 @@ contains
         now%R         = PLANETS(idx)%R
         now%e         = PLANETS(idx)%e
         now%is_sphere = PLANETS(idx)%is_sphere
+        if (radius > 0.0_dp) then
+            now%a = radius
+            now%R = radius
+        end if
 
         ! Get summary grid parameters
         now%semi_major_axis = now%a
@@ -97,6 +122,29 @@ contains
         return
 
     end subroutine planet_init
+
+    function planet_name_with_radius(name, radius) result(full)
+        ! The planet name for a sphere of the given radius [m]: "<name> R=<radius>"
+        ! (radius written without loss). name must be a spherical body of the table.
+        character(len=*), intent(in) :: name
+        real(dp),         intent(in) :: radius
+        character(len=256) :: full
+        character(len=32)  :: txt
+        integer :: i
+        logical :: ok
+
+        ok = .false.
+        do i = 1, size(PLANETS)
+            if (trim(name) == trim(PLANETS(i)%name) .and. PLANETS(i)%is_sphere) ok = .true.
+        end do
+        if (.not. ok .or. .not. radius > 0.0_dp) then
+            write(*,"(a,a)") "planet:: planet_name_with_radius: ", &
+                "error: a radius needs a spherical planet and radius > 0: '"//trim(name)//"'"
+            stop
+        end if
+        write(txt,"(es24.16e3)") radius
+        full = trim(name)//" R="//trim(adjustl(txt))
+    end function planet_name_with_radius
 
     subroutine planet_print(now)
 

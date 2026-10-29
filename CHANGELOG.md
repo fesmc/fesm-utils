@@ -125,6 +125,11 @@ All notable changes to fesm-utils are documented here.
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **coords**: optional sphere radius `radius` [m] for `grid_init_gaussian` and `grid_init` (opts form), e.g.
+  `radius = 6371000.0_dp` (VILMA2, CLIMBER-X) instead of the table's 6.371221E6; areas and the cache
+  signature use it. The radius is carried in the planet name, `"Spherical Earth R=<radius>"`
+  (`planet_name_with_radius`), so it also works as `planet = ` in a map namelist and grids derived
+  by name keep it. Spherical planets only; the default is unchanged.
 - **coords**: `grid_init_gaussian` defaults to `planet = "Spherical Earth"` (it was WGS84, against its
   documentation), so Gauss cell areas are `R^2*dlon*w_j`. Other grids still default to WGS84;
   pass `planet = "Spherical Earth"` for spherical models (lon-lat areas differ by -0.45% at the
