@@ -75,6 +75,8 @@ module fesm_fields
         integer :: tsem = FIELD_INSTANT
         integer :: cons = FIELD_INTENSIVE
         logical :: masked = .false.                    ! carries a valid mask
+        logical :: restart = .true.                    ! in a restart file; .false.: a diagnostic, put again
+                                                       ! by its owner after a restore
 
         ! --- Published value: what fields_get returns ------------------------
         logical  :: published = .false.
@@ -174,13 +176,15 @@ contains
     end subroutine fields_init
 
 
-    subroutine fields_add(st, name, units, tsem, cons, h, grid, dims, zdim, masked)
+    subroutine fields_add(st, name, units, tsem, cons, h, grid, dims, zdim, masked, restart)
         ! Declare one field and return its handle (= st%n after the call).
         ! dims absent: scalar; dims = [nx,ny]: rank 2; [nx,ny,nz]: rank 3.
         ! `grid` is required iff dims is present; `zdim` (default "z") only
-        ! for rank 3; `masked` (default .false.) not for rank 0. The handle is
-        ! an argument, not a function result, so that a call with side
-        ! effects never sits in an expression.
+        ! for rank 3; `masked` (default .false.) not for rank 0. `restart`
+        ! (default .true.): .false. declares a diagnostic, which the restart
+        ! files leave out (fields_restart_write). The handle is an argument,
+        ! not a function result, so that a call with side effects never sits
+        ! in an expression.
 
         type(field_state_t), intent(inout) :: st
         character(len=*),    intent(in)    :: name, units
@@ -190,6 +194,7 @@ contains
         integer,          intent(in), optional :: dims(:)
         character(len=*), intent(in), optional :: zdim
         logical,          intent(in), optional :: masked
+        logical,          intent(in), optional :: restart
 
         character(len=*), parameter :: proc = "fesm_fields_add"
         type(field_t), allocatable :: tmp(:)
@@ -281,6 +286,7 @@ contains
             end if
             f%masked = masked
         end if
+        if (present(restart)) f%restart = restart
 
         f%name  = name
         f%units = units
@@ -1097,6 +1103,7 @@ contains
                     line = line//", window ["//to_str(f%ta0)//", "//to_str(f%ta1)//"]"
                 end if
                 if (f%masked) line = line//", masked"
+                if (.not. f%restart) line = line//", diagnostic"
                 call log_msg(lvl, who, line)
             end associate
         end do
@@ -1107,20 +1114,22 @@ contains
     ! Restart
     ! =========================================================================
     !
-    ! One NetCDF file per state, owned entirely by this module. Per field:
+    ! One NetCDF file per state, owned entirely by this module, holding the
+    ! state fields (restart = .true.); a diagnostic (restart = .false.) is
+    ! not written. Per field:
     ! `<name>` (v, double), `<name>_acc` (MEAN, ACCUM), `<name>_valid` and
     ! `<name>_acc_valid` (int 0/1, masked fields); attributes on `<name>`:
     ! units, tsem, cons, grid (rank >= 2), zdim (rank 3), published, t0, t1,
     ! ta0, ta1, wsum. Dimensions `<grid>_x`, `<grid>_y`, `<zdim>`; scalars on
     ! the length-1 dimension `one`. Global attributes: fesm_fields_owner,
-    ! fesm_fields_n and fesm_fields_names (the declared names, comma
+    ! fesm_fields_n and fesm_fields_names (the written names, comma
     ! separated), against which fields_restart_read detects a renamed,
-    ! dropped or added field. Each call opens the file once and does all its
+    ! dropped or added state field. Each call opens the file once and does all its
     ! reads or writes through that handle (every open and close is a file
     ! system round trip, slow on a parallel file system).
 
     subroutine fields_restart_write(st, filename)
-        ! Write the whole state to `filename` (created or overwritten).
+        ! Write the state fields to `filename` (created or overwritten).
 
         type(field_state_t), intent(in) :: st
         character(len=*),    intent(in) :: filename
@@ -1142,6 +1151,7 @@ contains
         allocate(dname(3*st%n), dlen(3*st%n))
         nd = 0
         do h = 1, st%n
+            if (.not. st%f(h)%restart) cycle
             call restart_dims(st%f(h), dn)
             do k = 1, max(1, st%f(h)%rank)
                 q = find_dim(dname(1:nd), dn(k))
@@ -1164,8 +1174,8 @@ contains
         call nc_create(filename)
         call nc_open(filename, ncid, writable=.true.)
         call nc_write_attr(filename, ncid, "fesm_fields_owner", trim(st%owner))
-        call nc_write_attr(filename, ncid, "fesm_fields_n", st%n)
-        if (st%n > 0) call nc_write_attr(filename, ncid, "fesm_fields_names", declared_names(st, ","))
+        call nc_write_attr(filename, ncid, "fesm_fields_n", count(st%f%restart))
+        if (any(st%f%restart)) call nc_write_attr(filename, ncid, "fesm_fields_names", declared_names(st, ",", .true.))
 
         do q = 1, nd
             call nc_write_dim(filename, trim(dname(q)), 1.0_dp, dx=1.0_dp, nx=dlen(q), ncid=ncid)
@@ -1173,6 +1183,7 @@ contains
 
         do h = 1, st%n
             associate (f => st%f(h))
+                if (.not. f%restart) cycle
                 call restart_dims(f, dn)
                 call write_real(filename, ncid, trim(f%name), f, f%v, dn)
                 if (f%tsem /= FIELD_INSTANT) call write_real(filename, ncid, trim(f%name)//"_acc", f, f%acc, dn)
@@ -1205,22 +1216,24 @@ contains
 
     subroutine fields_restart_read(st, filename)
         ! Restore a state written by fields_restart_write into a locked state
-        ! with the same declaration. Every declared field must be in the file
-        ! with the same shape, units key, tsem, cons and mask, and the file
-        ! must hold no other field; then values, masks, windows and validity
-        ! are restored, so the state is bit-identical to the written one
-        ! (up to ncio's read conventions: |x| < 1e-30 reads as 0, NaN as
+        ! with the same state fields. Every declared state field must be in
+        ! the file with the same shape, units key, tsem, cons and mask, and
+        ! the file must hold no other field but declared diagnostics (an older
+        ! file: ignored, logged); then values, masks, windows and validity
+        ! are restored, so the state fields are bit-identical to the written
+        ! ones (up to ncio's read conventions: |x| < 1e-30 reads as 0, NaN as
         ! -9999; both only matter at invalid cells or for subnormal values).
+        ! A diagnostic keeps its value: its owner puts it after the restore.
 
         type(field_state_t), intent(inout) :: st
         character(len=*),    intent(in)    :: filename
 
         character(len=*), parameter :: proc = "fesm_fields_restart_read"
-        character(len=:), allocatable :: names_file
+        character(len=:), allocatable :: names_file, nm
         character(len=4096) :: buf
         character(len=256)  :: ustr
         integer, allocatable :: dl(:)
-        integer :: h, nfile, ival, ncid
+        integer :: h, nfile, ival, ncid, p0, p1
         logical :: exists
 
         if (.not. st%locked) then
@@ -1250,19 +1263,30 @@ contains
             call nc_read_attr(filename, ncid, "fesm_fields_names", buf)
             names_file = trim(buf)
         end if
-        if (nfile /= st%n) then
-            call mismatch(0, "number of fields", to_str(st%n)//" ("//declared_names(st)//")", &
-                to_str(nfile)//" ("//names_file//")")
-        end if
+        p0 = 1                                       ! each field of the file: a declared state field,
+        do while (p0 <= len(names_file))             ! or a diagnostic (ignored)
+            p1 = index(names_file(p0:)//",", ",") + p0 - 1
+            nm = names_file(p0:p1-1)
+            p0 = p1 + 1
+            h  = find_field(st, nm)
+            if (h == 0) then
+                call mismatch(0, "fields", declared_names(st, restart=.true.), names_file)
+            else if (.not. st%f(h)%restart) then
+                call log_msg(LOG_INFO, "fesm_fields", "["//trim(st%owner)//"] restart file holds the "// &
+                    "diagnostic field '"//nm//"': ignored", "file = "//trim(filename))
+            end if
+        end do
         do h = 1, st%n
+            if (.not. st%f(h)%restart) cycle
             if (index(","//names_file//",", ","//trim(st%f(h)%name)//",") == 0) then
-                call mismatch(h, "fields", declared_names(st), names_file)
+                call mismatch(h, "fields", declared_names(st, restart=.true.), names_file)
             end if
         end do
 
-        ! --- Every field: present, same shape and metadata --------------------
+        ! --- Every state field: present, same shape and metadata --------------
         do h = 1, st%n
             associate (f => st%f(h))
+                if (.not. f%restart) cycle
 
                 if (.not. nc_exists_var(filename, trim(f%name), ncid=ncid)) then
                     call mismatch(h, "variable '"//trim(f%name)//"'", "present", "absent")
@@ -1300,6 +1324,7 @@ contains
         ! --- Restore ----------------------------------------------------------
         do h = 1, st%n
             associate (f => st%f(h))
+                if (.not. f%restart) cycle
 
                 call read_real(filename, ncid, trim(f%name), f, f%v)
                 if (f%tsem /= FIELD_INSTANT) call read_real(filename, ncid, trim(f%name)//"_acc", f, f%acc)
@@ -1391,6 +1416,7 @@ contains
         md = 0
         do h = 1, st%n
             associate (f => st%f(h))
+                if (.not. f%restart) cycle
                 call add(trim(f%name))
                 if (f%tsem /= FIELD_INSTANT) call add(trim(f%name)//"_acc")
                 if (f%masked) call add(trim(f%name)//"_valid")
@@ -1626,10 +1652,12 @@ contains
 
     end function ctx_name
 
-    function declared_names(st, sep) result(s)
-        ! The declared names, joined by `sep` (default ", ").
+    function declared_names(st, sep, restart) result(s)
+        ! The declared names, joined by `sep` (default ", "); with `restart`,
+        ! only those of the fields whose restart flag equals it.
         type(field_state_t), intent(in) :: st
         character(len=*), intent(in), optional :: sep
+        logical,          intent(in), optional :: restart
         character(len=:), allocatable :: s, sp_
         integer :: i
 
@@ -1637,10 +1665,13 @@ contains
         if (present(sep)) sp_ = sep
         s = ""
         do i = 1, st%n
-            if (i > 1) s = s//sp_
+            if (present(restart)) then
+                if (st%f(i)%restart .neqv. restart) cycle
+            end if
+            if (len(s) > 0) s = s//sp_
             s = s//trim(st%f(i)%name)
         end do
-        if (st%n == 0 .and. .not. present(sep)) s = "(none)"
+        if (len(s) == 0 .and. .not. present(sep)) s = "(none)"
 
     end function declared_names
 

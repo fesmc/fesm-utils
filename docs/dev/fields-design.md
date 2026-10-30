@@ -284,12 +284,18 @@ subroutine fields_restart_write(st, filename)            ! creates or overwrites
 subroutine fields_restart_read(st, filename)             ! into a locked state with the same declaration
 ```
 
+Only the state fields are written: a field declared with `fields_add(...,
+restart = .false.)` is a diagnostic, which its owner puts again after a
+restore (kryos: the backend's PASS_RESTART); a diagnostic in an older file is
+ignored and logged, so diagnostics can be added or dropped without breaking
+the restart files.
+
 Written per field with `ncio`: `<name>` (`v`, double), `<name>_acc` (MEAN
 and ACCUM), `<name>_valid` and `<name>_acc_valid` (int 0/1, masked fields);
 variable attributes `units`, `tsem`, `cons`, `grid`, `published`, `t0`, `t1`,
 `ta0`, `ta1`, `wsum`. Dimensions `<grid>_x`, `<grid>_y`, `<zdim>`; scalars on a
 length-1 dimension `one`; global attributes `fesm_fields_owner`,
-`fesm_fields_n`, `fesm_fields_names`. `restart_read` checks every declared field is present
+`fesm_fields_n`, `fesm_fields_names`. `restart_read` checks every declared state field is present
 with the same shape, units key, `tsem` and `cons`, and restores all of the
 above, so a restored state is bit-identical to the written one. Extra
 variables in the file are an error (a renamed or dropped field must not pass
@@ -422,6 +428,7 @@ fesm_error", the message announced on their `EXPECT:` line and the field name
 | `test_fields_units` | `units_key` examples (`"kg m**-2 yr-1"` → `"kgm-2yr-1"`); each alias row equivalent to its canonical; `m` ≠ `m yr-1`, `kg m-2 yr-1` ≠ `m yr-1`, `K` ≠ `degC` |
 | `test_fields_link` | a compatible pair passes; every row of the tsem table behaves as listed; units, rank, `nz`, `cons` mismatches abort (one abort program each) |
 | `test_fields_restart` | a state with published INSTANT, published MEAN and an open window written and read into a fresh identical declaration: every component bit-identical; a changed declaration (units, shape, extra field) aborts |
+| `test_fields_restart_diag` | a diagnostic is not written; the file reads into a declaration with one diagnostic more and one with it dropped (state fields bit-identical, diagnostics unchanged); an older file holding the diagnostic reads with it ignored; a state field missing from the file aborts |
 | `test_fields_exchange` | two states on two small grids in a `coupler`: `con` of an extensive field conserves the area integral within the coupler's tolerance; rank 0 bypasses remap bit-exactly; MEAN→MEAN with a slow consumer gives the mean over two producer intervals; the workspace is not reallocated after the first call |
 | `test_fields_errors` | one abort program per row of §7 not covered above (duplicate name, add after lock, gap, overlap, read before publish, finalize short of `t`) |
 

@@ -681,7 +681,7 @@ CHECK_CLOCK  = test_clock_exact test_clock_chunks test_clock_reject test_clock_r
                test_clock_forcing test_clock_negative test_clock_schedule test_clock_calendar \
                test_clock_convert
 CHECK_FIELDS = test_fields_declare test_fields_put_get test_fields_mean test_fields_accum \
-               test_fields_mask test_fields_units test_fields_link test_fields_restart \
+               test_fields_mask test_fields_units test_fields_link test_fields_restart test_fields_restart_diag \
                test_fields_exchange test_fields_nonfinite
 CHECK_FIELDS_ABORT = $(sort $(basename $(notdir $(wildcard $(testdir)/fields/abort/fields_abort_*.f90))))
 CHECK_DATASRC = test_find_group test_varslice_legacy test_varslice_schema test_time_axis \

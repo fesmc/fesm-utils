@@ -125,6 +125,11 @@ All notable changes to fesm-utils are documented here.
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **fesm_fields**: diagnostics. `fields_add(..., restart)` (default `.true.`); `restart = .false.` declares a
+  diagnostic, which `fields_restart_write` leaves out (`fesm_fields_n`, `fesm_fields_names`: the state fields)
+  and its owner puts again after a restore. `fields_restart_read` ignores, and logs, a diagnostic an older file
+  holds; a state field missing from the file, or one the declaration lacks, still stops. `fields_describe`
+  marks diagnostics. `test_fields_restart_diag`, `fields_abort_restart_diag_state`.
 - **varslice**: time units `years ago`, `yr ago`, `a ago`, `years before present`, `yr before present`
   (and `ka ago`, `kyr ago`) are equivalent to `years BP` etc.: positive values are before
   present, year = 1950 - t (model time -t with `time_ref = 1950`). Reads e.g. FesmData
