@@ -159,8 +159,8 @@ contains
         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source cell boundary in target plane
-        integer,  allocatable :: cidx(:)
-        real(dp), allocatable :: cd2(:)
+        integer,  allocatable :: cidx(:), cidx0(:)
+        real(dp), allocatable :: cd2(:), cd20(:)
         logical,  allocatable :: need(:)                    ! source cell is a candidate of some target
         real(dp), allocatable :: wfull_src(:)               ! full source-cell area in the target plane
         type(link_buf), allocatable :: bufs(:)
@@ -248,16 +248,19 @@ contains
             ! infinity (a pole corner of a global source divides by zero). The
             ! candidate sets come from the sphere tree alone, so marking them
             ! first leaves the weights unchanged.
-            allocate(need(n1), cidx(n1), cd2(n1))
+            ! cidx0, cd20: own names, not cidx, cd2 of the OpenMP region below. ifx: an allocatable that was
+            ! allocated and freed here and is then `private` in the region is "already allocated" on entry
+            ! (forrtl 151 at the allocate of the region).
+            allocate(need(n1), cidx0(n1), cd20(n1))
             need = .false.
             do j = 1, ny2
                 do i = 1, nx2
                     call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
-                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
-                    need(cidx(1:nf)) = .true.
+                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx0, cd20, nf)
+                    need(cidx0(1:nf)) = .true.
                 end do
             end do
-            deallocate(cidx, cd2)
+            deallocate(cidx0, cd20)
 
             ! lx,ly are the source cell corners in the SOURCE axis system:
             ! geographic lon/lat for a plain lat-lon source, or ROTATED

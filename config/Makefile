@@ -359,6 +359,8 @@ test-coords : fesmutils-static
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative.x $(testdir)/coords/test_conservative.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_project.x $(testdir)/coords/test_conservative_project.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_xsys.x $(testdir)/coords/test_conservative_xsys.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) -o $(bindir)/test_conservative_sphere.x $(testdir)/coords/test_conservative_sphere.f90 \
@@ -664,7 +666,7 @@ bench-apply : fesmutils-static
 
 CHECK_COORDS = test_geodinverse test_proj test_gauss test_gaussian_filter test_rotated \
                test_kdtree test_weightmap test_mapinit test_bilinear test_ccsm3_grl \
-               test_mapio test_polygons test_conservative test_conservative_xsys \
+               test_mapio test_polygons test_conservative test_conservative_project test_conservative_xsys \
                test_conservative_sphere test_conservative_desclat test_conservative_rotated \
                test_map_init_con test_map_cache test_map_cdo test_map_con_proj \
                test_lon180_wrap test_varslice_map test_ncio_interp test_parity \

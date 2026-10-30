@@ -196,6 +196,11 @@ All notable changes to fesm-utils are documented here.
   subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
+- **coords**: `conservative_planar` (lat-lon source onto a projected target) stopped under ifx with
+  `forrtl 151, allocatable array is already allocated` at the allocate of its OpenMP region: the pre-pass that marks
+  the candidate source cells allocated and freed `cidx`, `cd2`, which the region then lists as `private`. The
+  pre-pass has its own arrays (`cidx0`, `cd20`). No change in results. `test_conservative_project` (no cdo; two
+  lat-lon maps onto a polar-stereographic grid, constant preserved) fails on the old code with ifx.
 - **variable_io**: a bad `prec` string (and the other table errors, an unknown variable, a
   rank/dims mismatch in `var_io_write`) stopped with exit status 0 (bare `stop`); they now `error stop 1`.
   `test_var_io` checks the exit status of a child process.
