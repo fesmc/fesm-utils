@@ -437,14 +437,17 @@ bench-coords : fesmutils-static
 		@echo "    coords benchmark ready: $(bindir)/bench_conservative.x (needs cdo on PATH)."
 		@echo " "
 
-# ncio test programs: precision (bit rounding in nc_write), attributes on an open file (ncid)
+# ncio test programs: precision (bit rounding in nc_write), attributes on an open file (ncid),
+# tiny values read back exactly
 test-ncio : fesmutils-static
 		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_precision.x $(testdir)/ncio/test_ncio_precision.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_attr_ncid.x $(testdir)/ncio/test_ncio_attr_ncid.f90 \
 			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
+		$(FC) $(DFLAGS) $(FFLAGS) $(INC_NC) -o $(bindir)/test_ncio_tiny.x $(testdir)/ncio/test_ncio_tiny.f90 \
+			-L${CURDIR}/$(objdir) -lfesmutils $(LFLAGS)
 		@echo " "
-		@echo "    ncio test programs ready: $(bindir)/test_ncio_precision.x, $(bindir)/test_ncio_attr_ncid.x"
+		@echo "    ncio test programs ready: $(bindir)/test_ncio_precision.x, $(bindir)/test_ncio_attr_ncid.x, $(bindir)/test_ncio_tiny.x"
 		@echo " "
 
 # variable_io (variable tables, var_io_write) test program
@@ -746,7 +749,7 @@ check-phys-constants : test-phys-constants
 check-root : test-root
 		@$(call check_run,test_roots)
 check-ncio : test-ncio
-		@$(call check_run,test_ncio_precision test_ncio_attr_ncid)
+		@$(call check_run,test_ncio_precision test_ncio_attr_ncid test_ncio_tiny)
 check-var-io : test-var-io
 		@$(call check_run,test_var_io)
 check-series : test-series

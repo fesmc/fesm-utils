@@ -196,6 +196,11 @@ All notable changes to fesm-utils are documented here.
   subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
+- **ncio**: `nc_read` returns the values as stored. The reader set every value below `1e-30` in magnitude to
+  exactly zero (`NCIO_TOL_UNDERFLOW`, removed), so a restart lost the tiny values a model had written (decayed
+  Maxwell memories below `1e-30`). `nc_write` never flushed. `test_ncio_tiny` (double `1e-35`, `3e-120`,
+  `7e-300`, float `1e-35`, `1e-38`; 0-3-D, slices, with and without `missing_value`; bit-identical) fails on the old
+  reader. Not changed: `-0.0` on file is read as `+0.0` (the identity scale/offset step).
 - **coords**: `conservative_planar` (lat-lon source onto a projected target) stopped under ifx with
   `forrtl 151, allocatable array is already allocated` at the allocate of its OpenMP region: the pre-pass that marks
   the candidate source cells allocated and freed `cidx`, `cd2`, which the region then lists as `private`. The
