@@ -906,6 +906,7 @@ contains
         integer, optional :: iostat
         integer :: i, status
         integer :: dimids(NF90_MAX_VAR_DIMS), dim_len
+        logical :: packed
         type(nc_ctx) :: ec
         character(len=512) :: errmsg
 
@@ -1006,9 +1007,14 @@ contains
         ! ===========================================
         
 
+        ! Scale/offset are applied only if the variable is packed: the identity
+        ! arithmetic (x*1+0) turns a stored -0.0 into +0.0, so it is skipped.
+        packed = (v%scale_factor .ne. 1.d0 .or. v%add_offset .ne. 0.d0)
+
         if (v%missing_set) then
 
-            where( dabs(dat-v%missing_value) .gt. NC_TOL ) dat = dat*v%scale_factor + v%add_offset
+            if (packed) &
+                where( dabs(dat-v%missing_value) .gt. NC_TOL ) dat = dat*v%scale_factor + v%add_offset
 
             ! Fill with user-desired missing value
             if (present(missing_value_int)) &
@@ -1020,8 +1026,7 @@ contains
 
         else
             ! Apply the scalar and offset if available
-            if (v%scale_factor .ne. 1.d0 .and. v%add_offset .ne. 0.d0) &
-              dat = dat*v%scale_factor + v%add_offset
+            if (packed) dat = dat*v%scale_factor + v%add_offset
         end if
 
         ! Values are returned as stored: tiny values (e.g. decayed memories < 1e-30)

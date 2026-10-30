@@ -5,8 +5,9 @@ program test_ncio_tiny
     !   * double: 1e-35, 3e-120, 7e-300, with and without missing_value, 1-D/2-D/3-D;
     !   * float:  1e-35, 1e-38 (subnormal), 1e-30 and 1e-20;
     !   * a slice written and read with start/count;
-    !   * zeros, and values of ordinary size, are unchanged beside them.
-    ! Not covered: -0.0 on file is read as +0.0 (the identity scale/offset step).
+    !   * zeros, and values of ordinary size, are unchanged beside them;
+    !   * -0.0 (double and float, with and without missing_value) keeps its sign:
+    !     the reader skips the scale/offset arithmetic when the variable is not packed.
     ! The file is written by the test itself, then removed.
 
     use ncio
@@ -27,6 +28,7 @@ program test_ncio_tiny
     call test_double()
     call test_float()
     call test_slice()
+    call test_negzero()
 
     write(*,"(a)") ""
     if (nfail .eq. 0) then
@@ -159,5 +161,55 @@ contains
         call report("double slices bit-identical:          bad = ", nbad)
         call delete_file()
     end subroutine test_slice
+
+    ! -0.0 on file is read back as -0.0 (sign bit kept), beside +0.0 and ordinary values
+    subroutine test_negzero()
+        real(dp) :: a1(4), a2(4,3), r1(4), r2(4,3), r0, s0, nz
+        real(sp) :: b1(4), b2(4,3), q1(4), q2(4,3), q0, t0, nzs
+        integer :: k
+
+        nz  = sign(0.d0, -1.d0)
+        nzs = sign(0.0, -1.0)
+
+        a1 = [nz, 0.d0, -1.5d0, nz]
+        a2 = reshape([(a1(mod(k,4)+1), k = 0, 11)], [4,3])
+        a2(2,2) = 12.5d0
+        s0 = nz
+        b1 = [nzs, 0.0, -1.5, nzs]
+        b2 = reshape([(b1(mod(k,4)+1), k = 0, 11)], [4,3])
+        b2(2,2) = 12.5
+        t0 = nzs
+
+        call new_file(0)
+        call nc_write(fnm, "a1", a1, dim1="x")
+        call nc_write(fnm, "a2", a2, dim1="x", dim2="y")
+        call nc_write(fnm, "a2m", a2, dim1="x", dim2="y", missing_value=-9999.d0)
+        call nc_write(fnm, "s0", s0)
+        call nc_write(fnm, "b1", b1, dim1="x")
+        call nc_write(fnm, "b2", b2, dim1="x", dim2="y")
+        call nc_write(fnm, "b2m", b2, dim1="x", dim2="y", missing_value=-9999.0)
+        call nc_write(fnm, "t0", t0)
+
+        call nc_read(fnm, "a1", r1)
+        call report("double -0.0 1-D bit-identical:        bad = ", ndiff_dp(a1, r1))
+        call nc_read(fnm, "a2", r2)
+        call report("double -0.0 2-D bit-identical:        bad = ", ndiff_dp(reshape(a2,[12]), reshape(r2,[12])))
+        r2 = 1.d0
+        call nc_read(fnm, "a2m", r2, missing_value=-9999.d0)
+        call report("double -0.0 missing_value identical:  bad = ", ndiff_dp(reshape(a2,[12]), reshape(r2,[12])))
+        call nc_read(fnm, "s0", r0)
+        call report("double -0.0 scalar bit-identical:     bad = ", ndiff_dp([s0], [r0]))
+
+        call nc_read(fnm, "b1", q1)
+        call report("float  -0.0 1-D bit-identical:        bad = ", ndiff_sp(b1, q1))
+        call nc_read(fnm, "b2", q2)
+        call report("float  -0.0 2-D bit-identical:        bad = ", ndiff_sp(reshape(b2,[12]), reshape(q2,[12])))
+        q2 = 1.0
+        call nc_read(fnm, "b2m", q2, missing_value=-9999.0)
+        call report("float  -0.0 missing_value identical:  bad = ", ndiff_sp(reshape(b2,[12]), reshape(q2,[12])))
+        call nc_read(fnm, "t0", q0)
+        call report("float  -0.0 scalar bit-identical:     bad = ", ndiff_sp([t0], [q0]))
+        call delete_file()
+    end subroutine test_negzero
 
 end program test_ncio_tiny
