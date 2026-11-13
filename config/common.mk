@@ -5,6 +5,14 @@
 # netCDF; it references FFLAGS / FFLAGS_OPENMP (compiler) and LIB_NC (machine or
 # auto-detected netCDF).
 
+# Floating point: the coupler and remapping conserve to round-off (sums, closures, coverage in [0, 1]; kryos'
+# test_globe_ice) and need IEEE semantics, while machine fragments optimise with -Ofast (dkrz_levante). The
+# value-safe flag of the compiler is appended (the last one wins), as in kryos and PlasticIceSheet.
+FPSAFE_ifx      = -fp-model precise
+FPSAFE_ifort    = -fp-model precise
+FPSAFE_gfortran = -fno-fast-math
+DFLAGS_NODEBUG += $(FPSAFE_$(COMPILER))
+
 # OpenMP build (make openmp=1): append the compiler's OpenMP flag. (The objdir
 # serial/omp swap is handled by the template.)
 ifeq ($(openmp), 1)
