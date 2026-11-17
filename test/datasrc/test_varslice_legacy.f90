@@ -1,17 +1,23 @@
 program test_varslice_legacy
     ! The legacy path of varslice (varslice_init_nml without the new optional
-    ! arguments, on groups with a `time` key, as in yelmox clim_db.nml) gives
-    ! byte-identical vs%var and vs%time across the datasrc preparatory steps
-    ! (V1-V5). The groups and files are written here; every case is reduced
-    ! to its shape and a hash of the bit patterns of var and time, compared
-    ! with test/datasrc/test_varslice_legacy.ref.
+    ! arguments, on groups with a `time` key, as in yelmox clim_db.nml) keeps
+    ! vs%var and vs%time across the datasrc steps. The groups and files are
+    ! written here; every case is reduced to its shape, the counts of valid and
+    ! missing values, and min, max, sum and an index-weighted sum of var and of
+    ! time, compared with test/datasrc/test_varslice_legacy.ref: counts exactly,
+    ! the values to rtol_var (sp) and rtol_time (dp) of the field's magnitude.
+    ! The index weight makes a permuted field fail.
+    !
+    ! A tolerance, not bit patterns: the last bits of a mean depend on the
+    ! platform and the flags (fused multiply-add on arm64, -ffast-math or the
+    ! value-safe flags), so a bit hash only held on the machine that recorded it.
     !
     !     ./bin/test_varslice_legacy.x          compare with the reference
     !     ./bin/test_varslice_legacy.x record   (re)write the reference
     !
-    ! The reference was recorded with varslice before V1 (fesm-utils 1725385).
+    ! The reference was recorded at v1.5 with gfortran -O2 on arm64, where every
+    ! case is bit-identical to the hashes of varslice before V1 (fesm-utils 1725385).
 
-    use, intrinsic :: iso_fortran_env, only : int32, int64
     use precision
     use constants,   only : mv
     use ncio
@@ -21,13 +27,28 @@ program test_varslice_legacy
 
     implicit none
 
+    type case_t
+        character(len=40) :: label = ""
+        character(len=24) :: shp   = "-"
+        logical  :: has_var  = .false.
+        integer  :: nv = 0, nmv = 0      ! valid and missing values of var
+        real(dp) :: v(4) = 0.0_dp        ! var: min, max, sum, index-weighted sum (valid values)
+        logical  :: has_time = .false.
+        integer  :: nt = 0
+        real(dp) :: t(4) = 0.0_dp        ! time: min, max, sum, index-weighted sum
+    end type case_t
+
     character(len=*), parameter :: fnml = "test_ds_legacy.nml"
     character(len=*), parameter :: fref = "test/datasrc/test_varslice_legacy.ref"
-    integer, parameter :: nx = 5, ny = 4, nr = 64
+    integer,  parameter :: nx = 5, ny = 4, nr = 64
+    real(dp), parameter :: rtol_var  = 1.0e-6_dp    ! ~8 ulp of sp
+    real(dp), parameter :: rtol_time = 1.0e-12_dp
 
     type(varslice_class) :: vs
     type(grid_class) :: grid_tgt
-    character(len=160) :: rec(nr), ref(nr), arg
+    type(case_t) :: rec(nr), ref(nr)
+    character(len=400) :: line
+    character(len=160) :: arg
     real(wp), allocatable :: sm(:,:,:)
     integer :: n, nref, i, u, ios, nfail
     logical :: record
@@ -106,9 +127,10 @@ program test_varslice_legacy
     ! --- record or compare ---------------------------------------------------
     if (record) then
         open(newunit=u, file=fref, status="replace", action="write")
-        write(u,"(a)") "# test_varslice_legacy reference: label | shape | hash(var) | hash(time)"
+        write(u,"(a)") "# test_varslice_legacy reference: label | shape | var: nvalid nmissing min max sum wsum"// &
+                       " | time: n min max sum wsum"
         do i = 1, n
-            write(u,"(a)") trim(rec(i))
+            write(u,"(a)") trim(case_line(rec(i)))
         end do
         close(u)
         write(*,*) "test_varslice_legacy: reference written to "//fref//" (", n, " cases)"
@@ -123,10 +145,10 @@ program test_varslice_legacy
     read(u,"(a)")    ! header
     nref = 0
     do
-        read(u,"(a)",iostat=ios) arg
+        read(u,"(a)",iostat=ios) line
         if (ios .ne. 0) exit
         nref = nref + 1
-        ref(nref) = arg
+        ref(nref) = case_parse(line)
     end do
     close(u)
 
@@ -136,11 +158,11 @@ program test_varslice_legacy
         nfail = nfail + 1
     end if
     do i = 1, min(n, nref)
-        if (trim(rec(i)) .eq. trim(ref(i))) then
-            write(*,"(a)") "  ok   "//trim(rec(i))
+        if (case_match(rec(i), ref(i))) then
+            write(*,"(a)") "  ok   "//trim(rec(i)%label)//" | "//trim(rec(i)%shp)
         else
-            write(*,"(a)") "  FAIL "//trim(rec(i))
-            write(*,"(a)") "  ref  "//trim(ref(i))
+            write(*,"(a)") "  FAIL "//trim(case_line(rec(i)))
+            write(*,"(a)") "  ref  "//trim(case_line(ref(i)))
             nfail = nfail + 1
         end if
     end do
@@ -154,59 +176,103 @@ program test_varslice_legacy
 contains
 
     subroutine add(label)
-        ! One record: label, shape of var, hash of var, hash of time.
+        ! One case: label, shape and statistics of vs%var, statistics of vs%time.
         character(len=*), intent(in) :: label
-        character(len=64) :: shp
+        integer :: nm
         n = n + 1
+        rec(n)%label = label
         if (allocated(vs%var)) then
-            write(shp,"(i0,'x',i0,'x',i0,'x',i0)") shape(vs%var)
-            rec(n) = label//" | "//trim(shp)//" | "//hash_sp(reshape(vs%var,[size(vs%var)]))// &
-                     " | "//hash_dp(vs%time)
-        else
-            rec(n) = label//" | - | - | "//hash_dp(vs%time)
+            write(rec(n)%shp,"(i0,'x',i0,'x',i0,'x',i0)") shape(vs%var)
+            rec(n)%has_var = .true.
+            call stats(real(reshape(vs%var,[size(vs%var)]),dp), &
+                       reshape(vs%var .ne. mv,[size(vs%var)]), rec(n)%nv, rec(n)%nmv, rec(n)%v)
         end if
+        rec(n)%has_time = .true.
+        call stats(vs%time, spread(.true., 1, size(vs%time)), rec(n)%nt, nm, rec(n)%t)
     end subroutine add
 
     subroutine add_arr(label, a)
         character(len=*), intent(in) :: label
         real(wp),         intent(in) :: a(:,:,:)
-        character(len=64) :: shp
         n = n + 1
-        write(shp,"(i0,'x',i0,'x',i0)") shape(a)
-        rec(n) = label//" | "//trim(shp)//" | "//hash_sp(reshape(a,[size(a)]))//" | -"
+        rec(n)%label = label
+        write(rec(n)%shp,"(i0,'x',i0,'x',i0)") shape(a)
+        rec(n)%has_var = .true.
+        call stats(real(reshape(a,[size(a)]),dp), reshape(a .ne. mv,[size(a)]), &
+                   rec(n)%nv, rec(n)%nmv, rec(n)%v)
     end subroutine add_arr
 
-    function hash_sp(x) result(s)
-        ! Two polynomial hashes (mod two primes) of the 32-bit patterns.
-        real(sp), intent(in) :: x(:)
-        character(len=17) :: s
-        integer(int64) :: h1, h2, w
-        integer :: i
-        h1 = 7; h2 = 11
-        do i = 1, size(x)
-            w  = iand(int(transfer(x(i), 0_int32), int64), int(z'FFFFFFFF', int64))
-            h1 = mod(h1*1000003_int64 + w, 2147483647_int64)
-            h2 = mod(h2*1000033_int64 + w, 2147483629_int64)
+    subroutine stats(x, valid, nv, nmv, v)
+        ! min, max, sum and index-weighted sum (weight i/size) of the valid values.
+        real(dp), intent(in)  :: x(:)
+        logical,  intent(in)  :: valid(:)
+        integer,  intent(out) :: nv, nmv
+        real(dp), intent(out) :: v(4)
+        integer :: k
+        nv  = count(valid)
+        nmv = size(x) - nv
+        v   = 0.0_dp
+        if (nv .eq. 0) return
+        v(1) = minval(x, mask=valid)
+        v(2) = maxval(x, mask=valid)
+        do k = 1, size(x)
+            if (.not. valid(k)) cycle
+            v(3) = v(3) + x(k)
+            v(4) = v(4) + x(k)*real(k,dp)/real(size(x),dp)
         end do
-        write(s,"(z8.8,'-',z8.8)") h1, h2
-    end function hash_sp
+    end subroutine stats
 
-    function hash_dp(x) result(s)
-        real(dp), intent(in) :: x(:)
-        character(len=17) :: s
-        integer(int64) :: h1, h2, w, b
-        integer :: i, k
-        h1 = 7; h2 = 11
-        do i = 1, size(x)
-            b = transfer(x(i), 0_int64)
-            do k = 0, 1
-                w  = iand(ishft(b, -32*k), int(z'FFFFFFFF', int64))
-                h1 = mod(h1*1000003_int64 + w, 2147483647_int64)
-                h2 = mod(h2*1000033_int64 + w, 2147483629_int64)
-            end do
+    logical function stats_close(a, b, n, rtol)
+        ! a ~ b to rtol of the field's magnitude; the sums to rtol of n times it.
+        real(dp), intent(in) :: a(4), b(4), rtol
+        integer,  intent(in) :: n
+        real(dp) :: tol
+        tol = rtol*max(abs(b(1)), abs(b(2)), tiny(1.0_dp))
+        stats_close = all(abs(a(1:2) - b(1:2)) .le. tol) .and. &
+                      all(abs(a(3:4) - b(3:4)) .le. tol*real(max(n,1),dp))
+    end function stats_close
+
+    logical function case_match(a, b)
+        type(case_t), intent(in) :: a, b
+        case_match = trim(a%label) .eq. trim(b%label) .and. trim(a%shp) .eq. trim(b%shp) .and. &
+                     (a%has_var .eqv. b%has_var) .and. (a%has_time .eqv. b%has_time)
+        if (.not. case_match) return
+        if (a%has_var) case_match = a%nv .eq. b%nv .and. a%nmv .eq. b%nmv .and. &
+                                    stats_close(a%v, b%v, b%nv, rtol_var)
+        if (.not. case_match) return
+        if (a%has_time) case_match = a%nt .eq. b%nt .and. stats_close(a%t, b%t, b%nt, rtol_time)
+    end function case_match
+
+    function case_line(c) result(s)
+        type(case_t), intent(in) :: c
+        character(len=400) :: s
+        character(len=200) :: sv, st
+        sv = "-"
+        st = "-"
+        if (c%has_var)  write(sv,"(i0,1x,i0,4(1x,es24.16e3))") c%nv, c%nmv, c%v
+        if (c%has_time) write(st,"(i0,4(1x,es24.16e3))") c%nt, c%t
+        s = trim(c%label)//" | "//trim(c%shp)//" | "//trim(sv)//" | "//trim(st)
+    end function case_line
+
+    function case_parse(s) result(c)
+        character(len=*), intent(in) :: s
+        type(case_t) :: c
+        character(len=400) :: f(4)
+        integer :: k, p, q
+        p = 1
+        do k = 1, 3
+            q = index(s(p:), "|")
+            f(k) = adjustl(s(p:p+q-2))
+            p = p + q
         end do
-        write(s,"(z8.8,'-',z8.8)") h1, h2
-    end function hash_dp
+        f(4) = adjustl(s(p:))
+        c%label = trim(f(1))
+        c%shp   = trim(f(2))
+        c%has_var = trim(f(3)) .ne. "-"
+        if (c%has_var) read(f(3),*) c%nv, c%nmv, c%v
+        c%has_time = trim(f(4)) .ne. "-"
+        if (c%has_time) read(f(4),*) c%nt, c%t
+    end function case_parse
 
     pure real(sp) function val(i, j, k)
         integer, intent(in) :: i, j, k
