@@ -2,7 +2,7 @@
 
 All notable changes to fesm-utils are documented here.
 
-## Unreleased
+## [v1.5] - 2026-11-17
 
 ### Added
 - **fesm_log**: shared logging and error reporting. Levels (`LOG_DEBUG` ... `LOG_ERROR`,
@@ -125,6 +125,9 @@ All notable changes to fesm-utils are documented here.
   gate for the coupler/`map_field` apply surface against a reference commit.
 
 ### Changed
+- **config**: optimised builds append the compiler's value-safe floating-point flag (`-fp-model precise`
+  for ifx/ifort, `-fno-fast-math` for gfortran) after the machine's flags, so a machine's `-Ofast` no longer
+  breaks the round-off conservation of the coupler and the remapping (kryos `test_globe_ice` on dkrz_levante).
 - **fesm_fields**: diagnostics. `fields_add(..., restart)` (default `.true.`); `restart = .false.` declares a
   diagnostic, which `fields_restart_write` leaves out (`fesm_fields_n`, `fesm_fields_names`: the state fields)
   and its owner puts again after a restore. `fields_restart_read` ignores, and logs, a diagnostic an older file
@@ -201,6 +204,11 @@ All notable changes to fesm-utils are documented here.
   subnormals (`test_fields_nonfinite`, `fields_abort_nonfinite_*`).
 
 ### Fixed
+- **test**: `test_map_cdo` and `test_map_con_proj` skip when cdo is missing under dash (its `command -v`
+  exits 127, which gfortran's `execute_command_line` without `cmdstat` stops on; CI stopped on both).
+- **test**: `test_varslice_legacy` compares per-case counts and min, max, sum and an index-weighted sum
+  within a tolerance instead of bit hashes, which held only on the platform and flags that recorded them
+  (Linux CI and the value-safe flags failed it).
 - **ncio**: `nc_read` returns the values as stored. The reader set every value below `1e-30` in magnitude to
   exactly zero (`NCIO_TOL_UNDERFLOW`, removed), so a restart lost the tiny values a model had written (decayed
   Maxwell memories below `1e-30`). `nc_write` never flushed. `test_ncio_tiny` (double `1e-35`, `3e-120`,
