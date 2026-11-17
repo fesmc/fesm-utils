@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.11.9">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -75,14 +75,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../index.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-d37df8fd7b43e116a420b34c208e916c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-036f6a9f9c7c5454a75d2bb11003fa4a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-ad05a1de936d1208ecda519363d22f23.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-66423b2d5e9a85475f186600afa496ea.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -115,19 +116,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </head>
 
-<body class="nav-sidebar floating nav-fixed quarto-light">
+<body class="nav-sidebar floating nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark" aria-label="Site">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a class="navbar-brand" href="../index.html">
     <span class="navbar-title">fesm-utils</span>
     </a>
   </div>
-            <div id="quarto-search" class="" title="Search"></div>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
@@ -205,6 +205,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <a class="dropdown-item" href="../packages/foundations.html">
  <span class="dropdown-text">foundations</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/log.html">
+ <span class="dropdown-text">fesm_log — logging &amp; errors</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/clock.html">
+ <span class="dropdown-text">fesm_clock — run clock &amp; schedules</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/fields.html">
+ <span class="dropdown-text">fesm_fields — exchange fields</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/units.html">
+ <span class="dropdown-text">fesm_units — unit conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/datasrc.html">
+ <span class="dropdown-text">fesm_datasrc — fields from files</span></a>
+  </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
@@ -237,15 +257,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           </div> <!-- /navcollapse -->
             <div class="quarto-navbar-tools">
 </div>
+            <div id="quarto-search" class="" title="Search"></div>
       </div> <!-- /container-fluid -->
     </nav>
-  <nav class="quarto-secondary-nav">
+  <nav class="quarto-secondary-nav" aria-label="Toolbar">
     <div class="container-fluid d-flex">
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/coords.html">coords</a></li></ol></nav>
-        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        <nav class="quarto-page-breadcrumbs" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/coords.html">coords</a></li></ol></nav>
+        <a class="flex-grow-1" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
   </nav>
@@ -253,7 +274,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- content -->
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
-  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto" aria-label="Section">
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
@@ -264,13 +285,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">Local packages</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-controls="quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-1-label">Local packages</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-1" aria-labelledby="quarto-sidebar-section-1-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../packages/coords.html" class="sidebar-item-text sidebar-link active">
@@ -367,17 +385,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="menu-text">foundations</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/log.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_log</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/clock.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_clock</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/fields.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_fields</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/units.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_units</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/datasrc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_datasrc</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
- <span class="menu-text">External libraries</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-controls="quarto-sidebar-section-2" aria-expanded="false">
+ <span class="menu-text" id="quarto-sidebar-section-2-label">External libraries</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+      <ul id="quarto-sidebar-section-2" aria-labelledby="quarto-sidebar-section-2-label" class="collapse list-unstyled sidebar-section depth1 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../external/fftw.html" class="sidebar-item-text sidebar-link">
@@ -404,7 +449,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
+        <nav id="TOC" role="doc-toc" aria-labelledby="toc-title" class="toc-active">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
@@ -413,18 +458,25 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#the-weight-store" id="toc-the-weight-store" class="nav-link" data-scroll-target="#the-weight-store">The weight store</a></li>
   </ul></li>
-  <li><a href="#core-workflow" id="toc-core-workflow" class="nav-link" data-scroll-target="#core-workflow">Core workflow</a></li>
+  <li><a href="#core-workflow" id="toc-core-workflow" class="nav-link" data-scroll-target="#core-workflow">Core workflow</a>
+  <ul class="collapse">
+  <li><a href="#normalisation-and-coverage" id="toc-normalisation-and-coverage" class="nav-link" data-scroll-target="#normalisation-and-coverage">Normalisation and coverage</a></li>
+  </ul></li>
   <li><a href="#remapping-kernels" id="toc-remapping-kernels" class="nav-link" data-scroll-target="#remapping-kernels">Remapping kernels</a></li>
   <li><a href="#cdo-interop-and-map-caching" id="toc-cdo-interop-and-map-caching" class="nav-link" data-scroll-target="#cdo-interop-and-map-caching">CDO interop and map caching</a></li>
-  <li><a href="#coupler" id="toc-coupler" class="nav-link" data-scroll-target="#coupler">Coupler</a></li>
+  <li><a href="#coupler" id="toc-coupler" class="nav-link" data-scroll-target="#coupler">Coupler</a>
+  <ul class="collapse">
+  <li><a href="#global-regional-exchange" id="toc-global-regional-exchange" class="nav-link" data-scroll-target="#global-regional-exchange">Global ↔︎ regional exchange</a></li>
+  </ul></li>
+  <li><a href="#bit-identity-gate" id="toc-bit-identity-gate" class="nav-link" data-scroll-target="#bit-identity-gate">Bit-identity gate</a></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a></li>
   </ul>
 <div class="toc-actions"><ul><li><a href="https://github.com/fesmc/fesm-utils/blob/main/packages/coords.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/fesmc/fesm-utils/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content" id="quarto-document-content" tabindex="-1">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/coords.html">coords</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/coords.html">coords</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">coords</h1>
 <p class="subtitle lead">Coordinates, projections, and grid-to-grid remapping</p>
@@ -451,7 +503,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>The package covers:</p>
 <ul>
 <li><strong>Coordinate and grid definition</strong> — point sets (<code>points_class</code>) and regular grids (<code>grid_class</code>), each carrying a shared coordinate-system descriptor (<code>coord_system</code>: map type, units, planet, projection).</li>
-<li><strong>Map projections</strong> — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters <code>(lambda, phi, alpha, x_e, y_n)</code>, and transverse Mercator (e.g.&nbsp;UTM; <code>mtype="transverse_mercator"</code>, Snyder 1987) with <code>lambda</code> the central meridian, <code>phi</code> the latitude of origin, <code>k0</code> the scale factor and <code>x_e</code>/<code>y_n</code> the false easting/northing [m].</li>
+<li><strong>Map projections</strong> — the oblimap2 oblique stereographic forward/inverse transforms, driven by projection parameters <code>(lambda, phi, alpha, x_e, y_n)</code> (for <code>polar_stereographic</code>, <code>phi</code> is the standard parallel and the projection is centred at the pole, on a sphere as on an ellipsoid), and transverse Mercator (e.g.&nbsp;UTM; <code>mtype="transverse_mercator"</code>, Snyder 1987) with <code>lambda</code> the central meridian, <code>phi</code> the latitude of origin, <code>k0</code> the scale factor and <code>x_e</code>/<code>y_n</code> the false easting/northing [m].</li>
 <li><strong>Gaussian-latitude grids</strong> — quadrature latitudes for spectral/atmospheric grids (non-uniform y-axis).</li>
 <li><strong>k-d tree nearest-neighbour search</strong> — the fast neighbour engine underneath distance-based maps.</li>
 <li><strong>Weight-map remapping</strong> — one sparse source→target store applied with nearest-neighbour, Shepard (inverse-distance), quadrant, bilinear or conservative (area-weighted) kernels.</li>
@@ -485,7 +537,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 <tr class="odd">
 <td><code>grid_axis_class</code></td>
-<td>Regular axis description: <code>nx, ny, x0, dx, y0, dy</code> and the axis vectors <code>x(:), y(:)</code> (supports explicit non-uniform axes, e.g.&nbsp;Gaussian latitudes).</td>
+<td>Regular axis description: <code>nx, ny, x0, dx, y0, dy</code>, the axis vectors <code>x(:), y(:)</code> (supports explicit non-uniform axes, e.g.&nbsp;Gaussian latitudes) and the cell edges <code>x_bnds(0:nx), y_bnds(0:ny)</code>. The edges are filled at <code>grid_init</code> (default: adjacent midpoints, half-cell extrapolation at the ends, <code>axis_midpoint_bounds</code>; <code>explicit_bnds</code> records given bounds) and are the one source of cell edges for <code>grid_area</code> and the conservative generators.</td>
 </tr>
 <tr class="even">
 <td><code>grid_class</code></td>
@@ -538,7 +590,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="kw">allocate</span>(field_src(<span class="dv">10</span>,<span class="dv">10</span>), field_tgt(<span class="dv">7</span>,<span class="dv">7</span>))</span>
 <span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="co">! ... fill field_src ...</span></span>
 <span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="co">call map_field(map, "myfield", field_src, field_tgt, stat="mean")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>grid_init</code> is generic and also accepts explicit axis vectors (<code>x=</code>, <code>y=</code>), an existing grid/points object, or a file (<code>grid_init(grid, filename, ...)</code> reads a <code>.nc</code> grid or a <code>/map/</code> namelist). Point sets are built the same way with <code>points_init(pts, name=, mtype=, units=, x=, y=, ...)</code>.</p>
+<p><code>grid_init</code> is generic and also accepts explicit axis vectors (<code>x=</code>, <code>y=</code>), an existing grid/points object, or a file (<code>grid_init(grid, filename, ...)</code> reads a <code>.nc</code> grid or a <code>/map/</code> namelist). Explicit cell bounds can be given with <code>x_bnds=</code> / <code>y_bnds=</code> (<code>0:n</code>, validated: strictly monotonic, each centre inside its cell; the other axis takes the default midpoint bounds). For a lat-lon or Gaussian grid with explicit bounds, <code>grid%area</code> is the latitude-band area (<code>R²·Δλ·(sin φ₂ - sin φ₁)</code> on a sphere, the authalic zone formula on an ellipsoid); grids with default bounds keep the 4-corner area.</p>
+<p><code>grid_init_gaussian(grid, name, nlon, nlat [, planet, lon180, x0])</code> builds a global Gaussian grid (<code>mtype="gaussian"</code>) whose latitude bounds come from the Gauss weights, <code>sin φ_{j+1/2} = sin φ_{j-1/2} + w_j</code> from -1 to +1: the bands reach the poles, each node lies inside its band, and the cell area is the quadrature weight <code>R²·Δλ·w_j</code>. <code>planet</code> defaults to <code>"Spherical Earth"</code> here (spectral models, SHTns, are spherical); other grids default to WGS84. A lat-lon → Gauss <code>con</code> map then integrates exactly in the quadrature: <code>Σ_k Δλ·w_j·v_k</code> equals the band-metric source integral, with no rescaling. <code>grid_cdo_write_desc_short</code> writes the bounds of such a grid as cdo <code>xbounds</code>/<code>ybounds</code>, and <code>grid_cdo_read_desc</code> reads them back (only from files with the fesm-utils header; existing descriptions read as before). Point sets are built the same way with <code>points_init(pts, name=, mtype=, units=, x=, y=, ...)</code>.</p>
 <p><code>map_init</code> is overloaded for grid→grid, grid→points, points→grid, points→points, and grid→grid <em>by name</em> (<code>map_init(map, name1, name2, ...)</code>, which reads both grid descriptions from <code>grid_&lt;name&gt;.txt</code>). Key optional arguments to the grid→grid form:</p>
 <ul>
 <li><code>method</code> — interpolation kernel: <code>"con"</code> (conservative) or a distance kernel <code>"nn"</code> / <code>"shepard"</code> / <code>"quadrant"</code> / <code>"bilin"</code> (default <code>"nn"</code>).</li>
@@ -547,9 +600,50 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>load</code> — if <code>.true.</code> (default) an existing cache file is loaded instead of regenerated; freshly generated maps are always saved.</li>
 <li><code>max_neighbors</code>, <code>dist_max</code> — neighbour-search controls for distance maps.</li>
 <li><code>precompute_weights</code> — collapse a distance store to baked weights at init for <code>shepard</code>/<code>bilinear</code> (default <code>.true.</code>); the on-disk cache stays distance-format either way.</li>
-<li><code>weight_cutoff</code> — relative cutoff for pruning sliver links from baked (<code>con</code>/bilinear) maps before caching (default <code>1e-4</code>; <code>0.0</code> keeps all links).</li>
+<li><code>weight_cutoff</code> — relative cutoff for pruning sliver links from baked (<code>con</code>/bilinear) maps before caching: per target, links below <code>weight_cutoff·max(w)</code> are dropped (default <code>1e-4</code>; <code>0.0</code> keeps all links). The largest link of a target always survives; the coverage removed is kept (see <em>Normalisation and coverage</em>).</li>
+<li><code>on_mismatch</code>, <code>hash_names</code> — cache identity, see <em>CDO interop and map caching</em>.</li>
 </ul>
-<p><code>map_field</code> is generic over the field element type (<code>integer</code>, <code>sp</code>, <code>dp</code>) and over grid/points sources and targets. Beyond <code>stat</code> it accepts <code>method</code> (kernel override for distance maps), <code>missing_value</code>, <code>radius</code>, <code>mask2</code>, <code>reset</code>, <code>mask_pack</code>, and optional fill/filter post-processing (<code>fill_method</code>, <code>filt_method</code>, <code>filt_par</code>). The <code>stat</code> argument selects the reduction over each target’s links: <code>"mean"</code> (default), <code>"count"</code> (weighted mode), or <code>"stdev"</code>.</p>
+<p><code>map_field</code> is generic over the field element type (<code>integer</code>, <code>sp</code>, <code>dp</code>) and over grid/points sources and targets. Beyond <code>stat</code> it accepts <code>method</code> (kernel override for distance maps), <code>missing_value</code>, <code>radius</code>, <code>mask2</code>, <code>reset</code>, <code>mask_pack</code>, and optional fill/filter post-processing (<code>fill_method</code>, <code>filt_method</code>, <code>filt_par</code>). The <code>stat</code> argument selects the reduction over each target’s links: <code>"mean"</code> (default), <code>"count"</code> (weighted mode), or <code>"stdev"</code>. The 8 real specifics also take <code>norm</code>, <code>frac2</code>, <code>area1</code> and <code>area2</code> (below).</p>
+<section id="normalisation-and-coverage" class="level3">
+<h3 class="anchored" data-anchor-id="normalisation-and-coverage">Normalisation and coverage</h3>
+<p>A conservative map made by the coords generator carries, besides its link weights <code>w_jk</code> (overlap area in the map metric of the generator), the full cell areas of source and target (<code>wfull_src</code>, <code>wfull_dst</code>) and the link sums before pruning (<code>wcov_src</code>, <code>wcov_dst</code>), all in that metric; they are written to the cache as <code>mp_wfull_*</code>, <code>mp_wcov_*</code>. With them, for target <code>k</code> and its valid links <code>V_k</code> (<code>w &gt; 0</code>, source value not missing), and <code>φ_jk = q_j·w_jk/wfull_src_j</code> the fraction of source cell <code>j</code> lying in <code>k</code> (<code>q</code>, <code>r</code> restore what pruning removed):</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Argument</th>
+<th>Value at target <code>k</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>frac2</code> (<code>real(dp)</code>, target shape)</td>
+<td>covered fraction <code>min(1, r_k·Σ_V w / wfull_dst_k)</code>; 0 where nothing valid is linked, outside <code>mask_pack</code>, or not mapped</td>
+</tr>
+<tr class="even">
+<td><code>norm="frac"</code> (default)</td>
+<td><code>Σ_V w v / Σ_V w</code>: the covered mean (unchanged path)</td>
+</tr>
+<tr class="odd">
+<td><code>norm="dst"</code></td>
+<td><code>r_k·Σ_V w v / wfull_dst_k</code> = <code>frac2·mean</code> (map metric)</td>
+</tr>
+<tr class="even">
+<td><code>norm="dst"</code>, <code>area1</code> + <code>area2</code></td>
+<td><code>Σ_V φ_jk·area1_j·v_j / area2_k</code>, exact in the model metric</td>
+</tr>
+<tr class="odd">
+<td><code>norm="sum"</code></td>
+<td><code>Σ_V φ_jk·α_j·v_j</code>, <code>α = area1</code> if present, else 1 (amount per target)</td>
+</tr>
+</tbody>
+</table>
+<p><code>area1</code> (source shape) and <code>area2</code> (target shape) are the model cell areas (<code>real(dp)</code>). With <code>norm="dst"</code> and both areas, <code>Σ_k area2_k·v2_k = Σ_j area1_j·v_j·Σ_k φ_jk</code> for any choice of areas: for a target that covers the source, the integral is preserved. Rules: <code>norm /= "frac"</code> needs <code>stat="mean"</code> and a conservative map (else an error); <code>frac2</code> on a non-conservative map is <code>merge(1,0,mask2)</code>; <code>area1</code> without <code>area2</code> (or the reverse) with <code>norm="dst"</code> is an error; fill/filter post-processing does not change <code>frac2</code>. A <code>con</code> map without coverage data (a <code>cdo</code> map, or a cache file written before coverage was stored) stops with “regenerate <file>” when <code>norm</code> or <code>frac2</code> is requested. The 4 <code>int</code> specifics take none of these.</file></p>
+<p>Geometry of <code>conservative_spherical</code> (projected source → lat-lon/Gauss target). Each cell edge is subsampled into NSUB = 8 segments in the grid’s own plane (projection x-y, or rotated lon-lat) and every sample is inverse-projected and joined by great-circle arcs, so a projected cell that straddles the 0/360 meridian or contains the pole is a proper spherical polygon. A target cell’s poleward parallel, traced by great-circle chords, is concave, so the source polygon is clipped against the cell’s 8 strips in longitude (each convex, bounded by two meridians and one chord of each parallel) and the pieces are summed; the strips of all target cells tile the sphere. Target longitudes come from the unwrapped axis (as in the lat-lon → lat-lon path) and latitude bounds are clamped to ±90. For a target that covers the source domain, <code>Σ_k φ_jk = 1</code> to ~1e-12 on a spherical planet (up to ~2e-10 for a cell that holds the pole, round-off over its ~1500 polar strip pieces) and to ~1e-8 on WGS84 (the pieces have great-circle edges, and their geodesic areas on the ellipsoid do not add up exactly). Each source polygon is built once (source-major loop over a k-d tree of the target centres); polygons with repeated vertices (a cell with two corners at a pole) are reduced to distinct vertices, candidate pairs whose bounding spherical caps do not meet are not clipped, and a source polygon that lies inside one strip takes its own area as the overlap. The links of each target are stored in ascending source order for any thread count. ANT-16KM → T64 (WGS84): 4.3 s serial, 0.8 s on 10 threads.</p>
+</section>
 </section>
 <section id="remapping-kernels" class="level2">
 <h2 class="anchored" data-anchor-id="remapping-kernels">Remapping kernels</h2>
@@ -575,6 +669,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>if <code>load=.true.</code> (default) and the file exists, the map is loaded, with the file format auto-detected — an in-package cache (carries a <code>meta</code> variable) vs a standard/<code>cdo</code> SCRIP file;</li>
 <li>otherwise the weights are generated (in-package for <code>gen="coords"</code>, or by an external <code>cdo gen&lt;method&gt;</code> call for <code>gen="cdo"</code>) and saved to the cache.</li>
 </ol>
+<p>Cache identity. Each new cache file (in-package or <code>cdo</code>) carries global attributes <code>coords_src_sig</code>, <code>coords_dst_sig</code> (grid signatures: <code>grid_signature_str(grid)</code>, the coordinate system, the axis sizes and the first/last/sum of the axes and bounds), <code>coords_method</code>, <code>coords_gen</code>, <code>coords_weight_cutoff</code> and <code>coords_format</code>. On load (<code>map_init</code> with a cached file), the file is checked against the grids:</p>
+<ul>
+<li>signatures present and different (<code>grid_signature_match</code>, tolerance 1e-9 of a cell, so a grid read back from <code>grid_&lt;name&gt;.txt</code> still matches): <code>on_mismatch="error"</code> (default) stops and names both signatures and the file; <code>on_mismatch="rebuild"</code> regenerates and overwrites the file (logged);</li>
+<li>no signatures (a file written before signatures, or by another tool): loaded as before, with a one-time “unverified” log line;</li>
+<li><code>n_src</code> / <code>n_dst</code> that do not match the grid sizes always stop.</li>
+</ul>
+<p>By default the file name stays <code>scrip-&lt;method&gt;_&lt;src&gt;_&lt;dst&gt;.nc</code>. With <code>map_init(..., hash_names=.true.)</code> (or <code>coupler_init(..., hash_names=.true.)</code>) it is <code>scrip-&lt;method&gt;_&lt;src&gt;-&lt;h8&gt;_&lt;dst&gt;-&lt;h8&gt;.nc</code>, where <code>h8 = grid_hash8(grid)</code> (FNV-1a over the signature at 6 significant digits), so two grids with one name can coexist in one folder. A legacy file of the same size but other axes is accepted unverified: clear the map folder (or rename the grid) when a grid definition changes at equal size.</p>
 <p>Because the cache is always a valid SCRIP remapping file, a <code>cdo</code>-generated map and an in-package <code>coords</code> map interoperate at the same filename. The file I/O primitives are public as <code>weight_map_write</code> / <code>weight_map_read</code> (module <code>map_io</code>); <code>map_read(map, src_name, dst_name, fldr, method)</code> loads a pre-existing SCRIP map directly into a <code>map_class</code>.</p>
 </section>
 <section id="coupler" class="level2">
@@ -588,18 +689,45 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">real(dp)</span>, <span class="dt">allocatable</span> <span class="dt">::</span> fs(:,:), ft(:,:)</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_init(cpl, map_fldr="maps")          ! empty registry + cache</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_add_grid(cpl, "coarse", gcoarse)    ! register grids by name</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_add_grid(cpl, "fine",   gfine)</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">! remap sizes the destination itself; the (src,dst,method) map is built on first</span></span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">! use and reused thereafter. method defaults to "con".</span></span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">call remap(cpl, fs, "coarse", ft, "fine", method="bilin")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>                                                 <span class="co">! [, gen, on_mismatch, hash_names]</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_add_grid(cpl, "coarse", gcoarse)    ! register grids by name</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_add_grid(cpl, "fine",   gfine)</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co">! remap sizes the destination itself; the (src,dst,method) map is built on first</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="co">! use and reused thereafter. method defaults to "con".</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">call remap(cpl, fs, "coarse", ft, "fine", method="bilin")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
-<li><code>coupler_add_grid(cpl, name, grid)</code> registers a grid; unregistered names are resolved on demand from <code>grid_&lt;name&gt;.txt</code> in the map folder.</li>
-<li><code>remap(cpl, var_src, src, var_dst, dst, method, stat)</code> finds-or-builds the map for <code>(src, dst, method)</code>, allocates <code>var_dst</code> to the target size, and applies it. It is overloaded for <code>dp</code> / <code>sp</code> / <code>int</code> and 2D / 3D fields. <code>method</code> is part of the cache key; <code>stat</code> is forwarded per call and is not.</li>
-<li><code>coupler_prime(cpl, src, dst, method, gen)</code> eagerly builds a map up front (fail-fast at init rather than mid-timestep) and is the point at which a map’s generator can be overridden via <code>gen=</code>.</li>
+<li><code>coupler_add_grid(cpl, name, grid)</code> registers a copy of a grid (once, at init); <code>coupler_take_grid(cpl, name, grid)</code> moves an allocatable grid in without a copy (for very large grids). Unregistered names are resolved on demand from <code>grid_&lt;name&gt;.txt</code> in the map folder, read once into a “from disk” slot and reused. Registering a name that is already a from-disk slot is a no-op if the grids agree and an error otherwise.</li>
+<li><code>remap(cpl, var_src, src, var_dst, dst, method, stat, missing_value, mask2, reset, mask_pack, fill_method, filt_method, filt_par, norm, frac2)</code> finds-or-builds the map for <code>(src, dst, method)</code>, allocates <code>var_dst</code> to the target size, and applies it with <code>map_field</code>, to which the optional arguments are passed unchanged. It is overloaded for <code>dp</code> / <code>sp</code> / <code>int</code> and 2D / 3D fields (the <code>int</code> specifics take <code>missing_value, mask2, reset, mask_pack</code>; for 3D, <code>mask2</code> and <code>frac2</code> are 3D and the map is applied per layer). With <code>reset=.false.</code>, <code>var_dst</code> must already be allocated at the target shape. <code>method</code> is part of the cache key; <code>stat</code> and the rest are forwarded per call and are not.</li>
+<li><code>method="auto"</code> resolves per call: <code>"con"</code> for <code>norm="dst"</code>/<code>"sum"</code> (amounts are remapped conservatively both ways); otherwise <code>"bilin"</code> when the target is finer than the source (smaller median model cell area, i.e.&nbsp;refining) and <code>"con"</code> when it is coarser or equal. The model cell area is the plane <code>dx·dy</code> for a projected grid and <code>grid%area·xy_conv²</code> otherwise.</li>
+<li><code>remap</code> with <code>src == dst</code> copies the field (no map, no registration needed): <code>mask_pack</code>, <code>reset</code>, <code>fill_method</code> and <code>filt_*</code> still apply, <code>mask2</code> is <code>var /= missing_value</code>, and <code>stat="stdev"</code> gives 0.</li>
+<li><code>coupler_method(cpl, src, dst [, method, norm])</code> returns the method <code>remap</code> would use for the same arguments (<code>"auto"</code> resolved) without building or applying a map, e.g.&nbsp;to log it.</li>
+<li><code>coupler_prime(cpl, src, dst, method, gen)</code> eagerly builds a map up front (fail-fast at init rather than mid-timestep) and is the point at which a map’s generator can be overridden via <code>gen=</code>. It is a no-op for <code>src == dst</code>.</li>
 </ul>
-<p>Each map is built once, stored once in fixed-capacity storage, and shared across all callers, so adding a map never reallocates or deep-copies the large weight arrays already built.</p>
+<section id="global-regional-exchange" class="level3">
+<h3 class="anchored" data-anchor-id="global-regional-exchange">Global ↔︎ regional exchange</h3>
+<p>Each registered grid carries a <em>model cell area</em> <code>[m²]</code>, the area its model integrates over: by default the plane <code>dx·dy</code> for a projected grid (what Yelmo and FastIsostasy integrate) and <code>grid%area·xy_conv²</code> otherwise. <code>coupler_set_area(cpl, name, area)</code> overrides it (e.g.&nbsp;the Gaussian quadrature <code>R²·Δλ·w_j</code> of a spectral model). <code>remap</code> with <code>norm="dst"</code> / <code>"sum"</code> passes the registered areas of both grids as <code>area1</code> / <code>area2</code>, so mass accounting and the integral below share one metric per grid (an identity remap with <code>norm="sum"</code> returns <code>v·area</code>).</p>
+<ul>
+<li><p><code>coupler_integral(cpl, name, var [, mask, missing_value, describe])</code> returns <code>Σ area·var</code> (Neumaier-compensated) with the registered areas; with <code>describe=.true.</code> it logs this integral next to the one over the ellipsoidal cell areas (<code>grid%area</code>), as a diagnostic of the metric difference (several % for a polar stereographic ice grid). For a regional → global <code>remap</code> with <code>norm="dst"</code>, the global integral equals the covered part of the regional one to rounding.</p></li>
+<li><p>Merge of N regional fields and a background onto a global grid, in accumulator form:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">type(coupler_merge_t)</span> <span class="dt">::</span> acc</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_merge_begin(acc, cpl, "T64" [, kind="extensive"|"intensive"])</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_merge_add(acc, cpl, "ANT", h_ant [, owner=o_ant, missing_value=])</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_merge_add(acc, cpl, "GRL", h_grl [, owner=o_grl])</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">call coupler_merge_end(acc, cpl, background, h_glob [, frac_tot=, overlap_tol=])</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Per domain <code>d</code> (valid cells <code>j</code>, owner weight <code>o_dj</code>, default 1) and target cell <code>k</code>: coverage <code>F_dk = r_k Σ_j w_jk o_dj / wfull_k</code>; amount <code>A_dk = Σ_j φ_jk o_dj area_j v_j / area_k</code> (extensive) or <code>r_k Σ_j w_jk o_dj v_j / wfull_k</code> (intensive). With <code>F = Σ_d F_d</code>: extensive <code>var = (1 - min(F,1))·bg + Σ_d A_d</code> (regional amounts are never rescaled; only the background is capped), intensive <code>var = (1 - min(F,1))·bg + Σ_d A_d / max(F,1)</code> (preserves a constant). Domains are summed in the order of their names, so the result does not depend on the order of <code>coupler_merge_add</code> calls; adding a domain twice is an error. <code>max(F) &gt; 1 + overlap_tol</code> (default <code>1e-2</code>) stops and names the overlapping domains; a smaller excess is accepted and the double-counted amount logged.</p></li>
+<li><p><code>coupler_owner_reduce(cpl, src_hi, owner_hi, dst, owner)</code> removes from <code>owner</code> (on <code>dst</code>) the part already owned by the higher-priority domain: <code>owner := max(0, owner - covered fraction of owner_hi)</code>. Call it once at init, in priority order, to make <code>Σ_d o_d = 1</code> where domains overlap.</p></li>
+<li><p><code>coupler_split(cpl, src, var_src, dst, var_dst [, method, ref_src, ref_dst, missing_value, fill_method, mask2])</code>: global → regional. Without references it is <code>remap</code> (default <code>method="bilin"</code>); with both, <code>var_dst = ref_dst + remap(var_src - ref_src)</code>, where a missing anomaly counts as 0 (the reference is kept). One reference without the other is an error.</p></li>
+</ul>
+<p>Each map is built once, stored once, and shared across all callers. Grids and maps live in allocatable slot arrays without a fixed capacity: when an array grows, each slot’s grid / map is moved (<code>move_alloc</code>), never copied, and maps are built directly from the registered grids.</p>
+</section>
+</section>
+<section id="bit-identity-gate" class="level2">
+<h2 class="anchored" data-anchor-id="bit-identity-gate">Bit-identity gate</h2>
+<p><code>test/coords/test_coupler_bitident.f90</code> runs a fixed call set of the coupler and <code>map_field</code> (con/bilin/nn; dp/sp/int; stat variants; <code>reset=.false.</code>, <code>mask_pack</code>, fill/filter; 3D; grid ↔︎ points; every conservative generator path) and writes each result, the grid geometry and the map weights to <code>bitident_out/&lt;case&gt;.bin</code>. <code>make check</code> runs it for its in-binary checks (<code>remap</code> = direct <code>map_field</code>). To compare against a reference commit:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">test/coords/bitident.sh</span> <span class="op">&lt;</span>ref-commit<span class="op">&gt;</span>               <span class="co"># gen + cached</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="va">BITIDENT_MODES</span><span class="op">=</span>cached <span class="ex">test/coords/bitident.sh</span> <span class="op">&lt;</span>ref<span class="op">&gt;</span> <span class="co"># across a change of new maps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The script builds the working-tree copy of the test at <code>&lt;ref-commit&gt;</code> (in a temporary git worktree, with the compiler block of the current root <code>Makefile</code>) and at the working tree, and compares every stream with <code>cmp</code>: <code>gen</code> (maps generated by each build) and <code>cached</code> (both load the cache files the reference generated).</p>
 </section>
 <section id="see-also" class="level2">
 <h2 class="anchored" data-anchor-id="see-also">See also</h2>
@@ -687,7 +815,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
       // Inspect non-navigation links and adorn them if external
-     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
       for (var i=0; i<links.length; i++) {
         const link = links[i];
         if (!isInternal(link.href)) {
@@ -696,8 +825,69 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           if (link.dataset.originalHref !== undefined) {
             link.href = link.dataset.originalHref;
           }
+          if (!link.classList.contains('no-external-icon')) {
+          }
         }
       }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
     function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
       const config = {
         allowHTML: true,
@@ -711,6 +901,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         interactiveBorder: 10,
         theme: 'quarto',
         placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
       };
       if (contentFn) {
         config.content = contentFn;
@@ -873,44 +1064,54 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           const lineIds = lines.map((line) => {
             return targetCell + "-" + line;
           })
-          let top = null;
-          let height = null;
-          let parent = null;
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
           if (lineIds.length > 0) {
-              //compute the position of the single el (top and bottom and make a div)
-              const el = window.document.getElementById(lineIds[0]);
-              top = el.offsetTop;
-              height = el.offsetHeight;
-              parent = el.parentElement.parentElement;
-            if (lineIds.length > 1) {
-              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-              height = bottom - top;
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
             }
-            if (top !== null && height !== null && parent !== null) {
-              // cook up a div (if necessary) and position it 
-              let div = window.document.getElementById("code-annotation-line-highlight");
-              if (div === null) {
-                div = window.document.createElement("div");
-                div.setAttribute("id", "code-annotation-line-highlight");
-                div.style.position = 'absolute';
-                parent.appendChild(div);
-              }
-              div.style.top = top - 2 + "px";
-              div.style.height = height + 4 + "px";
-              div.style.left = 0;
-              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-              if (gutterDiv === null) {
-                gutterDiv = window.document.createElement("div");
-                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-                gutterDiv.style.position = 'absolute';
-                const codeCell = window.document.getElementById(targetCell);
-                const gutter = codeCell.querySelector('.code-annotation-gutter');
-                gutter.appendChild(gutterDiv);
-              }
-              gutterDiv.style.top = top - 2 + "px";
-              gutterDiv.style.height = height + 4 + "px";
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
             }
+            placeBand(gutterDiv, el, lastEl);
             selectedAnnoteEl = annoteEl;
           }
         };
@@ -1009,7 +1210,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     }
   });
   </script>
-<nav class="page-navigation">
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
+  </script>
+<nav class="page-navigation" aria-label="Page">
   <div class="nav-page nav-page-previous">
       <a href="../index.html" class="pagination-link" aria-label="Overview">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Overview</span>

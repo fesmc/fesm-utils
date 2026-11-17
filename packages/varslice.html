@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.11.9">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -75,14 +75,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../packages/series.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-d37df8fd7b43e116a420b34c208e916c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-036f6a9f9c7c5454a75d2bb11003fa4a.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-ad05a1de936d1208ecda519363d22f23.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-66423b2d5e9a85475f186600afa496ea.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -115,19 +116,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </head>
 
-<body class="nav-sidebar floating nav-fixed quarto-light">
+<body class="nav-sidebar floating nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark" aria-label="Site">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a class="navbar-brand" href="../index.html">
     <span class="navbar-title">fesm-utils</span>
     </a>
   </div>
-            <div id="quarto-search" class="" title="Search"></div>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
@@ -205,6 +205,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <a class="dropdown-item" href="../packages/foundations.html">
  <span class="dropdown-text">foundations</span></a>
   </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/log.html">
+ <span class="dropdown-text">fesm_log — logging &amp; errors</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/clock.html">
+ <span class="dropdown-text">fesm_clock — run clock &amp; schedules</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/fields.html">
+ <span class="dropdown-text">fesm_fields — exchange fields</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/units.html">
+ <span class="dropdown-text">fesm_units — unit conversion</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../packages/datasrc.html">
+ <span class="dropdown-text">fesm_datasrc — fields from files</span></a>
+  </li>  
     </ul>
   </li>
   <li class="nav-item dropdown ">
@@ -237,15 +257,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           </div> <!-- /navcollapse -->
             <div class="quarto-navbar-tools">
 </div>
+            <div id="quarto-search" class="" title="Search"></div>
       </div> <!-- /container-fluid -->
     </nav>
-  <nav class="quarto-secondary-nav">
+  <nav class="quarto-secondary-nav" aria-label="Toolbar">
     <div class="container-fluid d-flex">
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/varslice.html">varslice</a></li></ol></nav>
-        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        <nav class="quarto-page-breadcrumbs" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/varslice.html">varslice</a></li></ol></nav>
+        <a class="flex-grow-1" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
   </nav>
@@ -253,7 +274,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- content -->
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
-  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto" aria-label="Section">
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
@@ -264,13 +285,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">Local packages</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-controls="quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-1-label">Local packages</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-1" aria-labelledby="quarto-sidebar-section-1-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../packages/coords.html" class="sidebar-item-text sidebar-link">
@@ -367,17 +385,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="menu-text">foundations</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/log.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_log</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/clock.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_clock</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/fields.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_fields</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/units.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_units</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../packages/datasrc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">fesm_datasrc</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
- <span class="menu-text">External libraries</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-controls="quarto-sidebar-section-2" aria-expanded="false">
+ <span class="menu-text" id="quarto-sidebar-section-2-label">External libraries</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+      <ul id="quarto-sidebar-section-2" aria-labelledby="quarto-sidebar-section-2-label" class="collapse list-unstyled sidebar-section depth1 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../external/fftw.html" class="sidebar-item-text sidebar-link">
@@ -404,7 +449,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
+        <nav id="TOC" role="doc-toc" aria-labelledby="toc-title" class="toc-active">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
@@ -418,16 +463,20 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#signatures" id="toc-signatures" class="nav-link" data-scroll-target="#signatures">Signatures</a></li>
   </ul></li>
-  <li><a href="#namelist-configuration" id="toc-namelist-configuration" class="nav-link" data-scroll-target="#namelist-configuration">Namelist configuration</a></li>
+  <li><a href="#namelist-configuration" id="toc-namelist-configuration" class="nav-link" data-scroll-target="#namelist-configuration">Namelist configuration</a>
+  <ul class="collapse">
+  <li><a href="#time-axis-from-the-file" id="toc-time-axis-from-the-file" class="nav-link" data-scroll-target="#time-axis-from-the-file">Time axis from the file</a></li>
+  <li><a href="#schema-defaults_file" id="toc-schema-defaults_file" class="nav-link" data-scroll-target="#schema-defaults_file">Schema (<code>defaults_file</code>)</a></li>
+  </ul></li>
   <li><a href="#usage-example" id="toc-usage-example" class="nav-link" data-scroll-target="#usage-example">Usage example</a></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a></li>
   </ul>
 <div class="toc-actions"><ul><li><a href="https://github.com/fesmc/fesm-utils/blob/main/packages/varslice.qmd" class="toc-action"><i class="bi bi-github"></i>View source</a></li><li><a href="https://github.com/fesmc/fesm-utils/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content" id="quarto-document-content" tabindex="-1">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/varslice.html">varslice</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../packages/coords.html">Local packages</a></li><li class="breadcrumb-item"><a href="../packages/varslice.html">varslice</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">varslice</h1>
 <p class="subtitle lead">Slicing gridded netCDF variables in space and time</p>
@@ -465,11 +514,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h3 class="anchored" data-anchor-id="varslice_param_class"><code>varslice_param_class</code></h3>
 <p>Static configuration for one variable, mostly loaded from the namelist.</p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Component</th>
@@ -533,6 +577,36 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><code>real(dp)</code></td>
 <td>Time-axis definition <code>[x0, x1, dx, n_sub]</code></td>
 </tr>
+<tr class="even">
+<td><code>mode</code></td>
+<td><code>character(len=16)</code></td>
+<td>What the variable is, resolved at init: <code>static</code>, <code>clim</code> (a cycle without years) or <code>transient</code></td>
+</tr>
+<tr class="odd">
+<td><code>time_ref</code></td>
+<td><code>real(dp)</code></td>
+<td>Calendar year of time zero of the caller’s clock (default 0)</td>
+</tr>
+<tr class="even">
+<td><code>time_from_file</code></td>
+<td><code>logical</code></td>
+<td>The time axis is read from the file (<code>time(1) &lt; 0</code> or no <code>time</code> key)</td>
+</tr>
+<tr class="odd">
+<td><code>time_units</code>, <code>calendar</code></td>
+<td><code>character</code></td>
+<td>Override the attributes of the time coordinate (<code>""</code>: the attributes; <code>time_units = "clock"</code>: clock years as they stand)</td>
+</tr>
+<tr class="even">
+<td><code>time_name</code></td>
+<td><code>character(len=56)</code></td>
+<td>Name of the time coordinate (the variable’s last dimension)</td>
+</tr>
+<tr class="odd">
+<td><code>units_file</code></td>
+<td><code>character(len=128)</code></td>
+<td>The <code>units</code> attribute of the variable in the (first) file, <code>""</code> without one; metadata (a caller such as <a href="../packages/datasrc.html">fesm_datasrc</a> checks it)</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -589,11 +663,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>Full time axis and sub-annual index</td>
 </tr>
 <tr class="even">
+<td><code>time_bnds(:,:)</code></td>
+<td><code>real(dp)</code>, alloc.</td>
+<td><code>(2,nt)</code>: the CF bounds of a time axis from the file, when every file has them</td>
+</tr>
+<tr class="odd">
 <td><code>idx(:)</code></td>
 <td><code>integer</code>, alloc.</td>
 <td>Indices selected on the last update</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>var(:,:,:,:)</code></td>
 <td><code>real(wp)</code>, alloc.</td>
 <td>The sliced data field <code>(x,y,z,time)</code></td>
@@ -642,16 +721,24 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td>Type-bound natural-rank accessors: copy-return the 1-D/2-D/3-D slice at trailing index <code>k</code> (default 1), e.g.&nbsp;<code>vs%v2(m)</code> for <code>var(:,:,m,1)</code></td>
 </tr>
 <tr class="odd">
+<td><code>varslice_get(vs, var [, k])</code></td>
+<td>Generic: a <code>dp</code> or <code>sp</code> copy of the slice at its natural rank into the caller’s array (shape checked), at trailing index <code>k</code> (default 1): 0-D <code>var(k,1,1,1)</code>, 1-D <code>var(:,k,1,1)</code>, 2-D <code>var(:,:,k,1)</code>, 3-D <code>var(:,:,:,k)</code>; missing values as <code>mv</code>. Storage stays <code>real(wp)</code></td>
+</tr>
+<tr class="even">
 <td><code>varslice_nsub</code></td>
 <td>The declared sub-annual period (<code>time_par(4)</code>)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>varslice_sub_mean</code></td>
 <td>Mean of the current slice over its time-like axis (e.g.&nbsp;the sub-annual cycle), as an <code>(x,y,z)</code> field; axes the variable lacks are singleton, missing values are skipped</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>varslice_end</code></td>
 <td>Deallocate all data arrays in the object</td>
+</tr>
+<tr class="odd">
+<td><code>varslice_time_decode(t, units, calendar, y [, stat])</code></td>
+<td>Calendar years <code>y</code> of the values <code>t</code> of a CF time coordinate (see <em>Time axis from the file</em>)</td>
 </tr>
 <tr class="even">
 <td><code>get_matching_files</code></td>
@@ -667,40 +754,49 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="signatures" class="level3">
 <h3 class="anchored" data-anchor-id="signatures">Signatures</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from a namelist group</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs)</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename        <span class="co">! namelist file</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> group           <span class="co">! namelist group name</span></span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> domain    <span class="co">! substitutes {domain}</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> grid_name <span class="co">! substitutes {grid_name}</span></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,              <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> verbose</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> subs(:,:) <span class="co">! extra {key}-&gt;value path subs</span></span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>                                                            <span class="co">! subs(k,1)=key (no braces), subs(k,2)=value</span></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from explicit arguments (no namelist)</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_arg(vs, filename, name, units_in, units_out, <span class="kw">&amp;</span></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>                             <span class="bu">scale</span>, offset, with_time, time_par)</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename, name, units_in, units_out</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> <span class="bu">scale</span>, offset</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,  <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> with_time</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="co">! Update the field to a given time or time range</span></span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_update(vs, time, method, fill, rep, print_summary)</span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>,       <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> method        <span class="co">! slice_method</span></span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! none, nearest, const (overrides par%fill)</span></span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> rep           <span class="co">! repetition frequency</span></span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> print_summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_nml(vs, filename, group, domain, grid_name, verbose, subs, grid, <span class="kw">&amp;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>                             defaults_file, defaults_group, mode, remap,<span class="co"> grid_src, time_ref)</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename        <span class="co">! namelist file</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> group           <span class="co">! namelist group name</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> domain    <span class="co">! substitutes {domain}</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> grid_name <span class="co">! substitutes {grid_name}</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,              <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> verbose</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> subs(:,:) <span class="co">! extra {key}-&gt;value path subs</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>                                                            <span class="co">! subs(k,1)=key (no braces), subs(k,2)=value</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(grid_class)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> grid      <span class="co">! target grid (remap, size check)</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> defaults_file  <span class="co">! schema of the keys</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> defaults_group <span class="co">! its group (default: group)</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> mode      <span class="co">! overrides: auto | static | clim | transient</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> remap     <span class="co">! auto | none | a map method</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> grid_src  <span class="co">! grid of the file</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>,             <span class="dt">intent(IN)</span>, <span class="dt">optional</span> <span class="dt">::</span> time_ref  <span class="co">! calendar year of time zero</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="co">! Initialize from explicit arguments (no namelist)</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_init_arg(vs, filename, name, units_in, units_out, <span class="kw">&amp;</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>                             <span class="bu">scale</span>, offset, with_time, time_par)</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>, <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>,     <span class="dt">intent(IN)</span>    <span class="dt">::</span> filename, name, units_in, units_out</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(wp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> <span class="bu">scale</span>, offset</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,  <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> with_time</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>, <span class="dt">optional</span>,   <span class="dt">intent(IN)</span>    <span class="dt">::</span> time_par(:)</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a><span class="co">! Update the field to a given time or time range</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a><span class="kw">subroutine</span> varslice_update(vs, time, method, fill, rep, print_summary)</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    <span class="dt">type(varslice_class)</span>,       <span class="dt">intent(INOUT)</span> <span class="dt">::</span> vs</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">real(dp)</span>,         <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> time(:)       <span class="co">! time or [t0,t1]</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> method        <span class="co">! slice_method</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    <span class="dt">character(len=*)</span>, <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> fill          <span class="co">! none, nearest, const (overrides par%fill)</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">integer</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> rep           <span class="co">! repetition frequency</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>    <span class="dt">logical</span>,          <span class="dt">optional</span>, <span class="dt">intent(IN)</span>    <span class="dt">::</span> print_summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong><code>method</code> (slice_method)</strong> selects how the read timesteps are reduced:</p>
 <ul>
 <li><code>"exact"</code> — the timestep matching <code>time</code> exactly (missing if unavailable).</li>
 <li><code>"range"</code> — all timesteps within <code>[t0,t1]</code>, kept along the time dimension.</li>
 <li><code>"interp"</code> — linear interpolation to <code>time</code> from the two bracketing timesteps; missing if <code>time</code> is out of bounds.</li>
 <li><code>"extrap"</code> — like <code>"interp"</code>, but clamps to the first/last timestep when out of bounds.</li>
-<li><code>"range_mean"</code>, <code>"range_min"</code>, <code>"range_max"</code>, <code>"range_sd"</code>, <code>"range_sum"</code> — a single slice computed as the mean / min / max / standard deviation / sum over <code>[t0,t1]</code>.</li>
+<li><code>"range_mean"</code>, <code>"range_min"</code>, <code>"range_max"</code>, <code>"range_sd"</code>, <code>"range_sum"</code> — a single slice computed as the mean / min / max / standard deviation / sum over <code>[t0,t1]</code>: equal weights over the samples in the closed range (both ends counted); it fails when none is inside.</li>
+<li><code>"interval_mean"</code> — the overlap-weighted mean over <code>[t0,t1]</code> of the file’s piecewise representation: cell means over the CF time bounds (<code>time_bnds</code>, when the time variable has a <code>bounds</code> attribute), else the linear interpolant between the samples, with partial segments at both ends. The part of <code>[t0,t1]</code> outside the axis holds the first or last sample. A single time gives the value there. With <code>rep = n_sub</code> each sub-annual step is averaged over the years, a year’s step standing for <code>[year, year+1)</code> (so a calendar year gives exactly its cycle). Missing values are left out of the weights.</li>
 </ul>
 <p><strong><code>rep</code></strong> (stored as <code>range_rep</code>) is the frequency at which a range method is applied. <code>rep=1</code> reduces the whole range to one value; <code>rep=12</code> applies the statistic to every 12th index, yielding 12 values along the time dimension (e.g.&nbsp;a monthly climatology).</p>
 <p><strong>Climatologies.</strong> Data with a sub-annual cycle but no years (<code>time = 0 ... nsub</code>, <code>nsub &gt; 1</code>, e.g.&nbsp;a monthly ocean climatology <code>to(x,y,depth,month)</code> or <code>t2m(x,y,month)</code>) keep the cycle in their last dimension (<code>var(:,:,:,m)</code>, or <code>var(:,:,m,1)</code> without depth). An update with <code>method = "range_mean"</code> and <code>rep = 1</code> gives the mean over the cycle; any other update keeps it, and <code>varslice_sub_mean</code> averages it.</p>
@@ -771,6 +867,55 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>n_sub</code> is optional (trailing) and defaults to <code>0</code>. If <code>n_sub &gt; 1</code>, a sub-annual axis is built with <code>n_sub</code> steps per major unit (e.g.&nbsp;<code>n_sub = 12</code> for monthly data) and <code>with_time_sub</code> is set <code>.TRUE.</code>.</li>
 </ul>
 <p>These keys unpack internally to <code>par%units_in/units_out</code>, <code>par%unit_scale/unit_offset</code>, <code>par%with_time</code>, and <code>par%time_par(4)</code>.</p>
+<p>An optional <code>mode</code> key (<code>auto</code>, <code>static</code>, <code>clim</code>, <code>transient</code>) states what the variable is; with a legacy <code>time</code> key it must agree with it (<code>active = 1</code>: transient; <code>0</code> with <code>n_sub &gt; 1</code>: clim; else static), else init stops.</p>
+<section id="time-axis-from-the-file" class="level3">
+<h3 class="anchored" data-anchor-id="time-axis-from-the-file">Time axis from the file</h3>
+<p>With <code>time(1) &lt; 0</code> (the schema default <code>time = -1 0 0 0 0</code>), or without a <code>time</code> key, the axis is not generated from <code>x0, x1, dx</code> but read from the file: the coordinate variable of the variable’s last dimension, in every file of a multifile set, decoded with its <code>units</code> and <code>calendar</code> attributes (or the keys <code>time_units</code> and <code>calendar</code>), shifted by <code>time_ref</code> (<code>t = y - time_ref</code>, <code>y</code> in calendar years), concatenated over the files and required to be strictly increasing. Irregular axes are allowed (ICE-6G_C: 1 kyr, then 500 yr steps). <code>n_sub</code> is inferred as the number of steps per year when every year of the axis holds the same number of them (12 for monthly data), else 1. <code>time_units = "clock"</code> takes the values as clock years as they stand (no decoding, no <code>time_ref</code>).</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th><code>units</code> of the time variable</th>
+<th>Calendar year</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>{seconds,minutes,hours,days} since &lt;date&gt;</code></td>
+<td>by <code>calendar</code>: <code>standard</code>/<code>gregorian</code> (exact day count; dates before 1582-10-15 stop), <code>proleptic_gregorian</code>, <code>noleap</code>/<code>365_day</code>, <code>all_leap</code>/<code>366_day</code>, <code>360_day</code>; year + day-of-year/days-in-year</td>
+</tr>
+<tr class="even">
+<td><code>months since &lt;date&gt;</code></td>
+<td><code>360_day</code> only, else stop</td>
+</tr>
+<tr class="odd">
+<td><code>years since &lt;date&gt;</code>, <code>common_years since &lt;date&gt;</code></td>
+<td>year of date + value</td>
+</tr>
+<tr class="even">
+<td><code>yr BP</code>, <code>a BP</code>, <code>years BP</code>, <code>ka BP</code>, <code>kyr BP</code></td>
+<td>1950 − value × {1, 1000}</td>
+</tr>
+<tr class="odd">
+<td><code>yr CE</code>, <code>years CE</code>, <code>AD</code></td>
+<td>value</td>
+</tr>
+<tr class="even">
+<td><code>yr</code>, <code>years</code>, <code>ka</code> with no reference</td>
+<td>stop: set <code>time_units</code></td>
+</tr>
+</tbody>
+</table>
+<p>A missing <code>calendar</code> attribute means <code>standard</code> (CF). File calendars are decoded independently of the run’s calendar. <code>varslice_time_decode</code> is public.</p>
+<p>With a file axis, <code>mode = "auto"</code> is resolved from the file: the last dimension is a time axis if its coordinate variable is named <code>time</code>, has <code>axis = "T"</code>, <code>standard_name = "time"</code> or decodable <code>units</code>, and a climatology if it carries the CF <code>climatology</code> attribute (the last dimension is then the cycle, <code>n_sub</code> its length); otherwise the variable is static. <code>mode = "clim"</code> must be explicit for climatologies without that attribute.</p>
+</section>
+<section id="schema-defaults_file" class="level3">
+<h3 class="anchored" data-anchor-id="schema-defaults_file">Schema (<code>defaults_file</code>)</h3>
+<p>With <code>defaults_file</code>, every key is read through the schema group <code>defaults_group</code> of that file (<code>nml_read(..., defaults_file, defaults_group)</code>), so a group holds only what differs from it, usually <code>filename</code> and <code>name</code>. <a href="../packages/datasrc.html">fesm_datasrc</a> reads its field groups this way, with the schema <code>[datasrc_field]</code> of <code>par/datasrc_defaults.nml</code>. The keys read by varslice are <code>filename</code>, <code>name</code>, <code>units</code>, <code>scaling</code>, <code>time</code>, <code>mode</code>, <code>remap</code>, <code>grid_src</code>, <code>fill</code>, <code>fill_value</code>, <code>time_units</code> and <code>calendar</code>, each of which the schema must declare. Without <code>defaults_file</code> (the legacy path) nothing changes: <code>filename</code>, <code>name</code>, <code>units</code>, <code>scaling</code> and <code>time</code> are required, the others optional.</p>
+<p>The arguments <code>mode</code>, <code>remap</code>, <code>grid_src</code> and <code>time_ref</code> override the group. <code>remap = "auto"</code> remaps with <code>bilin</code> when the grid of the file (<code>grid_src</code>, else its global attribute <code>grid_name</code>) is known and is not the target <code>grid</code>; otherwise the file is read as it is (and its size checked against <code>grid</code>).</p>
 <p>Example namelist group:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode fortran code-with-copy"><code class="sourceCode fortranfixed"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">&amp;</span>ts_series</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    filename <span class="kw">=</span> <span class="st">"input/{domain}/{grid_name}_climate.nc"</span></span>
@@ -779,6 +924,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    scaling  <span class="kw">=</span> <span class="fl">1.0</span> <span class="kw">-</span><span class="fl">273.15</span>                     <span class="co">! value*scale + offset</span></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    time     <span class="kw">=</span> <span class="fl">1.0</span>, <span class="kw">-</span><span class="fl">22000.0</span>, <span class="fl">0.0</span>, <span class="fl">1.0</span>, <span class="fl">12.0</span>   <span class="co">! active, x0, x1, dx, n_sub (monthly)</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="kw">/</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 </section>
 <section id="usage-example" class="level2">
 <h2 class="anchored" data-anchor-id="usage-example">Usage example</h2>
@@ -808,6 +954,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="see-also">See also</h2>
 <ul>
 <li><a href="../packages/series.html">series</a> — 0-D time-series reader (the non-gridded analogue)</li>
+<li><a href="../packages/datasrc.html">fesm_datasrc</a> — fields served from files, built on the schema, file axis and <code>interval_mean</code></li>
 <li><a href="../packages/ncio.html">ncio</a> — the underlying netCDF read/write layer</li>
 <li><a href="../packages/coords.html">coords</a> — grids and mapping used by <code>varslice_map_to_grid</code></li>
 </ul>
@@ -894,7 +1041,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
       // Inspect non-navigation links and adorn them if external
-     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
       for (var i=0; i<links.length; i++) {
         const link = links[i];
         if (!isInternal(link.href)) {
@@ -903,8 +1051,69 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           if (link.dataset.originalHref !== undefined) {
             link.href = link.dataset.originalHref;
           }
+          if (!link.classList.contains('no-external-icon')) {
+          }
         }
       }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
     function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
       const config = {
         allowHTML: true,
@@ -918,6 +1127,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         interactiveBorder: 10,
         theme: 'quarto',
         placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
       };
       if (contentFn) {
         config.content = contentFn;
@@ -1080,44 +1290,54 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           const lineIds = lines.map((line) => {
             return targetCell + "-" + line;
           })
-          let top = null;
-          let height = null;
-          let parent = null;
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
           if (lineIds.length > 0) {
-              //compute the position of the single el (top and bottom and make a div)
-              const el = window.document.getElementById(lineIds[0]);
-              top = el.offsetTop;
-              height = el.offsetHeight;
-              parent = el.parentElement.parentElement;
-            if (lineIds.length > 1) {
-              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-              height = bottom - top;
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
             }
-            if (top !== null && height !== null && parent !== null) {
-              // cook up a div (if necessary) and position it 
-              let div = window.document.getElementById("code-annotation-line-highlight");
-              if (div === null) {
-                div = window.document.createElement("div");
-                div.setAttribute("id", "code-annotation-line-highlight");
-                div.style.position = 'absolute';
-                parent.appendChild(div);
-              }
-              div.style.top = top - 2 + "px";
-              div.style.height = height + 4 + "px";
-              div.style.left = 0;
-              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-              if (gutterDiv === null) {
-                gutterDiv = window.document.createElement("div");
-                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-                gutterDiv.style.position = 'absolute';
-                const codeCell = window.document.getElementById(targetCell);
-                const gutter = codeCell.querySelector('.code-annotation-gutter');
-                gutter.appendChild(gutterDiv);
-              }
-              gutterDiv.style.top = top - 2 + "px";
-              gutterDiv.style.height = height + 4 + "px";
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
             }
+            placeBand(gutterDiv, el, lastEl);
             selectedAnnoteEl = annoteEl;
           }
         };
@@ -1216,7 +1436,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     }
   });
   </script>
-<nav class="page-navigation">
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
+  </script>
+<nav class="page-navigation" aria-label="Page">
   <div class="nav-page nav-page-previous">
       <a href="../packages/series.html" class="pagination-link" aria-label="series">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">series</span>
