@@ -15,11 +15,13 @@ program test_map_cdo
     real(dp), allocatable :: vs(:,:), vt(:,:), vt_co(:,:)
     logical,  allocatable :: m2(:,:), m2_co(:,:)
     character(len=*), parameter :: fldr = "maps_cdo_test"
-    integer  :: i, j, stat, fails, nboth, n
+    integer  :: i, j, stat, cstat, fails, nboth, n
     real(dp) :: dmax, emax, emean
 
-    call execute_command_line("command -v cdo > /dev/null 2>&1", exitstat=stat)
-    if (stat /= 0) then
+    ! cmdstat: a shell whose `command -v` exits 127 for a missing command (dash) is
+    ! otherwise a fatal "Invalid command line" in gfortran, not a skip.
+    call execute_command_line("command -v cdo > /dev/null 2>&1", exitstat=stat, cmdstat=cstat)
+    if (cstat /= 0 .or. stat /= 0) then
         write(*,*) "SKIP: test_map_cdo (cdo not found on PATH)"
         stop 0
     end if

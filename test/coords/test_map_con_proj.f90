@@ -21,11 +21,13 @@ program test_map_con_proj
     character(len=*), parameter :: fldr = "maps_con_proj_test"
     real(dp) :: vs(nxs,nys), vco(nxt,nyt), vcdo(nxt,nyt), vconst(nxt,nyt)
     logical  :: mco(nxt,nyt), mcdo(nxt,nyt), mc(nxt,nyt)
-    integer  :: i, j, stat, fails, only_co, only_cdo
+    integer  :: i, j, stat, cstat, fails, only_co, only_cdo
     real(dp) :: d, lat, dmax_bulk, dmax_pole, emax_const
 
-    call execute_command_line("command -v cdo > /dev/null 2>&1", exitstat=stat)
-    if (stat /= 0) then
+    ! cmdstat: a shell whose `command -v` exits 127 for a missing command (dash) is
+    ! otherwise a fatal "Invalid command line" in gfortran, not a skip.
+    call execute_command_line("command -v cdo > /dev/null 2>&1", exitstat=stat, cmdstat=cstat)
+    if (cstat /= 0 .or. stat /= 0) then
         write(*,*) "SKIP: test_map_con_proj (cdo not found on PATH)"
         stop 0
     end if
